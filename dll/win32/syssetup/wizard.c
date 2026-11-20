@@ -414,12 +414,14 @@ typedef struct _PRODUCT_OPTION_DATA
     DWORD LogonType;
 } PRODUCT_OPTION_DATA;
 
+/* QuarziteOS targets NT 6.1 SP1 for every product type:
+ * Windows 7 SP1 (client) and Windows Server 2008 R2 SP1 (server). */
 static const PRODUCT_OPTION_DATA s_ProductOptionData[INSTALLATION_TYPE_MAX] =
 {
-    { L"Terminal Server\0", L"ServerNT", 0, 0x200, 0 },
-    { L"\0", L"WinNT", 1, 0x300, 1 },
-    { L"Terminal Server\0", L"ServerNT", 0, 0x200, 0 }
-    // { L"Terminal Server\0", L"ServerNT", 0, 0x200, 0 }
+    { L"Terminal Server\0", L"ServerNT", 0, 0x100, 0 },
+    { L"\0", L"WinNT", 1, 0x100, 1 },
+    { L"Terminal Server\0", L"ServerNT", 0, 0x100, 0 }
+    // { L"Terminal Server\0", L"ServerNT", 0, 0x100, 0 }
 };
 
 static const WCHAR* InstallationTypes[INSTALLATION_TYPE_MAX] =

@@ -70,3 +70,89 @@ NtGetCurrentProcessorNumberEx(
 
     return STATUS_SUCCESS;
 }
+
+/* PROCESSOR QUERIES (NT 6.0 / 6.1) ******************************************/
+
+/*
+ * QuarziteOS: the Vista/Windows 7 processor and group query APIs. Drivers
+ * built for Windows 7, and KMDF when the system reports NT 6.1, use these
+ * instead of reading KeNumberProcessors. There is a single processor group.
+ */
+
+static
+ULONG
+KiGetMaximumProcessorCount(VOID)
+{
+#ifdef CONFIG_SMP
+    return KeMaximumProcessors;
+#else
+    return 1;
+#endif
+}
+
+ULONG
+NTAPI
+KeQueryActiveProcessorCount(
+    _Out_opt_ PKAFFINITY ActiveProcessors)
+{
+    if (ActiveProcessors)
+        *ActiveProcessors = KeActiveProcessors;
+    return (ULONG)KeNumberProcessors;
+}
+
+ULONG
+NTAPI
+KeQueryMaximumProcessorCount(VOID)
+{
+    return KiGetMaximumProcessorCount();
+}
+
+ULONG
+NTAPI
+KeQueryActiveProcessorCountEx(
+    _In_ USHORT GroupNumber)
+{
+    if (GroupNumber != 0 && GroupNumber != ALL_PROCESSOR_GROUPS)
+        return 0;
+    return (ULONG)KeNumberProcessors;
+}
+
+ULONG
+NTAPI
+KeQueryMaximumProcessorCountEx(
+    _In_ USHORT GroupNumber)
+{
+    if (GroupNumber != 0 && GroupNumber != ALL_PROCESSOR_GROUPS)
+        return 0;
+    return KiGetMaximumProcessorCount();
+}
+
+USHORT
+NTAPI
+KeQueryActiveGroupCount(VOID)
+{
+    return 1;
+}
+
+USHORT
+NTAPI
+KeQueryMaximumGroupCount(VOID)
+{
+    return 1;
+}
+
+ULONG
+NTAPI
+KeGetCurrentProcessorNumberEx(
+    _Out_opt_ PPROCESSOR_NUMBER ProcNumber)
+{
+    ULONG Number = KeGetCurrentProcessorNumber();
+
+    if (ProcNumber)
+    {
+        ProcNumber->Group = 0;
+        ProcNumber->Number = (UCHAR)Number;
+        ProcNumber->Reserved = 0;
+    }
+    return Number;
+}

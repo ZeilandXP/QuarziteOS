@@ -87,8 +87,8 @@ static const PCSTR ReactOSSystemPathPrompt =
     "Enter the path to your QuarziteOS system directory.\n"
     "\n"
     "Examples:\n"
-    "\\REACTOS\n"
-    "\\ROS";
+    "\\WINDOWS\n"
+    "\\REACTOS";
 static const PCSTR ReactOSOptionsPrompt =
     "Enter the load options you want passed to the kernel.\n"
     "\n"

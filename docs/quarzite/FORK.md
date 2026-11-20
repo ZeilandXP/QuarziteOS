@@ -42,10 +42,8 @@ These were edited by hand:
 
 These still say ReactOS on purpose or are not done yet:
 
-* **Default install directory** `\ReactOS`, the CD directory `\reactos`,
-  and `HKLM\Software\ReactOS` keys. These are paths. Changing them, and
-  moving to `C:\Windows` for Windows 7 application compatibility, is
-  planned as one coordinated change.
+* The CD directory `\reactos` and `HKLM\Software\ReactOS` keys. These are
+  internal paths that other components look up by name.
 * **Logo bitmaps** in FreeLoader, setup, the LiveCD dialog, msgina and the
   shell "About" banner still show the ReactOS logo and need QuarziteOS
   artwork. The kernel boot splash and shutdown screen are done (section 4).
@@ -75,6 +73,36 @@ A side benefit: with the Windows 7 export surface, the tree links with
 stock distribution MinGW-w64 GCC 13. GCC 13's `libgcc` threading code imports
 Vista condition-variable APIs from `kernel32`, which a `0x502` export set
 lacks.
+
+### Install folder: `C:\Windows`
+
+QuarziteOS installs to `C:\Windows`, like Windows 7, instead of `C:\ReactOS`:
+
+* `boot/bootdata/txtsetup.sif`: `DefaultPath = \Windows`. Text and GUI
+  setup both use this default unless an unattend file says otherwise.
+* `base/setup/usetup/usetup.c`: the fallback when no default is given.
+* `boot/bootdata/bootcd/unattend.inf`: the template uses `Windows`.
+* `base/services/nfsd`, `dll/3rdparty/libtirpc`: configuration paths.
+* FreeLoader's custom-boot prompt example.
+
+The CD layout (`\reactos` on the media) is unchanged. Everything else
+already locates the system directory at run time (`%SystemRoot%`,
+`GetWindowsDirectory`). ReactOS's own test bot installs to `Windows`, so
+this layout is exercised upstream too.
+
+### Windows 7 compatibility fixes
+
+* `dll/win32/syssetup/wizard.c`: second-stage setup wrote CSDVersion
+  0x200/0x300 (Server 2003 SP2 / XP SP3) per product type. It now writes
+  0x100 (SP1) for all types.
+* `ntoskrnl`: added the NT 6.0/6.1 processor and group queries
+  (`KeQuery{Active,Maximum}ProcessorCount[Ex]`,
+  `KeQuery{Active,Maximum}GroupCount`, `KeGetCurrentProcessorNumberEx`),
+  version-gated in `ntoskrnl.spec`. KMDF calls these when the system
+  reports NT 6.1, and asserted without them.
+* `base/setup/lib/bootsup.c`: the main boot entry's display name (written
+  as `L"\"ReactOS\""`) is now "QuarziteOS". `rebrand.py` now treats `\"`
+  as an escaped quote and keeps a short list of intentional keeps.
 
 ## 3. The qzkrnl kernel
 

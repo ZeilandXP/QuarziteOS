@@ -436,7 +436,7 @@ AddListViewItems(HWND hwndDlg, PBACKGROUND_DATA pData)
         RegCloseKey(regKey);
     }
 
-    /* Add all the images in the C:\ReactOS directory. */
+    /* Add all the images in the Windows directory. */
     if (GetWindowsDirectory(szSearchPath, MAX_PATH))
     {
         i = AddWallpapersFromDirectory(i, hwndBackgroundList, backgroundItem, pData, wallpaperFilename, szSearchPath);

@@ -16,6 +16,9 @@ QuarziteOS has two tracks that eventually meet:
 - [x] qzkrnl boots through FreeLoader: CPU tables, traps, stop screens,
       clock, preemptive threads, memory, pool, console, shell.
 - [x] Automated QEMU boot test.
+- [x] Install to `C:\Windows`; Win7 processor/group query APIs in ntoskrnl.
+- [x] qzkrnl stage B1: IRQL, DPCs, spinlocks, dispatcher objects, waits,
+      timers, system time (`synctest`: 27/27).
 
 ## Track A: Windows 7 SP1 system
 
@@ -27,9 +30,9 @@ QuarziteOS has two tracks that eventually meet:
    `.spec` files. The most widely imported ones come first: condition
    variables, SRW locks, `InitOnce`, the thread pool (`Tp*`), `*Ex` file and
    locale APIs, `GetTickCount64`, the KTM-less parts of `advapi32`.
-3. **Install layout.** Default install directory `C:\Windows`, with the
-   paths and registry keys the rebrand left alone (see FORK.md), plus the
-   Windows 7 known-folder layout (`Users`, `ProgramData`).
+3. **Install layout.** Done: `C:\Windows`. Remaining: the Windows 7
+   known-folder layout (`ProgramData`, per-user `AppData`) and the registry
+   keys the rebrand left alone (see FORK.md).
 4. **Structures.** Raise `_WIN32_WINNT`/`NTDDI_VERSION` to Windows 7 one
    component at a time. That includes a FreeLoader `BootType=Windows7`
    loader block with the NT 6.1 `LOADER_PARAMETER_BLOCK` layout.
@@ -44,7 +47,7 @@ QuarziteOS has two tracks that eventually meet:
 
 | Stage | Contents | Exit criterion |
 |-------|----------|----------------|
-| B1 | IRQL (raise/lower, software interrupts), DPCs, spinlocks, `KTHREAD`/`KPRCB`, dispatcher objects, `KeWaitFor*Object(s)`, kernel timers. | Driver-style synchronization works in-kernel. |
+| B1 ✔ | IRQL (raise/lower, DISPATCH software interrupt), DPCs, spinlocks, NT-layout PCR/PRCB, dispatcher objects (events, mutants, semaphores, timers) with NT layouts, `KeWaitFor*Object(s)`, system time. | Done: `synctest` passes 27/27. |
 | B2 | Host `HAL.DLL`: implement the imports HAL needs, call `HalInitSystem`, move the clock to `HalInitializeProcessor`/the HAL timer, drop the private PIC/PIT code. | qzkrnl runs on ReactOS's HAL unchanged. |
 | B3 | Object manager (types, namespace, handles), security stubs, executive objects. | `ObCreateObject`/`ObReferenceObjectByHandle` work. |
 | B4 | I/O manager: driver objects, device objects, IRPs, `IoCallDriver`, PnP root enumerator. Start FreeLoader's boot drivers (`DriverEntry`). | The disk stack and a filesystem mount. |

@@ -43,6 +43,12 @@ SKIP_LINE = re.compile(
     r"Development|authors)|reactos\.org|https?://|@",
     re.IGNORECASE)
 
+# Lines that must keep the name: identifiers in disguise or attribution
+KEEP_LINES = (
+    'if (!_wcsnicmp(szValue, L"ReactOS", 7))',       # FreeLoader BootType keyword
+    '/* ReactOS additions */',                         # what upstream added
+)
+
 TOKEN = re.compile(r"(?<![A-Za-z0-9_])ReactOS(?![A-Za-z0-9_])")
 
 CODE_EXT = {".c", ".cpp", ".cxx", ".h", ".hpp", ".idl"}
@@ -55,6 +61,9 @@ def token_ok(text, start, end):
     before = text[start - 1] if start > 0 else ""
     after = text[end] if end < len(text) else ""
     after2 = text[end + 1] if end + 1 < len(text) else ""
+    # \" right after the name is an escaped quote in C, not a path separator
+    if after == "\\" and after2 == '"':
+        after = '"'
     if (before and before in "\\/%$") or (after and after in "\\/%$"):
         return False
     if after == "." and after2.isalnum():
@@ -125,6 +134,7 @@ def process_code(text):
             line = text[line_start:(n if line_end < 0 else line_end)]
             # #include "..." and attribution lines stay as they are
             if c == '"' and not SKIP_LINE.search(line) and \
+                    not any(k in line for k in KEEP_LINES) and \
                     not line.lstrip().startswith("#include"):
                 lit, k = replace_tokens(lit)
                 count += k
@@ -139,7 +149,7 @@ def process_code(text):
 def process_lines(text, func):
     out, count = [], 0
     for line in text.splitlines(keepends=True):
-        if SKIP_LINE.search(line):
+        if SKIP_LINE.search(line) or any(k in line for k in KEEP_LINES):
             out.append(line)
             continue
         new, k = func(line)
