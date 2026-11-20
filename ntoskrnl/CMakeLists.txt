@@ -45,6 +45,13 @@ add_executable(ntoskrnl
     ${CMAKE_CURRENT_BINARY_DIR}/ntoskrnl.def)
 set_module_type(ntoskrnl kernel)
 
+# The resource script pulls in the boot screen bitmaps via inbv/bootanim.rc;
+# make sure changing any of them rebuilds the resources.
+file(GLOB NTOSKRNL_RC_DEPENDS ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/resources/*.bmp)
+list(APPEND NTOSKRNL_RC_DEPENDS ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/bootanim.rc
+                                ${REACTOS_SOURCE_DIR}/ntoskrnl/include/resource.h)
+set_source_files_properties(ntoskrnl.rc PROPERTIES OBJECT_DEPENDS "${NTOSKRNL_RC_DEPENDS}")
+
 source_group(TREE ${REACTOS_SOURCE_DIR}/ntoskrnl PREFIX "Source Files" FILES ${NTOSKRNL_SOURCE})
 
 target_link_libraries(ntoskrnl ntoskrnl_vista cportlib csq ${PSEH_LIB} arbiter cmlib ntlsalib rtl rtl_vista ${ROSSYM_LIB} libcntpr setjmp wdmguid poguid ioevent sdbread_km)

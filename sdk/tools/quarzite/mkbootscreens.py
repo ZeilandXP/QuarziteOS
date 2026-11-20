@@ -62,7 +62,11 @@ def quantize16(img):
 
     w, h = q.size
     src = q.load()
-    pixels = [[remap[src[x, y]] for x in range(w)] for y in range(h)]
+    orig = rgb.load()
+    # Error diffusion must not leak into pure-black background (it would
+    # leave faint dots next to the artwork): keep black source pixels black.
+    pixels = [[0 if sum(orig[x, y]) <= 12 else remap[src[x, y]]
+               for x in range(w)] for y in range(h)]
     return pixels, new_colors
 
 

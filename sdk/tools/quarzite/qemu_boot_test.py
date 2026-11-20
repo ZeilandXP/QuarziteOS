@@ -303,78 +303,73 @@ def _is_purple(rgb):
 
 
 def run_screens(iso, out, timeout):
-    """Capture the QuarziteOS boot splash and the shutdown screen."""
+    """Boot the graphical live environment, capture the QuarziteOS boot
+    splash (with its progress bar filling), reach the desktop, shut down
+    and capture the shutdown screen."""
+    import shutil
+    from PIL import Image
+
+    def grab(vm, path):
+        try:
+            return Image.open(vm.screenshot(path)).convert("RGB")
+        except Exception:
+            return None
+
+    def type_text(vm, text):
+        keys = {" ": "spc", "-": "minus"}
+        for ch in text:
+            vm.sendkey(keys.get(ch, ch))
+
     chk = Checker()
     with tempfile.TemporaryDirectory() as tmp:
         vm = Qemu(iso, tmp, memory=1024)
         try:
-            # "Live Environment (Graphics Mode)": no /SOS, so the splash shows
             select_boot_entry(vm, "QuarziteOS Live Environment", 1)
 
-            splash = []
-            deadline = time.time() + 300
+            # 1. Boot splash: sample every second until the desktop mode
+            splash, deadline = [], time.time() + 300
             while time.time() < deadline:
-                time.sleep(3)
-                shot = vm.screenshot(os.path.join(tmp, f"s{len(splash):03d}.png"))
-                try:
-                    from PIL import Image
-                    im = Image.open(shot).convert("RGB")
-                except Exception:
-                    continue
-                if im.size != (640, 480) or not _is_purple(im.getpixel((320, 170))):
-                    if splash:
-                        break          # splash is gone: desktop is coming up
-                    continue
-                # Progress = how much of the bar row is lit
-                lit = sum(1 for x in range(225, 415) if sum(im.getpixel((x, 368))) > 150)
-                splash.append((lit, shot))
-
+                path = os.path.join(tmp, f"s{len(splash):03d}.png")
+                im = grab(vm, path)
+                if im and im.size == (640, 480) and _is_purple(im.getpixel((320, 170))):
+                    lit = sum(1 for x in range(225, 415) if sum(im.getpixel((x, 368))) > 150)
+                    splash.append((lit, path))
+                elif im and im.size[0] >= 800:
+                    break                           # desktop video mode
+                time.sleep(1)
             chk.check("boot splash (QuarziteOS artwork) displayed", bool(splash))
             if splash:
-                import shutil
-                lit_values = [s[0] for s in splash]
-                mid = min(splash, key=lambda s: abs(s[0] - 95))
-                shutil.copy(mid[1], os.path.join(out, "boot-splash.png"))
-                shutil.copy(splash[-1][1], os.path.join(out, "boot-splash-late.png"))
+                lit = [s[0] for s in splash]
+                shutil.copy(max(splash)[1], os.path.join(out, "boot-splash.png"))
                 chk.check("progress bar fills as boot progresses",
-                          max(lit_values) > min(lit_values),
-                          f"lit pixels seen: {lit_values}")
+                          max(lit) > min(lit), f"lit pixels: {lit}")
 
-            # Let the desktop settle, then shut down
-            time.sleep(120)
+            # 2. LiveCD dialog -> Next -> "Run QuarziteOS Live CD"
+            time.sleep(60)
+            vm.screenshot(os.path.join(out, "livecd-dialog.png"))
+            vm.sendkey("alt-n")
+            time.sleep(10)
+            vm.sendkey("ret")
+            time.sleep(60)
             vm.screenshot(os.path.join(out, "live-desktop.png"))
 
-            def shutdown_screen_up():
-                shot = vm.screenshot(os.path.join(tmp, "shutdown.png"))
-                try:
-                    return (_is_purple(_pixel(shot, (320, 170))) and
-                            sum(_pixel(shot, (204, 300))) > 400, shot)   # "QuarziteOS" text
-                except Exception:
-                    return (False, shot)
-
-            vm.monitor("system_powerdown")
-            ok, shot = False, None
-            for _ in range(20):
+            # 3. Shut down via Win+R -> shutdown -s -t 0
+            vm.sendkey("meta_l-r")
+            time.sleep(3)
+            type_text(vm, "shutdown -s -t 0")
+            vm.sendkey("ret")
+            ok = False
+            for _ in range(60):
                 time.sleep(3)
-                ok, shot = shutdown_screen_up()
-                if ok:
+                im = grab(vm, os.path.join(tmp, "shutdown.png"))
+                if (im and im.size == (640, 480) and _is_purple(im.getpixel((320, 170)))
+                        and sum(im.getpixel((204, 300))) > 400):   # "QuarziteOS" text
+                    ok = True
                     break
-            if not ok:
-                # Fall back to Win+R -> shutdown -s -t 0
-                vm.sendkey("meta_l-r")
-                time.sleep(3)
-                for ch in "shutdown -s -t 0":
-                    vm.sendkey({" ": "spc", "-": "minus"}.get(ch, ch))
-                vm.sendkey("ret")
-                for _ in range(60):
-                    time.sleep(3)
-                    ok, shot = shutdown_screen_up()
-                    if ok:
-                        break
             chk.check("shutdown screen (QuarziteOS artwork) displayed", ok)
-            if shot:
-                import shutil
-                shutil.copy(shot, os.path.join(out, "shutdown-screen.png"))
+            if os.path.exists(os.path.join(tmp, "shutdown.png")):
+                shutil.copy(os.path.join(tmp, "shutdown.png"),
+                            os.path.join(out, "shutdown-screen.png"))
         finally:
             vm.quit()
     return chk

@@ -46,8 +46,9 @@ These still say ReactOS on purpose or are not done yet:
   and `HKLM\Software\ReactOS` keys. These are paths. Changing them, and
   moving to `C:\Windows` for Windows 7 application compatibility, is
   planned as one coordinated change.
-* **Logo bitmaps** (FreeLoader, boot screen, setup, msgina, shell "About").
-  They still show the ReactOS logo and need QuarziteOS artwork.
+* **Logo bitmaps** in FreeLoader, setup, the LiveCD dialog, msgina and the
+  shell "About" banner still show the ReactOS logo and need QuarziteOS
+  artwork. The kernel boot splash and shutdown screen are done (section 4).
 * Internal identifiers such as `__REACTOS__`, `REACTOS_*`, `rosapps` and
   `rostests`.
 
@@ -84,10 +85,28 @@ These are new, so they don't conflict with upstream:
 * `boot/bootdata/bootcd.ini`: the `QzKernel` boot entry
   (`/KERNEL=qzkrnl.exe`).
 
-## 4. Tooling and documentation
+## 4. Boot splash and shutdown screen
+
+* Source artwork: `ntoskrnl/inbv/resources/quarzite/{boot,shutdown}.png`
+  (640x480).
+* `sdk/tools/quarzite/mkbootscreens.py` converts the artwork to 16-color
+  RLE4 bitmaps for bootvid: `qz_boot.bmp`, `qz_bootbar.bmp` and
+  `qz_shutdown.bmp`.
+* Code: `ntoskrnl/inbv/bootanim.c` (`QUARZITEOS_BOOT_SCREEN`), resource IDs
+  23-25 in `ntoskrnl/include/resource.h`, bar geometry in `inbv/logo.h`.
+  The splash's progress bar is revealed left to right from the
+  artwork. The rotation line is not used. Both screens fall back to the
+  classic ones if the bitmaps are missing.
+* `ntoskrnl/CMakeLists.txt` and `ntkrnlmp/CMakeLists.txt` now declare the
+  resource script's dependencies (bitmaps, `bootanim.rc`, `resource.h`).
+  Upstream does not, so changing a bitmap did not rebuild the resources.
+
+## 5. Tooling and documentation
 
 * `sdk/tools/quarzite/rebrand.py`: branding script.
-* `sdk/tools/quarzite/qemu_boot_test.py`: automated QEMU boot tests.
+* `sdk/tools/quarzite/qemu_boot_test.py`: automated QEMU boot tests
+  (`qzkrnl`: the kernel shell; `screens`: boot splash, live desktop and
+  shutdown screen).
 * `README.md` is new. The upstream README is kept as `README.ReactOS.md`.
 
 ## Merging upstream ReactOS
