@@ -482,7 +482,7 @@ RESTORE       恢复窗口\n\
     STRING_CMD_INFOLINE "  QuarziteOS 命令行解释器                                       输入 HELP = 帮助  "
     STRING_CMD_COPYRIGHT "(C) Copyright 1996-%s ReactOS Team.\n"
     STRING_REACTOS_VERSION "QuarziteOS [版本 %s %s]\n"
-    STRING_CMD_SHELLINFO "\nReactOS 命令行解释器\n版本 %s %s"
+    STRING_CMD_SHELLINFO "\nQuarziteOS 命令行解释器\n版本 %s %s"
     STRING_VERSION_RUNNING_ON "在 上运行"
     STRING_VERSION_RUNVER "%s [Version %d.%d.%d] %s"
     STRING_COPY_FILE "        %d 个文件已复制\n"

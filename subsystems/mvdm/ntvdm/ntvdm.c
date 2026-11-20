@@ -486,7 +486,7 @@ wmain(INT argc, WCHAR *argv[])
 
     if (argc < 2)
     {
-        wprintf(L"\nReactOS Virtual DOS Machine\n\n"
+        wprintf(L"\nQuarziteOS Virtual DOS Machine\n\n"
                 L"Usage: NTVDM <executable> [<parameters>]\n");
         return 0;
     }

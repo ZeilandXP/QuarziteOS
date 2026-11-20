@@ -6,7 +6,7 @@ CAPTION "QuarziteOS セットアップ"
 FONT 9, "MS UI Gothic"
 BEGIN
     LTEXT "QuarziteOS セットアップ ウィザードへようこそ", IDC_WELCOMETITLE, 115, 8, 195, 24
-    LTEXT "このウィザードでは、QuarziteOS をコンピュータにインストールします。\nReactOS を正しくセットアップするために、ユーザーとコンピュータに関する情報を集める必要があります。", IDC_STATIC, 115, 40, 195, 50
+    LTEXT "このウィザードでは、QuarziteOS をコンピュータにインストールします。\nQuarziteOS を正しくセットアップするために、ユーザーとコンピュータに関する情報を集める必要があります。", IDC_STATIC, 115, 40, 195, 50
     LTEXT "セットアップを続行するには [次へ] をクリックして下さい。", IDC_STATIC, 115, 169, 195, 17
 END
 

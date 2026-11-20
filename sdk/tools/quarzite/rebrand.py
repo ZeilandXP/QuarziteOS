@@ -47,9 +47,11 @@ SKIP_LINE = re.compile(
 KEEP_LINES = (
     'if (!_wcsnicmp(szValue, L"ReactOS", 7))',       # FreeLoader BootType keyword
     '/* ReactOS additions */',                         # what upstream added
+    'STRING_VERSION_HELP7',                            # cmd: list of its authors
 )
 
-TOKEN = re.compile(r"(?<![A-Za-z0-9_])ReactOS(?![A-Za-z0-9_])")
+# A word on its own, or right after a C escape such as \n, \t or \r
+TOKEN = re.compile(r"(?:(?<![A-Za-z0-9_])|(?<=\\[ntr]))ReactOS(?![A-Za-z0-9_])")
 
 CODE_EXT = {".c", ".cpp", ".cxx", ".h", ".hpp", ".idl"}
 RC_EXT = {".rc", ".mc"}

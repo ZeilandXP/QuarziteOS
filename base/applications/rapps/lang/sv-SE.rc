@@ -171,7 +171,7 @@ BEGIN
     IDS_APPTITLE "QuarziteOS programhanterare"
     IDS_APP_AUTHORS "Copyright 2009 Dmitry Chapyshev"
     IDS_WELCOME_TITLE "Välkommen till QuarziteOS programhanterare!"
-    IDS_WELCOME_TEXT "Välj en kategori till vänster, och sedan ett program för att installera eller avinstallera.\nReactOS Web sida: "
+    IDS_WELCOME_TEXT "Välj en kategori till vänster, och sedan ett program för att installera eller avinstallera.\nQuarziteOS Web sida: "
     IDS_WELCOME_URL "https://reactos.org"
 
     IDS_APPWIZ_TITLE "Add/Remove Programs"

@@ -174,7 +174,7 @@ BEGIN
     IDS_APPTITLE "QuarziteOS Uygulama Yöneticisi"
     IDS_APP_AUTHORS "Telif Hakkı: 2009 Dmitry Chapyshev"
     IDS_WELCOME_TITLE "QuarziteOS Uygulama Yöneticisi'ne hoş geldiniz."
-    IDS_WELCOME_TEXT "Solda bir kategori seçiniz, ardından kurmak ya da kaldırmak için bir uygulama seçiniz.\nReactOS'un İnternet sitesi: "
+    IDS_WELCOME_TEXT "Solda bir kategori seçiniz, ardından kurmak ya da kaldırmak için bir uygulama seçiniz.\nQuarziteOS'un İnternet sitesi: "
     IDS_WELCOME_URL "https://reactos.org"
 
     IDS_APPWIZ_TITLE "Program Ekle/Kaldır"

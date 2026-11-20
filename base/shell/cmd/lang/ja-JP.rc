@@ -509,7 +509,7 @@ RESTORE       ウィンドウを元のサイズに戻します。\n\
     STRING_CMD_INFOLINE "  QuarziteOS Command Prompt                                      Type HELP = Help  "
     STRING_CMD_COPYRIGHT "(C) Copyright 1996-%s ReactOS Team.\n"
     STRING_REACTOS_VERSION "QuarziteOS [Version %s %s]\n"
-    STRING_CMD_SHELLINFO "\nReactOS Command Line Interpreter\nVersion %s %s"
+    STRING_CMD_SHELLINFO "\nQuarziteOS Command Line Interpreter\nVersion %s %s"
     STRING_VERSION_RUNNING_ON "実行中: "
     STRING_VERSION_RUNVER "%s [Version %d.%d.%d] %s"
     STRING_COPY_FILE "        %d 個のファイルがコピーされました\n"
