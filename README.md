@@ -1,0 +1,96 @@
+# QuarziteOS 0.1.0
+
+QuarziteOS is an open-source operating system aiming for compatibility with
+applications and drivers written for **Windows 7 Service Pack 1**
+(Windows NT 6.1, build 7601).
+
+It is two things in one tree:
+
+1. **A fork of [ReactOS](https://github.com/reactos/reactos)**: the complete
+   ReactOS system (FreeLoader, ntoskrnl, HAL, drivers, Win32 subsystem,
+   shell and applications), rebranded as QuarziteOS and retargeted from
+   Windows Server 2003 (NT 5.2) to Windows 7 SP1 (NT 6.1).
+2. **qzkrnl, a new kernel written from scratch** ([`qzkrnl/`](qzkrnl/README.md)).
+   It uses the NT boot protocol and exports the full `ntoskrnl.exe` name
+   set, so the unmodified ReactOS boot chain can load it in place of
+   ntoskrnl with `/KERNEL=qzkrnl.exe`.
+
+> **Alpha quality.** QuarziteOS inherits ReactOS's alpha status, and qzkrnl
+> is in its early stages: it boots to a kernel debug shell, but cannot run
+> drivers or user mode yet. Use a virtual machine.
+
+## What changed compared to ReactOS
+
+| Area | Change |
+|------|--------|
+| Branding | User-visible "ReactOS" strings (resources, message tables, setup, boot menu, registry product name, ISO label) now read "QuarziteOS". Copyright and authorship notices are unchanged. See [`sdk/tools/quarzite/rebrand.py`](sdk/tools/quarzite/rebrand.py). |
+| Version | QuarziteOS **0.1.0** (`sdk/include/reactos/version.cmake`). |
+| Reported NT version | **6.1.7601 Service Pack 1** (`sdk/include/psdk/ntverp.h`, `CSDVersion=0x100` in `hivesys.inf`). |
+| DLL exports | User-mode DLLs export the Windows 7 API surface by default: `DLL_EXPORT_VERSION=0x601`, previously `0x502`. |
+| Kernel | New from-scratch kernel `qzkrnl` in [`qzkrnl/`](qzkrnl/), with its own boot menu entry. ntoskrnl is still the default kernel. |
+| Loader check | ntoskrnl validates the loader block against the NT version it is *compiled* for (`_WIN32_WINNT`), not the version it *reports*. |
+
+The full list, and how to merge new ReactOS commits, is in
+[docs/quarzite/FORK.md](docs/quarzite/FORK.md). The plan toward Windows 7
+SP1 compatibility is in [docs/quarzite/ROADMAP.md](docs/quarzite/ROADMAP.md).
+
+## Building
+
+QuarziteOS builds with the same tooling as ReactOS. On Linux, the stock
+distribution MinGW-w64 toolchain works too. On Ubuntu 24.04:
+
+```bash
+sudo apt-get install gcc-mingw-w64-i686 g++-mingw-w64-i686 binutils-mingw-w64-i686 cmake ninja-build bison flex
+```
+
+```bash
+mkdir -p ../qz-build && cd ../qz-build
+```
+
+```bash
+cmake -S ../quarziteos -B . -G Ninja -DCMAKE_TOOLCHAIN_FILE:FILEPATH=toolchain-gcc.cmake -DARCH:STRING=i386 -DCMAKE_BUILD_TYPE=Debug
+```
+
+```bash
+ninja bootcd
+```
+
+This produces `bootcd.iso`. The official ReactOS Build Environment (RosBE)
+and MSVC also work, as described in [README.ReactOS.md](README.ReactOS.md).
+qzkrnl is skipped automatically on MSVC and on non-i386 architectures.
+
+## Running
+
+```bash
+qemu-system-i386 -m 512 -cdrom bootcd.iso -serial stdio
+```
+
+The boot menu offers:
+
+* **QuarziteOS Setup** – install to disk (ReactOS setup, rebranded).
+* **QuarziteOS Live Environment** – the full desktop on ntoskrnl.
+* **QuarziteOS Kernel (qzkrnl, experimental)** – the new kernel's debug
+  shell, on screen and on COM1. Type `help`.
+
+There is an automated boot test:
+
+```bash
+python3 sdk/tools/quarzite/qemu_boot_test.py --iso ../qz-build/bootcd.iso --scenario qzkrnl --out /tmp/qz-results
+```
+
+## License and credits
+
+QuarziteOS is free software under the [GNU GPL 2.0](COPYING), like the
+ReactOS code it is built on. Some components carry other GPL-compatible
+licenses; see the headers of individual files.
+
+The overwhelming majority of the code in this tree was written by the
+**ReactOS developers** ([CREDITS](CREDITS)), and their copyright notices are
+preserved throughout. QuarziteOS is an independent fork. It is not affiliated
+with or endorsed by the ReactOS project or ReactOS Deutschland e.V.
+"ReactOS" is their trademark and is used here only to describe where the
+code comes from.
+
+Windows is a trademark of Microsoft Corporation. QuarziteOS contains no
+Microsoft code. Contributions must be clean-room: never use leaked or
+disassembled Microsoft source code. See [CONTRIBUTING.md](CONTRIBUTING.md).
