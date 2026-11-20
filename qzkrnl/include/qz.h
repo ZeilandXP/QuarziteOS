@@ -62,7 +62,7 @@
 
 /* Interrupt vectors -- the 8259 PIC is remapped to the NT vector base */
 #define QZ_VECTOR_IRQ_BASE     0x30
-#define QZ_VECTOR_YIELD        0x2F
+#define QZ_VECTOR_SWAP         0x2F    /* reschedule now (yield / block) */
 #define QZ_IRQ_TIMER           0
 #define QZ_IRQ_KEYBOARD        1
 #define QZ_IRQ_COM1            4
@@ -96,6 +96,8 @@ typedef enum _QZ_THREAD_STATE
     QzThreadTerminated
 } QZ_THREAD_STATE;
 
+#define QZ_THREAD_WAIT_BLOCKS  THREAD_WAIT_OBJECTS   /* 3, as on NT */
+
 typedef struct _QZ_THREAD
 {
     PQZ_TRAP_FRAME Frame;          /* saved context while not running */
@@ -103,11 +105,60 @@ typedef struct _QZ_THREAD
     ULONG StackSize;
     ULONG Id;
     QZ_THREAD_STATE State;
-    ULONG WakeTick;
+    KIRQL SavedIrql;               /* IRQL to restore when switched back in */
     ULONG Switches;
     CHAR Name[16];
     struct _QZ_THREAD *Next;       /* circular run list */
+
+    /* Dispatcher wait state (ke/wait.c) */
+    PKWAIT_BLOCK WaitBlockList;    /* blocks of the current wait */
+    ULONG WaitCount;
+    NTSTATUS WaitStatus;
+    BOOLEAN TimeoutActive;
+    ULONGLONG TimeoutInterruptTime;/* absolute, in interrupt time */
+    BOOLEAN WaitNext;              /* a KeSet/Release(..., Wait=TRUE) is pending */
+    KIRQL WaitIrql;                /* IRQL to return to after that wait */
+    KWAIT_BLOCK WaitBlock[QZ_THREAD_WAIT_BLOCKS];
+
+    SHORT KernelApcDisable;        /* KeEnter/LeaveCriticalRegion */
 } QZ_THREAD, *PQZ_THREAD;
+
+/* ---------------------------------------------------------------------- */
+/* Processor control region: binary compatible with the NT x86 KIPCR for   */
+/* the fields drivers and the HAL read directly (Irql at FS:0x24, Number   */
+/* at FS:0x51, PRCB at FS:0x120 with CurrentThread at FS:0x124).           */
+/* ---------------------------------------------------------------------- */
+
+typedef struct _QZ_PRCB
+{
+    USHORT MinorVersion;
+    USHORT MajorVersion;
+    PQZ_THREAD CurrentThread;
+    PQZ_THREAD NextThread;
+    PQZ_THREAD IdleThread;
+    CCHAR Number;
+
+    /* qzkrnl private */
+    LIST_ENTRY DpcListHead;
+    ULONG DpcQueueDepth;
+    ULONG DpcCount;
+    volatile BOOLEAN DpcPending;      /* DISPATCH_LEVEL software interrupt: DPCs */
+    volatile BOOLEAN TimerPending;    /* clock tick wants timer expiration */
+    volatile BOOLEAN DispatchPending; /* reschedule requested */
+    volatile BOOLEAN DpcRoutineActive;
+} QZ_PRCB, *PQZ_PRCB;
+
+typedef struct _QZ_PCR
+{
+    KPCR Pcr;                       /* 0x000 */
+    ULONG InterruptMode;            /* 0x0D4 */
+    UCHAR Spare1;                   /* 0x0D8 */
+    ULONG KernelReserved2[17];      /* 0x0DC */
+    QZ_PRCB Prcb;                   /* 0x120 */
+} QZ_PCR, *PQZ_PCR;
+
+extern QZ_PCR QzPcr;
+#define QzPrcb (&QzPcr.Prcb)
 
 /* ---------------------------------------------------------------------- */
 /* Globals                                                                 */
@@ -115,8 +166,9 @@ typedef struct _QZ_THREAD
 
 extern PLOADER_PARAMETER_BLOCK QzLoaderBlock;
 extern volatile ULONG QzTicks;
-extern PQZ_THREAD QzCurrentThread;
+#define QzCurrentThread (QzPcr.Prcb.CurrentThread)
 extern ULONG NtBuildNumber;
+extern volatile ULONGLONG QzInterruptTime;   /* 100ns since boot */
 
 /* ---------------------------------------------------------------------- */
 /* CPU helpers                                                             */
@@ -198,11 +250,44 @@ VOID QzTimerInit(VOID);
 /* ke/sched.c */
 VOID QzSchedInit(VOID);
 PQZ_THREAD QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context);
-PQZ_TRAP_FRAME QzSchedule(PQZ_TRAP_FRAME Frame);
+PQZ_TRAP_FRAME QzSelectNextThread(PQZ_TRAP_FRAME Frame, KIRQL CurrentIrql);
+VOID QzReadyThread(PQZ_THREAD Thread);
+VOID QzSwapThread(VOID);
 VOID QzYield(VOID);
 VOID QzSleepTicks(ULONG Ticks);
 VOID QzDumpThreads(VOID);
 ULONG QzThreadCount(VOID);
+PQZ_THREAD QzFirstThread(VOID);
+
+/* ke/irql.c -- IRQL, software interrupts and DPCs */
+KIRQL QzGetCurrentIrql(VOID);
+KIRQL QzRaiseIrql(KIRQL NewIrql);
+VOID QzLowerIrql(KIRQL NewIrql);
+PQZ_TRAP_FRAME QzDispatchSoftwareInterrupt(PQZ_TRAP_FRAME Frame, KIRQL Irql);
+VOID QzRetireDpcs(VOID);
+KIRQL QzAcquireSpinLock(PKSPIN_LOCK SpinLock);
+VOID QzReleaseSpinLock(PKSPIN_LOCK SpinLock, KIRQL OldIrql);
+
+/* ke/wait.c -- dispatcher objects and waits */
+VOID QzWaitTest(PDISPATCHER_HEADER Object);
+VOID QzUnwaitThread(PQZ_THREAD Thread, NTSTATUS WaitStatus);
+VOID QzExpireThreadTimeouts(VOID);
+NTSTATUS QzDelay(LONGLONG Interval100ns);
+
+/* ke/timerobj.c -- kernel timers */
+VOID QzTimerObjInit(VOID);
+VOID QzExpireTimers(VOID);
+ULONG QzActiveTimerCount(VOID);
+
+/* Exports implemented under internal names (see exports.spec) */
+BOOLEAN NTAPI KeIsExecutingDpc(VOID);
+VOID NTAPI QzKeAcquireSpinLockAtDpcLevel(PKSPIN_LOCK SpinLock);
+VOID NTAPI QzKeReleaseSpinLockFromDpcLevel(PKSPIN_LOCK SpinLock);
+VOID NTAPI QzKeEnterCriticalRegion(VOID);
+VOID NTAPI QzKeLeaveCriticalRegion(VOID);
+
+/* ke/synctest.c */
+VOID QzRunSyncTests(VOID);
 
 /* ke/bugcheck.c */
 DECLSPEC_NORETURN VOID QzBugCheckWithText(ULONG Code, ULONG_PTR P1, ULONG_PTR P2,
@@ -221,6 +306,9 @@ VOID QzMmGetStats(PULONG TotalPages, PULONG FreePages);
 /* mm/pool.c */
 VOID QzPoolInit(VOID);
 VOID QzPoolDumpInfo(VOID);
+
+/* drv/rtc.c */
+VOID QzReadRtc(PTIME_FIELDS TimeFields);
 
 /* drv/serial.c */
 VOID QzSerialInit(VOID);

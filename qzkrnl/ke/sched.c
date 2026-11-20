@@ -6,18 +6,25 @@
  *
  * Context switching is done entirely through trap frames: every interrupt
  * saves the full register state on the current thread's stack, and the
- * dispatcher may return a different thread's frame to resume. The clock
- * interrupt preempts; int 0x2F yields voluntarily.
+ * dispatcher may return a different thread's frame to resume.
  *
- * This is deliberately simple (single CPU, no priorities, no IRQL model yet)
- * and will grow into a KTHREAD/KPRCB based dispatcher -- see ROADMAP.md.
+ * A switch happens in exactly two places:
+ *  - the DISPATCH_LEVEL software interrupt (ke/irql.c), when a reschedule is
+ *    pending and the interrupted code ran below DISPATCH_LEVEL (preemption);
+ *  - the swap vector (int 0x2F), used by a thread to give up the processor
+ *    voluntarily -- to yield, or to block in a wait (at DISPATCH_LEVEL).
+ * Each thread keeps its own IRQL across switches (SavedIrql).
+ *
+ * Single processor, no priorities yet -- see ROADMAP.md.
  */
 
 #include "qz.h"
 
 #define QZ_THREAD_STACK_SIZE   (16 * 1024)
 
-PQZ_THREAD QzCurrentThread;
+/* Exported: drivers read the processor count directly */
+CCHAR KeNumberProcessors = 1;
+
 static PQZ_THREAD QzIdleThread;
 static QZ_THREAD QzBootThread;
 static ULONG QzNextThreadId = 1;
@@ -25,7 +32,7 @@ static ULONG QzNextThreadId = 1;
 extern VOID QzThreadTrampoline(VOID);
 VOID __cdecl QzExitCurrentThread(VOID);
 
-/* New threads start here: EBX = routine, ESI = context */
+/* New threads start here at PASSIVE_LEVEL: EBX = routine, ESI = context */
 __asm__(
     ".text\n"
     ".globl _QzThreadTrampoline\n"
@@ -77,6 +84,7 @@ QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
     Thread->StackSize = QZ_THREAD_STACK_SIZE;
     Thread->Id = QzNextThreadId++;
     Thread->State = QzThreadReady;
+    Thread->SavedIrql = PASSIVE_LEVEL;
     strncpy(Thread->Name, Name, sizeof(Thread->Name) - 1);
 
     /* Fabricate the frame an interrupt would have left behind */
@@ -98,22 +106,35 @@ QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
 VOID
 QzSchedInit(VOID)
 {
-    /* The boot thread adopts the context we are running on right now */
     extern UCHAR QzBootStack[];
 
+    /* The boot thread adopts the context we are running on right now */
     QzBootThread.Id = 0;
     QzBootThread.StackBase = QzBootStack;
     QzBootThread.StackSize = 16 * 1024;
     QzBootThread.State = QzThreadReady;
+    QzBootThread.SavedIrql = PASSIVE_LEVEL;
     strncpy(QzBootThread.Name, "main", sizeof(QzBootThread.Name) - 1);
     QzBootThread.Next = &QzBootThread;
     QzCurrentThread = &QzBootThread;
 
     QzIdleThread = QzCreateThread("idle", QzIdleRoutine, NULL);
+    QzPrcb->IdleThread = QzIdleThread;
 }
 
+PQZ_THREAD
+QzFirstThread(VOID)
+{
+    return QzCurrentThread;
+}
+
+/*
+ * Pick the thread to run next. Called with interrupts disabled from the
+ * swap vector or the dispatch software interrupt; CurrentIrql is the IRQL
+ * the current thread must get back when it is resumed.
+ */
 PQZ_TRAP_FRAME
-QzSchedule(PQZ_TRAP_FRAME Frame)
+QzSelectNextThread(PQZ_TRAP_FRAME Frame, KIRQL CurrentIrql)
 {
     PQZ_THREAD Current = QzCurrentThread, Thread, Next = NULL;
 
@@ -121,18 +142,8 @@ QzSchedule(PQZ_TRAP_FRAME Frame)
         return Frame;
 
     Current->Frame = Frame;
-
-    /* Wake sleepers whose deadline has passed */
-    Thread = Current;
-    do
-    {
-        if (Thread->State == QzThreadWaiting &&
-            (LONG)(QzTicks - Thread->WakeTick) >= 0)
-        {
-            Thread->State = QzThreadReady;
-        }
-        Thread = Thread->Next;
-    } while (Thread != Current);
+    Current->SavedIrql = CurrentIrql;
+    QzPrcb->DispatchPending = FALSE;
 
     /* Round robin: first ready, non-idle thread after the current one */
     for (Thread = Current->Next; ; Thread = Thread->Next)
@@ -151,13 +162,29 @@ QzSchedule(PQZ_TRAP_FRAME Frame)
     if (Next != Current)
         Next->Switches++;
     QzCurrentThread = Next;
+    QzPcr.Pcr.Irql = Next->SavedIrql;
     return Next->Frame;
+}
+
+/* Make a waiting thread runnable again (dispatcher database held) */
+VOID
+QzReadyThread(PQZ_THREAD Thread)
+{
+    Thread->State = QzThreadReady;
+    QzPrcb->DispatchPending = TRUE;
+}
+
+/* Give up the processor; returns when this thread is scheduled again */
+VOID
+QzSwapThread(VOID)
+{
+    __asm__ __volatile__("int $0x2F" : : : "memory");
 }
 
 VOID
 QzYield(VOID)
 {
-    __asm__ __volatile__("int $0x2F" : : : "memory");
+    QzSwapThread();
 }
 
 VOID
@@ -165,18 +192,17 @@ QzSleepTicks(ULONG Ticks)
 {
     if (!QzCurrentThread)
         return;
-    QzCurrentThread->WakeTick = QzTicks + Ticks;
-    QzCurrentThread->State = QzThreadWaiting;
-    QzYield();
+    QzDelay(-(LONGLONG)Ticks * QZ_TIME_INCREMENT);
 }
 
 VOID __cdecl
 QzExitCurrentThread(VOID)
 {
     /* TODO: reap the stack from another thread's context */
+    (VOID)QzRaiseIrql(DISPATCH_LEVEL);
     QzCurrentThread->State = QzThreadTerminated;
     for (;;)
-        QzYield();
+        QzSwapThread();
 }
 
 ULONG
@@ -202,15 +228,75 @@ QzDumpThreads(VOID)
     static PCSTR States[] = { "ready", "waiting", "dead" };
     PQZ_THREAD Thread = QzCurrentThread;
 
-    QzPrint("  TID  NAME            STATE     SWITCHES  STACK\n");
+    QzPrint("  TID  NAME            STATE     SWITCHES  IRQL  STACK\n");
     do
     {
-        QzPrint("  %3lu  %-15s %-8s %9lu  %p%s\n",
+        QzPrint("  %3lu  %-15s %-8s %9lu  %4u  %p%s\n",
                 Thread->Id, Thread->Name, States[Thread->State],
-                Thread->Switches, Thread->StackBase,
+                Thread->Switches,
+                Thread == QzCurrentThread ? QzGetCurrentIrql() : Thread->SavedIrql,
+                Thread->StackBase,
                 Thread == QzCurrentThread ? "  <- running" : "");
         Thread = Thread->Next;
     } while (Thread != QzCurrentThread);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Exports                                                                 */
+/* ---------------------------------------------------------------------- */
+
+#undef KeGetCurrentThread
+
+PKTHREAD
+NTAPI
+KeGetCurrentThread(VOID)
+{
+    /* Opaque to drivers: they only pass it back to the kernel */
+    return (PKTHREAD)QzCurrentThread;
+}
+
+KPROCESSOR_MODE
+NTAPI
+KeGetPreviousMode(VOID)
+{
+    /* No user mode yet */
+    return KernelMode;
+}
+
+KPROCESSOR_MODE
+NTAPI
+ExGetPreviousMode(VOID)
+{
+    return KernelMode;
+}
+
+VOID
+NTAPI
+QzKeEnterCriticalRegion(VOID)
+{
+    QzCurrentThread->KernelApcDisable--;
+}
+
+VOID
+NTAPI
+QzKeLeaveCriticalRegion(VOID)
+{
+    QzCurrentThread->KernelApcDisable++;
+}
+
+BOOLEAN
+NTAPI
+KeAreApcsDisabled(VOID)
+{
+    return QzCurrentThread->KernelApcDisable != 0 ||
+           QzGetCurrentIrql() >= APC_LEVEL;
+}
+
+KAFFINITY
+NTAPI
+KeQueryActiveProcessors(VOID)
+{
+    return 1;
 }
 
 NTSTATUS
@@ -219,19 +305,52 @@ KeDelayExecutionThread(IN KPROCESSOR_MODE WaitMode,
                        IN BOOLEAN Alertable,
                        IN PLARGE_INTEGER Interval)
 {
-    LONGLONG Delay;
-    ULONG Ticks;
-
     UNREFERENCED_PARAMETER(WaitMode);
     UNREFERENCED_PARAMETER(Alertable);
+    return QzDelay(Interval->QuadPart);
+}
 
-    /* Negative = relative (100ns units); absolute times are not supported yet */
-    Delay = Interval->QuadPart < 0 ? -Interval->QuadPart : 0;
-    Ticks = (ULONG)((ULONGLONG)(Delay + QZ_TIME_INCREMENT - 1) / QZ_TIME_INCREMENT);
+/* NT 6.0 / 6.1 processor and group queries: one processor, one group */
 
-    if (Ticks == 0)
-        QzYield();
-    else
-        QzSleepTicks(Ticks);
-    return STATUS_SUCCESS;
+ULONG
+NTAPI
+QzKeQueryActiveProcessorCount(OUT PKAFFINITY ActiveProcessors OPTIONAL)
+{
+    if (ActiveProcessors)
+        *ActiveProcessors = 1;
+    return 1;
+}
+
+ULONG
+NTAPI
+QzKeQueryProcessorCountEx(IN USHORT GroupNumber)
+{
+    return (GroupNumber == 0 || GroupNumber == ALL_PROCESSOR_GROUPS) ? 1 : 0;
+}
+
+ULONG
+NTAPI
+QzKeQueryMaximumProcessorCount(VOID)
+{
+    return 1;
+}
+
+USHORT
+NTAPI
+QzKeQueryGroupCount(VOID)
+{
+    return 1;
+}
+
+ULONG
+NTAPI
+QzKeGetCurrentProcessorNumberEx(OUT PPROCESSOR_NUMBER ProcNumber OPTIONAL)
+{
+    if (ProcNumber)
+    {
+        ProcNumber->Group = 0;
+        ProcNumber->Number = 0;
+        ProcNumber->Reserved = 0;
+    }
+    return 0;
 }

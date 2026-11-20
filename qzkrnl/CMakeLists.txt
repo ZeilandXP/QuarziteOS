@@ -25,17 +25,23 @@ list(APPEND SOURCE
     ex/version.c
     ke/bugcheck.c
     ke/irq.c
+    ke/irql.c
     ke/sched.c
+    ke/synctest.c
+    ke/timerobj.c
+    ke/wait.c
     ke/i386/cpu.c
     ke/i386/trap.c
     mm/mm.c
     mm/pool.c
     drv/input.c
     drv/kbd.c
+    drv/rtc.c
     drv/serial.c
     drv/vga.c
     rtl/print.c
-    rtl/rtl.c)
+    rtl/rtl.c
+    rtl/time.c)
 
 add_executable(qzkrnl
     ${SOURCE}

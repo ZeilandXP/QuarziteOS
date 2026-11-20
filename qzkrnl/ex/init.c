@@ -141,6 +141,11 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzMmInit(LoaderBlock);
     QzVgaInit();
     QzPoolInit();
+    {
+        extern VOID QzSharedUserDataInit(VOID);
+        QzSharedUserDataInit();
+    }
+    QzTimerObjInit();
 
     QzSetConsoleColor(0x0B);
     QzPrint("\n  " QZ_PRODUCT_NAME " " QZ_VERSION_STR "  --  " QZ_KERNEL_NAME
@@ -170,6 +175,7 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzCreateThread("status", QzStatusThread, NULL);
 
     DbgPrint(QZ_KERNEL_NAME ": interrupts on, scheduler running\n");
+    QzPcr.Pcr.Irql = PASSIVE_LEVEL;
     __asm__ __volatile__("sti");
 
     QzShell();

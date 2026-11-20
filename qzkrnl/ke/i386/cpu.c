@@ -42,19 +42,20 @@ typedef struct _QZ_TSS
 } QZ_TSS;
 #include <poppack.h>
 
-/* Minimal processor control region reachable through FS:[0] */
-typedef struct _QZ_PCR
-{
-    struct _QZ_PCR *Self;
-    ULONG Number;
-    PVOID CurrentThread;
-    ULONG Reserved[13];
-} QZ_PCR;
+/* The processor control region (layout in qz.h), reached through FS */
+QZ_PCR QzPcr;
+
+/* Offsets drivers and the HAL depend on */
+C_ASSERT(FIELD_OFFSET(KPCR, SelfPcr) == 0x1C);
+C_ASSERT(FIELD_OFFSET(KPCR, Prcb) == 0x20);
+C_ASSERT(FIELD_OFFSET(KPCR, Irql) == 0x24);
+C_ASSERT(FIELD_OFFSET(KPCR, Number) == 0x51);
+C_ASSERT(FIELD_OFFSET(QZ_PCR, Prcb) == 0x120);
+C_ASSERT(FIELD_OFFSET(QZ_PCR, Prcb.CurrentThread) == 0x124);
 
 static QZ_GDT_ENTRY QzGdt[16] __attribute__((aligned(16)));
 static QZ_IDT_ENTRY QzIdt[256] __attribute__((aligned(16)));
 static QZ_TSS QzTss __attribute__((aligned(16)));
-static QZ_PCR QzPcr;
 static UCHAR QzTssStack[8192] __attribute__((aligned(16)));
 
 static VOID
@@ -99,8 +100,21 @@ QzCpuInit(VOID)
     QzSetGdtEntry(QZ_SEL_TSS, (ULONG)(ULONG_PTR)&QzTss, sizeof(QzTss) - 1, 0x89, 0x00);
 
     /* PCR: FS points at the processor control region, like on NT */
-    QzPcr.Self = &QzPcr;
-    QzPcr.Number = 0;
+    RtlZeroMemory(&QzPcr, sizeof(QzPcr));
+    QzPcr.Pcr.NtTib.Self = &QzPcr.Pcr.NtTib;
+    QzPcr.Pcr.SelfPcr = &QzPcr.Pcr;
+    QzPcr.Pcr.Prcb = (struct _KPRCB *)&QzPcr.Prcb;
+    QzPcr.Pcr.Irql = HIGH_LEVEL;          /* interrupts are off until init is done */
+    QzPcr.Pcr.MajorVersion = 1;
+    QzPcr.Pcr.MinorVersion = 1;
+    QzPcr.Pcr.SetMember = 1;
+    QzPcr.Pcr.Number = 0;
+    QzPcr.Pcr.TSS = (struct _KTSS *)&QzTss;
+    QzPcr.Pcr.GDT = (struct _KGDTENTRY *)QzGdt;
+    QzPcr.Pcr.IDT = (struct _KIDTENTRY *)QzIdt;
+    QzPcr.Prcb.MajorVersion = 1;
+    QzPcr.Prcb.MinorVersion = 1;
+    InitializeListHead(&QzPcr.Prcb.DpcListHead);
     QzSetGdtEntry(QZ_SEL_R0_PCR, (ULONG)(ULONG_PTR)&QzPcr, sizeof(QzPcr) - 1, 0x92, 0x40);
 
     Gdtr.Limit = sizeof(QzGdt) - 1;

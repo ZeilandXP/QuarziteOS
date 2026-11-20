@@ -217,11 +217,15 @@ def run_qzkrnl(iso, out):
                 ("uptime", [r"KeTickCount = \d+"]),
                 ("cpu", [r"\w+"]),
                 ("exports", [r"\d+ implemented by qzkrnl"]),
+                ("time", [r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (19|20)\d\d-\d\d-\d\d \d\d:\d\d:\d\d"]),
+                ("synctest", [r"synctest: \d+ passed, 0 failed"]),
+                ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0\), \d+ DPCs retired"]),
             ]
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 30, start=mark + len(cmd))
+                text = vm.wait_serial(r"qz> ", 90 if cmd == "synctest" else 30,
+                                      start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)
                 missing = [p for p in patterns if not re.search(p, output)]

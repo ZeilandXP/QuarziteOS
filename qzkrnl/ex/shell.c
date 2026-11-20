@@ -51,6 +51,10 @@ QzCmdHelp(VOID)
             "  uptime            tick count and uptime\n"
             "  cpu               processor identification\n"
             "  exports           kernel export coverage\n"
+            "  synctest          self-test: IRQL, DPCs, spinlocks, events, mutexes,\n"
+            "                    semaphores, waits, timers, system time\n"
+            "  irql              current IRQL, DPC and timer statistics\n"
+            "  time              date and time (CMOS clock + KeQuerySystemTime)\n"
             "  call <export>     call a kernel export by name (stubs bug check)\n"
             "  bugcheck          KeBugCheckEx(MANUALLY_INITIATED_CRASH)\n"
             "  crash             touch an unmapped address (page fault)\n"
@@ -205,6 +209,25 @@ QzExecute(PCHAR Line)
         QzPrint("  ntoskrnl.exe export surface: %u implemented by qzkrnl,\n"
                 "  %u function stubs and %u data stubs (see qzkrnl/exports.spec)\n",
                 QZ_EXPORTS_IMPLEMENTED, QZ_EXPORTS_STUB_FUNCS, QZ_EXPORTS_STUB_DATA);
+    }
+    else if (!strcmp(Cmd, "synctest"))
+        QzRunSyncTests();
+    else if (!strcmp(Cmd, "irql"))
+    {
+        QzPrint("  IRQL %u (PCR FS:0x24 = %u), %lu DPCs retired, %lu queued, %lu active timers\n",
+                QzGetCurrentIrql(), __readfsbyte(0x24), QzPrcb->DpcCount,
+                QzPrcb->DpcQueueDepth, QzActiveTimerCount());
+    }
+    else if (!strcmp(Cmd, "time"))
+    {
+        static PCSTR Days[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+        LARGE_INTEGER Now;
+        TIME_FIELDS Tf;
+        KeQuerySystemTime(&Now);
+        RtlTimeToTimeFields(&Now, &Tf);
+        QzPrint("  %s %04d-%02d-%02d %02d:%02d:%02d.%03d (system time %I64u)\n",
+                Days[Tf.Weekday % 7], Tf.Year, Tf.Month, Tf.Day, Tf.Hour, Tf.Minute,
+                Tf.Second, Tf.Milliseconds, Now.QuadPart);
     }
     else if (!strcmp(Cmd, "call"))
     {

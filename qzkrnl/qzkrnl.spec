@@ -42,6 +42,67 @@
 @ cdecl _vsnprintf()
 @ cdecl _snprintf()
 @ varargs sprintf(ptr str)
+@ stdcall KeInitializeDpc(ptr ptr ptr)
+@ stdcall KeInitializeThreadedDpc(ptr ptr ptr)
+@ stdcall KeInsertQueueDpc(ptr ptr ptr)
+@ stdcall KeRemoveQueueDpc(ptr)
+@ stdcall KeSetImportanceDpc(ptr long)
+@ stdcall KeSetTargetProcessorDpc(ptr long)
+@ stdcall -arch=i386,arm KeIsExecutingDpc()
+@ stdcall KeFlushQueuedDpcs()
+@ stdcall -arch=i386,arm KeInitializeSpinLock(ptr) QzKeInitializeSpinLock
+@ stdcall KeAcquireSpinLockAtDpcLevel(ptr) QzKeAcquireSpinLockAtDpcLevel
+@ stdcall KeReleaseSpinLockFromDpcLevel(ptr) QzKeReleaseSpinLockFromDpcLevel
+@ fastcall -arch=i386,arm KefAcquireSpinLockAtDpcLevel(ptr)
+@ fastcall -arch=i386,arm KefReleaseSpinLockFromDpcLevel(ptr)
+@ fastcall KeTryToAcquireSpinLockAtDpcLevel(ptr)
+@ fastcall KeTestSpinLock(ptr)
+@ fastcall KeAcquireInStackQueuedSpinLockAtDpcLevel(ptr ptr)
+@ fastcall KeReleaseInStackQueuedSpinLockFromDpcLevel(ptr)
+@ stdcall KeInitializeEvent(ptr long long)
+@ stdcall KeSetEvent(ptr long long)
+@ stdcall KeResetEvent(ptr)
+@ stdcall KeClearEvent(ptr)
+@ stdcall KePulseEvent(ptr long long)
+@ stdcall KeReadStateEvent(ptr)
+@ stdcall KeInitializeMutant(ptr long)
+@ stdcall KeInitializeMutex(ptr long)
+@ stdcall KeReleaseMutant(ptr long long long)
+@ stdcall KeReleaseMutex(ptr long)
+@ stdcall KeReadStateMutant(ptr)
+@ stdcall KeReadStateMutex(ptr) KeReadStateMutant
+@ stdcall KeInitializeSemaphore(ptr long long)
+@ stdcall KeReleaseSemaphore(ptr long long long)
+@ stdcall KeReadStateSemaphore(ptr)
+@ stdcall KeWaitForSingleObject(ptr long long long ptr)
+@ stdcall KeWaitForMutexObject(ptr long long long ptr) KeWaitForSingleObject
+@ stdcall KeWaitForMultipleObjects(long ptr long long long long ptr ptr)
+@ stdcall KeInitializeTimer(ptr)
+@ stdcall KeInitializeTimerEx(ptr long)
+@ stdcall KeSetTimer(ptr long long ptr)
+@ stdcall KeSetTimerEx(ptr long long long ptr)
+@ stdcall KeCancelTimer(ptr)
+@ stdcall KeReadStateTimer(ptr)
+@ stdcall -arch=i386,arm KeQuerySystemTime(ptr)
+@ stdcall -arch=i386,arm KeQueryInterruptTime()
+@ stdcall RtlTimeToTimeFields(ptr ptr)
+@ stdcall RtlTimeFieldsToTime(ptr ptr)
+@ stdcall KeGetCurrentThread()
+@ stdcall PsGetCurrentThread() KeGetCurrentThread
+@ stdcall KeGetPreviousMode()
+@ stdcall ExGetPreviousMode()
+@ stdcall KeEnterCriticalRegion() QzKeEnterCriticalRegion
+@ stdcall KeLeaveCriticalRegion() QzKeLeaveCriticalRegion
+@ stdcall KeAreApcsDisabled()
+@ stdcall KeQueryActiveProcessors()
+@ extern KeNumberProcessors
+@ stdcall -version=0x600+ KeQueryActiveProcessorCount(ptr) QzKeQueryActiveProcessorCount
+@ stdcall -version=0x601+ KeQueryActiveProcessorCountEx(long) QzKeQueryProcessorCountEx
+@ stdcall -version=0x601+ KeQueryActiveGroupCount() QzKeQueryGroupCount
+@ stdcall -version=0x601+ KeQueryMaximumGroupCount() QzKeQueryGroupCount
+@ stdcall -version=0x600+ KeQueryMaximumProcessorCount() QzKeQueryMaximumProcessorCount
+@ stdcall -version=0x601+ KeQueryMaximumProcessorCountEx(long) QzKeQueryProcessorCountEx
+@ stdcall -version=0x601+ KeGetCurrentProcessorNumberEx(ptr) QzKeGetCurrentProcessorNumberEx
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -131,7 +192,6 @@
 @ stub ExGetCurrentProcessorCounts
 @ stub ExGetCurrentProcessorCpuUsage
 @ stub ExGetExclusiveWaiterCount
-@ stub ExGetPreviousMode
 @ stub ExGetSharedWaiterCount
 @ stub ExInitializeNPagedLookasideList
 @ stub ExInitializePagedLookasideList
@@ -596,40 +656,31 @@
 @ stub KeAcquireGuardedMutex
 @ stub KeAcquireGuardedMutexUnsafe
 @ stub -arch=x86_64 KeAcquireInStackQueuedSpinLock
-@ stub KeAcquireInStackQueuedSpinLockAtDpcLevel
 @ stub KeAcquireInStackQueuedSpinLockForDpc
 @ stub -arch=x86_64 KeAcquireInStackQueuedSpinLockRaiseToSynch
 @ stub KeAcquireInterruptSpinLock
 @ stub -arch=x86_64 KeAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeAcquireQueuedSpinLockRaiseToSynch
-@ stub KeAcquireSpinLockAtDpcLevel
 @ stub KeAcquireSpinLockForDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToSynch
 @ stub KeAddSystemServiceTable
 @ stub KeAreAllApcsDisabled
-@ stub KeAreApcsDisabled
 @ stub KeAttachProcess
-@ stub KeCancelTimer
 @ stub KeCapturePersistentThreadState
-@ stub KeClearEvent
 @ stub KeConnectInterrupt
 @ stub KeDeregisterBugCheckCallback
 @ stub KeDeregisterBugCheckReasonCallback
 @ stub KeDeregisterNmiCallback
 @ stub KeDetachProcess
 @ stub KeDisconnectInterrupt
-@ stub KeEnterCriticalRegion
 @ stub KeEnterGuardedRegion
 @ stub KeEnterKernelDebugger
 @ stub KeFindConfigurationEntry
 @ stub KeFindConfigurationNextEntry
 @ stub KeFlushEntireTb
 @ stub -arch=arm KeFlushIoBuffers
-@ stub KeFlushQueuedDpcs
 @ stub KeGenericCallDpc
-@ stub KeGetCurrentThread
-@ stub KeGetPreviousMode
 @ stub KeGetRecommendedSharedDataAlignment
 @ stub -arch=i386 KeI386AbiosCall
 @ stub -arch=i386 KeI386AllocateGdtSelectors
@@ -644,50 +695,28 @@
 @ stub KeInitializeApc
 @ stub KeInitializeCrashDumpHeader
 @ stub KeInitializeDeviceQueue
-@ stub KeInitializeDpc
-@ stub KeInitializeEvent
 @ stub KeInitializeGuardedMutex
 @ stub KeInitializeInterrupt
-@ stub KeInitializeMutant
-@ stub KeInitializeMutex
 @ stub KeInitializeQueue
-@ stub KeInitializeSemaphore
-@ stub -arch=i386,arm KeInitializeSpinLock
-@ stub KeInitializeThreadedDpc
-@ stub KeInitializeTimer
-@ stub KeInitializeTimerEx
 @ stub KeInsertByKeyDeviceQueue
 @ stub KeInsertDeviceQueue
 @ stub KeInsertHeadQueue
 @ stub KeInsertQueue
 @ stub KeInsertQueueApc
-@ stub KeInsertQueueDpc
 @ stub KeInvalidateAllCaches
 @ stub KeIpiGenericCall
 @ stub KeIsAttachedProcess
-@ stub -arch=i386,arm KeIsExecutingDpc
 @ stub KeIsWaitListEmpty
-@ stub KeLeaveCriticalRegion
 @ stub KeLeaveGuardedRegion
 @ extern KeLoaderBlock QzUnimplementedData
 @ stub -arch=x86_64 KeLowerIrql
-@ extern KeNumberProcessors QzUnimplementedData
 @ stub -arch=i386,arm KeProfileInterrupt
 @ stub KeProfileInterruptWithSource
-@ stub KePulseEvent
-@ stub KeQueryActiveProcessors
-@ stub -arch=i386,arm KeQueryInterruptTime
 @ stub KeQueryPriorityThread
 @ stub KeQueryRuntimeThread
-@ stub -arch=i386,arm KeQuerySystemTime
 @ stub -arch=x86_64 KeRaiseIrqlToDpcLevel
 @ stub KeRaiseUserException
-@ stub KeReadStateEvent
-@ stub KeReadStateMutant
-@ stub KeReadStateMutex
 @ stub KeReadStateQueue
-@ stub KeReadStateSemaphore
-@ stub KeReadStateTimer
 @ stub KeRegisterBugCheckCallback
 @ stub KeRegisterBugCheckReasonCallback
 @ stub KeRegisterNmiCallback
@@ -695,23 +724,16 @@
 @ stub KeReleaseGuardedMutexUnsafe
 @ stub -arch=x86_64 KeReleaseInStackQueuedSpinLock
 @ stub KeReleaseInStackQueuedSpinLockForDpc
-@ stub KeReleaseInStackQueuedSpinLockFromDpcLevel
 @ stub KeReleaseInterruptSpinLock
-@ stub KeReleaseMutant
-@ stub KeReleaseMutex
 @ stub -arch=x86_64 KeReleaseQueuedSpinLock
-@ stub KeReleaseSemaphore
 @ stub -arch=x86_64 KeReleaseSpinLock
 @ stub KeReleaseSpinLockForDpc
-@ stub KeReleaseSpinLockFromDpcLevel
 @ stub KeRemoveByKeyDeviceQueue
 @ stub KeRemoveByKeyDeviceQueueIfBusy
 @ stub KeRemoveDeviceQueue
 @ stub KeRemoveEntryDeviceQueue
 @ stub KeRemoveQueue
-@ stub KeRemoveQueueDpc
 @ stub KeRemoveSystemServiceTable
-@ stub KeResetEvent
 @ stub -arch=i386 KeRestoreFloatingPointState
 @ stub -arch=x86_64 KeRestoreFloatingPointState
 @ stub KeRevertToUserAffinityThread
@@ -723,37 +745,25 @@
 @ stub KeSetAffinityThread
 @ stub KeSetBasePriorityThread
 @ stub KeSetDmaIoCoherency
-@ stub KeSetEvent
 @ stub KeSetEventBoostPriority
 @ stub KeSetIdealProcessorThread
-@ stub KeSetImportanceDpc
 @ stub KeSetKernelStackSwapEnable
 @ stub KeSetPriorityThread
 @ stub KeSetProfileIrql
 @ stub KeSetSystemAffinityThread
-@ stub KeSetTargetProcessorDpc
 @ stub KeSetTimeIncrement
-@ stub KeSetTimer
-@ stub KeSetTimerEx
 @ stub KeSignalCallDpcDone
 @ stub KeSignalCallDpcSynchronize
 @ stub KeStackAttachProcess
 @ stub KeSynchronizeExecution
 @ stub KeTerminateThread
-@ stub KeTestSpinLock
 @ stub KeTryToAcquireGuardedMutex
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLockRaiseToSynch
-@ stub KeTryToAcquireSpinLockAtDpcLevel
 @ stub KeUnstackDetachProcess
 @ stub KeUpdateRunTime
 @ stub KeUpdateSystemTime
 @ stub KeUserModeCallback
-@ stub KeWaitForMultipleObjects
-@ stub KeWaitForMutexObject
-@ stub KeWaitForSingleObject
-@ stub -arch=i386,arm KefAcquireSpinLockAtDpcLevel
-@ stub -arch=i386,arm KefReleaseSpinLockFromDpcLevel
 @ stub -arch=i386 Kei386EoiHelper
 @ stub -arch=x86_64 KfRaiseIrql
 @ stub -arch=i386 KiEoiHelper
@@ -998,7 +1008,6 @@
 @ stub PsGetCurrentProcessId
 @ stub PsGetCurrentProcessSessionId
 @ stub PsGetCurrentProcessWin32Process
-@ stub PsGetCurrentThread
 @ stub PsGetCurrentThreadId
 @ stub PsGetCurrentThreadPreviousMode
 @ stub PsGetCurrentThreadProcess
@@ -1315,11 +1324,9 @@
 @ stub RtlSubtreePredecessor
 @ stub RtlSubtreeSuccessor
 @ stub RtlTestBit
-@ stub RtlTimeFieldsToTime
 @ stub RtlTimeToElapsedTimeFields
 @ stub RtlTimeToSecondsSince1970
 @ stub RtlTimeToSecondsSince1980
-@ stub RtlTimeToTimeFields
 @ stub RtlTraceDatabaseAdd
 @ stub RtlTraceDatabaseCreate
 @ stub RtlTraceDatabaseDestroy

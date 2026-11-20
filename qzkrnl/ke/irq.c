@@ -9,6 +9,7 @@
  */
 
 #include "qz.h"
+#include <ntimage.h>
 
 #undef KeTickCount
 #undef KeQueryTickCount
@@ -16,6 +17,9 @@
 /* Exported: drivers read the tick count directly on x86 */
 volatile KSYSTEM_TIME KeTickCount;
 volatile ULONG QzTicks;
+volatile ULONGLONG QzInterruptTime;
+
+#undef KeQuerySystemTime
 
 static UCHAR QzPicMask[2] = { 0xFF, 0xFF };
 
@@ -79,20 +83,59 @@ QzTimerInit(VOID)
     QzPicUnmask(QZ_IRQ_TIMER);
 }
 
+/* KSYSTEM_TIME update protocol: High2, Low, High1 */
+static __inline VOID
+QzStoreSystemTime(volatile KSYSTEM_TIME *Time, ULONGLONG Value)
+{
+    Time->High2Time = (LONG)(Value >> 32);
+    Time->LowPart = (ULONG)Value;
+    Time->High1Time = (LONG)(Value >> 32);
+}
+
+VOID
+QzSharedUserDataInit(VOID)
+{
+    PKUSER_SHARED_DATA Shared = SharedUserData;   /* 0xFFDF0000, mapped by the loader */
+
+    RtlZeroMemory((PVOID)Shared, sizeof(*Shared));
+    Shared->TickCountMultiplier = (ULONG)(((ULONGLONG)QZ_TIME_INCREMENT << 24) / 10000);
+    Shared->NtMajorVersion = QZ_NT_MAJOR;
+    Shared->NtMinorVersion = QZ_NT_MINOR;
+    Shared->NtProductType = NtProductWinNt;
+    Shared->ProductTypeIsValid = TRUE;
+    Shared->ImageNumberLow = IMAGE_FILE_MACHINE_I386;
+    Shared->ImageNumberHigh = IMAGE_FILE_MACHINE_I386;
+}
+
+/* Clock interrupt (interrupts disabled, CLOCK level) */
 VOID
 QzClockTick(VOID)
 {
+    PKUSER_SHARED_DATA Shared = SharedUserData;
+    LARGE_INTEGER SystemTime;
     ULONG Low = KeTickCount.LowPart + 1;
     LONG High = KeTickCount.High1Time;
 
     if (Low == 0)
         High++;
 
-    /* KSYSTEM_TIME update protocol: High2, Low, High1 */
     KeTickCount.High2Time = High;
     KeTickCount.LowPart = Low;
     KeTickCount.High1Time = High;
     QzTicks++;
+
+    QzInterruptTime += QZ_TIME_INCREMENT;
+
+    /* x86 drivers read these straight from KUSER_SHARED_DATA */
+    QzStoreSystemTime(&Shared->InterruptTime, QzInterruptTime);
+    KeQuerySystemTime(&SystemTime);
+    QzStoreSystemTime(&Shared->SystemTime, SystemTime.QuadPart);
+    QzStoreSystemTime(&Shared->TickCount,
+                      ((ULONGLONG)(ULONG)High << 32) | Low);
+
+    /* Timer expiration and quantum end, delivered at DISPATCH_LEVEL */
+    QzPrcb->TimerPending = TRUE;
+    QzPrcb->DispatchPending = TRUE;
 }
 
 VOID

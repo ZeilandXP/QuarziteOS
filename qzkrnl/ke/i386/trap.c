@@ -131,6 +131,7 @@ PQZ_TRAP_FRAME __cdecl
 QzTrapDispatch(PQZ_TRAP_FRAME Frame)
 {
     ULONG Vector = Frame->Vector;
+    KIRQL OldIrql = QzPcr.Pcr.Irql;
 
     if (Vector < 32)
     {
@@ -158,14 +159,15 @@ QzTrapDispatch(PQZ_TRAP_FRAME Frame)
             }
         }
 
+        /* Run the ISR at its device IRQL (interrupts stay disabled) */
+        QzPcr.Pcr.Irql = (Irq == QZ_IRQ_TIMER) ? CLOCK2_LEVEL : (KIRQL)(PROFILE_LEVEL - 1 - Irq);
         switch (Irq)
         {
             case QZ_IRQ_TIMER:
             {
                 extern VOID QzClockTick(VOID);
                 QzClockTick();
-                QzPicEoi(Irq);
-                return QzSchedule(Frame);
+                break;
             }
             case QZ_IRQ_KEYBOARD:
                 QzKbdIsr();
@@ -177,11 +179,22 @@ QzTrapDispatch(PQZ_TRAP_FRAME Frame)
                 break;
         }
         QzPicEoi(Irq);
+        QzPcr.Pcr.Irql = OldIrql;
+
+        /* Deliver the DISPATCH software interrupt if it can run now */
+        if (OldIrql < DISPATCH_LEVEL)
+            return QzDispatchSoftwareInterrupt(Frame, OldIrql);
         return Frame;
     }
 
-    if (Vector == QZ_VECTOR_YIELD)
-        return QzSchedule(Frame);
+    if (Vector == QZ_VECTOR_SWAP)
+    {
+        /* Voluntary switch: yield, or block in a wait (at DISPATCH_LEVEL) */
+        Frame = QzSelectNextThread(Frame, OldIrql);
+        if (QzPcr.Pcr.Irql < DISPATCH_LEVEL)
+            Frame = QzDispatchSoftwareInterrupt(Frame, QzPcr.Pcr.Irql);
+        return Frame;
+    }
 
     DbgPrint("qzkrnl: unexpected interrupt 0x%02lx at %08lx\n", Vector, Frame->Eip);
     return Frame;

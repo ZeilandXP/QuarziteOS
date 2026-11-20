@@ -45,24 +45,31 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | CPU | Own GDT (NT selector layout), TSS, IDT with 256 vectors, PCR on `FS`. |
 | Traps | Common trap-frame path. Exceptions produce NT-style stop screens (`0x1E`, `0x50`, `0x7F`). |
 | Interrupts | 8259 PIC remapped to NT's vector base `0x30`; 8254 PIT at 100 Hz. |
-| Time | `KeTickCount` (exported data, NT update protocol), `KeQueryTickCount`, `KeQueryTimeIncrement`. |
-| Scheduler | Preemptive round-robin kernel threads, sleep/yield, `KeDelayExecutionThread`. |
+| Time | CMOS RTC at boot plus a 100 Hz clock: `KeQuerySystemTime`, `KeQueryInterruptTime`, `KeTickCount`/`KeQueryTickCount`, `RtlTimeToTimeFields`/`RtlTimeFieldsToTime`. Interrupt time, system time, tick count and NT version are published in `KUSER_SHARED_DATA` (`0xFFDF0000`), where x86 drivers read them. |
+| IRQL | Lives in the PCR at `FS:0x24`, as the HAL and drivers expect. At DISPATCH_LEVEL and above, DPCs and thread switches are deferred. Lowering below DISPATCH_LEVEL delivers the DISPATCH software interrupt: expired timers, then queued DPCs, then a pending reschedule. |
+| PCR | Binary layout of the NT x86 `KIPCR` for the fields read directly: `SelfPcr`, `Prcb`, `Irql`, `Number`; PRCB at `0x120` with `CurrentThread` at `FS:0x124`. |
+| DPCs | `KeInitialize[Threaded]Dpc`, `KeInsertQueueDpc` (importance-aware), `KeRemoveQueueDpc`, `KeFlushQueuedDpcs`, `KeIsExecutingDpc`. |
+| Spinlocks | `Ke[f]AcquireSpinLockAtDpcLevel`, release, try, test, in-stack queued. On one CPU, re-acquiring a held lock is reported (`SPIN_LOCK_ALREADY_OWNED`). |
+| Dispatcher | `KEVENT` (notification/synchronization, set/reset/clear/pulse), `KMUTANT`/`KMUTEX` (recursive ownership, `THREAD_NOT_MUTEX_OWNER`), `KSEMAPHORE`, all with the public NT layouts. `KeWaitForSingleObject`/`KeWaitForMultipleObjects` (WaitAny/WaitAll, timeouts, `Wait=TRUE` chaining) with NT-style direct handoff. |
+| Timers | `KTIMER` one-shot/periodic, notification/synchronization, optional DPC; `KeSetTimer[Ex]`, `KeCancelTimer`, `KeReadStateTimer`. |
+| Scheduler | Preemptive round-robin kernel threads, each with its own saved IRQL; `KeDelayExecutionThread`, critical regions, `KeGetCurrentThread`. |
 | Memory | Physical page bitmap built from the loader's memory descriptors; page tables managed through the self-map; `MmMapIoSpace`, `MmUnmapIoSpace`, `MmGetPhysicalAddress`. |
 | Pool | `ExAllocatePool[WithTag]` and `ExFreePool[WithTag]`, with tag and caller checks (`BAD_POOL_CALLER`). |
 | Version | `RtlGetVersion`, `PsGetVersion` and `NtBuildNumber` report **6.1.7601 Service Pack 1**. |
 | Rtl | Formatted output with the NT format dialect (`%wZ`, `%Z`, `%S`, `%I64u`...), `DbgPrint[Ex]`, `_vsnprintf`, string and memory routines, counted strings. |
 | Console | VGA text console with a live status line, PS/2 keyboard, COM1 (115200 8N1) input and output. |
-| Shell | `help`, `ver`, `mem`, `pool`, `pooltest`, `mods`, `drivers`, `threads`, `spawn`, `sleep`, `uptime`, `cpu`, `exports`, `call <export>`, `bugcheck`, `crash`, `reboot`. |
+| Shell | `help`, `ver`, `mem`, `pool`, `pooltest`, `mods`, `drivers`, `threads`, `spawn`, `sleep`, `uptime`, `cpu`, `exports`, `synctest`, `irql`, `time`, `call <export>`, `bugcheck`, `crash`, `reboot`. |
 
 ## Layout
 
 ```
 qzkrnl/
   ex/        init (entry, phase 0), version reporting, debug shell
-  ke/        bug checks, clock/PIC, scheduler; ke/i386: CPU tables, trap stubs
+  ke/        bug checks, clock/PIC, IRQL/DPCs/spinlocks, dispatcher objects and
+             waits, timers, scheduler, self-test; ke/i386: CPU tables, traps
   mm/        physical pages, page tables, pool
-  drv/       serial, VGA text, PS/2 keyboard, input queue
-  rtl/       formatted output, string/memory runtime, export lookup
+  drv/       serial, VGA text, PS/2 keyboard, input queue, CMOS clock
+  rtl/       formatted output, string/memory runtime, time conversion, export lookup
   include/   qz.h (private header), exportstats.h (generated)
   exports.spec, qzkrnl.spec (generated), tools/genspec.py
 ```
@@ -71,8 +78,8 @@ qzkrnl/
 
 See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
 
-1. IRQL and DPCs, spinlocks, dispatcher objects (events, mutexes,
-   semaphores, timers) and waits on a real `KTHREAD`/`KPRCB`.
+1. ~~IRQL and DPCs, spinlocks, dispatcher objects and waits~~ (stage B1,
+   done; see `ke/irql.c`, `ke/wait.c`, `ke/timerobj.c`, `ke/synctest.c`).
 2. Host `HAL.DLL` instead of driving the PIC/PIT directly: implement the
    exports the HAL imports and call `HalInitSystem`.
 3. Object manager, handles, I/O manager and driver loading, then start
