@@ -58,9 +58,25 @@ so this comes first.
 
 ### 4. WDDM 2 backport and modern graphics drivers
 
-- [ ] **WDDM 2.x.** Windows 7 shipped WDDM 1.1; 2.0 arrived with Windows
-      10. Needs a `dxgkrnl` implementing the 2.x driver interfaces,
-      including GPU virtual memory and the newer scheduling model.
+- [ ] **Own clean-room WDDM 2.0.** Windows 7 shipped WDDM 1.1; 2.0 arrived
+      with Windows 10. QuarziteOS writes its own `dxgkrnl` implementing the
+      2.x driver interfaces (GPU virtual memory, the newer scheduling
+      model) from public documentation (WDK headers, MSDN driver docs).
+      Together with Mesa below, it is QuarziteOS's own graphics stack.
+- [ ] **Compatibility target: the ChefKiss WDDM 2 port.** That community
+      project backports WDDM 2.0 (Windows 10 1507/1703 `dxgkrnl`) and
+      DirectX 12 (Windows 10 21H2) onto genuine Windows 7 x64. Its
+      known-working GPU drivers and DirectX 11/12 applications on real
+      Windows 7 x64 become the test matrix QuarziteOS's own implementation
+      has to pass.
+      - Black-box behaviour reference only. The port consists of modified
+        Microsoft binaries plus unlicensed wrapper DLLs, so it is **not**
+        shipped, bundled or redistributed with QuarziteOS.
+      - Its binaries are not disassembled and none of its code is copied
+        (see Ground rules).
+- [ ] **Software graphics first.** Use Mesa (open source) for Direct3D and
+      Vulkan in software (llvmpipe/lavapipe), so applications get a working
+      stack before any GPU driver model exists.
 - [ ] **Modern GPU drivers natively.** A bigger commitment than WDDM
       alone. Current NVIDIA, AMD and Intel drivers import many Windows 10+
       kernel functions, so QuarziteOS needs much of the Win10 kernel export
