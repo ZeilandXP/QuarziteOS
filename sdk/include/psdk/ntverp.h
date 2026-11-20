@@ -14,18 +14,19 @@
  */
 
 //
-// Windows NT Build 3790.3959
+// QuarziteOS targets Windows 7 Service Pack 1:
+// Windows NT Build 7601.17514
 //
-#define VER_PRODUCTBUILD                    3790
-#define VER_PRODUCTBUILD_QFE                3959
+#define VER_PRODUCTBUILD                    7601
+#define VER_PRODUCTBUILD_QFE                17514
 
 //
-// Windows NT Version 5.2
+// Windows NT Version 6.1
 //
-#define VER_PRODUCTMAJORVERSION             5
-#define VER_PRODUCTMINORVERSION             2
-#define VER_PRODUCTVERSION_W                (0x0502)
-#define VER_PRODUCTVERSION_DW               (0x05020000 | VER_PRODUCTBUILD)
+#define VER_PRODUCTMAJORVERSION             6
+#define VER_PRODUCTMINORVERSION             1
+#define VER_PRODUCTVERSION_W                (0x0601)
+#define VER_PRODUCTVERSION_DW               (0x06010000 | VER_PRODUCTBUILD)
 
 //
 // Not a beta
@@ -146,6 +147,6 @@
 #define VER_COMPANYNAME_STR                 \
     "ReactOS Project"
 #define VER_PRODUCTNAME_STR                 \
-    "ReactOS Operating System"
+    "QuarziteOS Operating System"
 #define VER_LEGALTRADEMARKS_STR             \
     "ReactOS is a registered trademark of ReactOS Deutschland e.V."

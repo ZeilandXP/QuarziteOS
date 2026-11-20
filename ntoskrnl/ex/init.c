@@ -781,14 +781,23 @@ ExpIsLoaderValid(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* Validate the size (Windows 2003 loader doesn't provide more) */
     if (Extension->Size < LOADER_PARAMETER_EXTENSION_MIN_SIZE) return FALSE;
 
+    /*
+     * QuarziteOS: the loader block layout is the one of the NT version the
+     * kernel is compiled for (_WIN32_WINNT, i.e. Windows Server 2003), which
+     * is independent from the NT version the system reports and targets
+     * (VER_PRODUCTMAJORVERSION/MINORVERSION, i.e. Windows 7 SP1).
+     */
+#define EXP_LOADER_MAJOR_VERSION ((_WIN32_WINNT >> 8) & 0xFF)
+#define EXP_LOADER_MINOR_VERSION (_WIN32_WINNT & 0xFF)
+
     /* Don't validate upper versions */
-    if (Extension->MajorVersion > VER_PRODUCTMAJORVERSION) return TRUE;
+    if (Extension->MajorVersion > EXP_LOADER_MAJOR_VERSION) return TRUE;
 
     /* Fail if this is NT 4 */
-    if (Extension->MajorVersion < VER_PRODUCTMAJORVERSION) return FALSE;
+    if (Extension->MajorVersion < EXP_LOADER_MAJOR_VERSION) return FALSE;
 
     /* Fail if this is XP */
-    if (Extension->MinorVersion < VER_PRODUCTMINORVERSION) return FALSE;
+    if (Extension->MinorVersion < EXP_LOADER_MINOR_VERSION) return FALSE;
 
     /* This is 2003 or newer, approve it */
     return TRUE;
@@ -1509,7 +1518,7 @@ Phase1InitializationDiscard(IN PVOID Context)
     else
     {
         /* Use hard-coded banner message */
-        Status = RtlStringCbCopyA(EndBuffer, Remaining, "REACTOS (R)\r\n");
+        Status = RtlStringCbCopyA(EndBuffer, Remaining, "QUARZITEOS (R)\r\n");
         if (!NT_SUCCESS(Status))
         {
             /* Bugcheck */
