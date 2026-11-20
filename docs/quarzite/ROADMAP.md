@@ -20,6 +20,61 @@ QuarziteOS has two tracks that eventually meet:
 - [x] qzkrnl stage B1: IRQL, DPCs, spinlocks, dispatcher objects, waits,
       timers, system time (`synctest`: 27/27).
 
+## 0.1.1 (next release, after 0.1.0 is done)
+
+> These are large features for a patch number. Under semantic versioning
+> this would be 0.2.0. Reaching B8 alone, qzkrnl replacing ntoskrnl, is a
+> major milestone. The number is kept as planned; revisit before tagging.
+
+### 1. amd64 (x86_64)
+
+Windows 7 SP1 x64 is where most real Windows 7 software and drivers live,
+so this comes first.
+
+- [ ] **System.** Bring the inherited experimental amd64 build (FreeLoader,
+      HAL, drivers, ntoskrnl) to parity with i386.
+- [ ] **qzkrnl on x64** (it is i386-only today):
+  - [ ] x64 trap entry and context switching;
+  - [ ] 4-level paging and the x64 calling convention;
+  - [ ] the x64 loader parameter block layout;
+  - [ ] the PCR through `GS` instead of `FS`.
+- [ ] **WOW64.** Running 32-bit programs is what makes x64 Win7
+      compatibility useful in practice. It is a sizeable project of its own.
+
+### 2. qzkrnl stages B2-B8
+
+- [ ] Complete Track B (table below). At B8 qzkrnl is the default kernel
+      and ntoskrnl is retired.
+
+### 3. USB 1.x / 2.0 / 3.x / USB4
+
+- [ ] **USB 1.x/2.0.** Harden the existing UHCI, OHCI and EHCI drivers.
+- [ ] **USB 3.x (xHCI).** Newer work in the tree (`ucx01000.sys` is part
+      of it). Windows 7 shipped no in-box USB 3 driver; Microsoft's came
+      with Windows 8. Native xHCI goes beyond Win7 parity on purpose.
+- [ ] **USB4.** Windows supports it only from Windows 11, so there is no
+      Win7-era driver model to match. A QuarziteOS extension built on the
+      xHCI and PCIe tunneling work.
+
+### 4. WDDM 2 backport and modern graphics drivers
+
+- [ ] **WDDM 2.x.** Windows 7 shipped WDDM 1.1; 2.0 arrived with Windows
+      10. Needs a `dxgkrnl` implementing the 2.x driver interfaces,
+      including GPU virtual memory and the newer scheduling model.
+- [ ] **Modern GPU drivers natively.** A bigger commitment than WDDM
+      alone. Current NVIDIA, AMD and Intel drivers import many Windows 10+
+      kernel functions, so QuarziteOS needs much of the Win10 kernel export
+      surface, a superset of the Win7 target. Vendor installers and drivers
+      often check the OS version too, so compatibility handling is likely
+      (AppCompat shims, version lie per driver).
+
+### 5. Vulkan 1.2
+
+- [ ] **Software first.** Mesa's lavapipe plus the standard Vulkan loader
+      (`vulkan-1.dll`). Works with no GPU driver model at all.
+- [ ] **Hardware Vulkan.** Comes from the GPU vendor's driver on top of
+      WDDM, so it depends on item 4.
+
 ## Track A: Windows 7 SP1 system
 
 1. **Version plumbing.** Audit every user of `GetVersion*`/`RtlGetVersion`
