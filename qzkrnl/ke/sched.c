@@ -99,7 +99,11 @@ VOID
 QzSchedInit(VOID)
 {
     /* The boot thread adopts the context we are running on right now */
+    extern UCHAR QzBootStack[];
+
     QzBootThread.Id = 0;
+    QzBootThread.StackBase = QzBootStack;
+    QzBootThread.StackSize = 16 * 1024;
     QzBootThread.State = QzThreadReady;
     strncpy(QzBootThread.Name, "main", sizeof(QzBootThread.Name) - 1);
     QzBootThread.Next = &QzBootThread;

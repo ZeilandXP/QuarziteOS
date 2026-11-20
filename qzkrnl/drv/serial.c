@@ -44,7 +44,7 @@ QzSerialPutChar(CHAR c)
         return;
     if (c == '\n')
         QzSerialPutChar('\r');
-    for (Spin = 0; Spin < 100000 && !(QzInB(COM1 + UART_LSR) & 0x20); Spin++)
+    for (Spin = 0; Spin < 10000000 && !(QzInB(COM1 + UART_LSR) & 0x20); Spin++)
         ;
     QzOutB(COM1 + UART_THR, (UCHAR)c);
 }

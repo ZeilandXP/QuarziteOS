@@ -153,7 +153,7 @@ class Qemu:
 
 
 def select_boot_entry(vm, title, index_from_top):
-    if not vm.wait_screen("QuarziteOS Boot Media", 90):
+    if not vm.wait_screen("Please select the operating system", 90):
         raise RuntimeError("FreeLoader menu did not appear")
     vm.sendkey("home")
     for _ in range(index_from_top):
@@ -241,7 +241,7 @@ def run_qzkrnl(iso, out):
             vm.send_serial("call IoCreateDevice\r")
             text = vm.wait_serial(r"\*\*\* STOP: 0x0000001E", 20)
             chk.check("unimplemented export -> KMODE_EXCEPTION_NOT_HANDLED stop",
-                      text and "Unimplemented kernel export: ntoskrnl.exe!IoCreateDevice" in text)
+                      text and re.search(r"Unimplemented kernel export: (ntoskrnl|qzkrnl)\.exe!IoCreateDevice", text))
             time.sleep(1)
             screen = vm.screen_text()
             open(os.path.join(out, "qzkrnl-bugcheck.txt"), "w").write(screen)
@@ -260,7 +260,7 @@ def run_live(iso, out, timeout):
         vm = Qemu(iso, tmp, memory=1024)
         try:
             # Default entry is "Live (Debug)": ntoskrnl with KD output on COM1
-            if not vm.wait_screen("QuarziteOS Boot Media", 90):
+            if not vm.wait_screen("Please select the operating system", 90):
                 chk.check("FreeLoader menu appears", False)
                 return chk
             chk.check("FreeLoader menu appears", True)

@@ -66,12 +66,15 @@ def main():
     out.append("# ---- Not implemented yet: stubs matching ntoskrnl.exe ----")
 
     stub_funcs = stub_data = 0
-    seen = set(impl_names)
+    seen = set()
     for callconv, opts, name, _ in ntos:
-        if name in seen:
+        if name in impl_names:
             continue
-        seen.add(name)
         flags = " ".join(o for o in opts if o.startswith(keep))
+        # The same name may appear once per -arch/-version range
+        if (name, flags) in seen:
+            continue
+        seen.add((name, flags))
         flags = (flags + " ") if flags else ""
         if callconv == "extern":
             # All unimplemented data exports alias one zero-filled block.

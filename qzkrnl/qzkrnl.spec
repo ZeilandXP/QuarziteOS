@@ -365,6 +365,8 @@
 @ stub -arch=i386,arm InterlockedIncrement
 @ stub -arch=i386 InterlockedPopEntrySList
 @ stub -arch=i386 InterlockedPushEntrySList
+@ stub -arch=arm InterlockedPopEntrySList
+@ stub -arch=arm InterlockedPushEntrySList
 @ stub -arch=x86_64 InitializeSListHead
 @ stub IoAcquireCancelSpinLock
 @ stub IoAcquireRemoveLockEx
@@ -711,9 +713,11 @@
 @ stub KeRemoveSystemServiceTable
 @ stub KeResetEvent
 @ stub -arch=i386 KeRestoreFloatingPointState
+@ stub -arch=x86_64 KeRestoreFloatingPointState
 @ stub KeRevertToUserAffinityThread
 @ stub KeRundownQueue
 @ stub -arch=i386 KeSaveFloatingPointState
+@ stub -arch=x86_64 KeSaveFloatingPointState
 @ stub KeSaveStateForHibernate
 @ extern KeServiceDescriptorTable QzUnimplementedData
 @ stub KeSetAffinityThread
@@ -1600,6 +1604,7 @@
 @ stub _strset
 @ stub _strupr
 @ stub -version=0x400-0x502 _swprintf
+@ stub -version=0x600+ _swprintf
 @ stub _vsnwprintf
 @ stub _wcsicmp
 @ stub _wcslwr

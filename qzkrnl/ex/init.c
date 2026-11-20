@@ -60,8 +60,8 @@ QzStatusThread(PVOID Context)
         Seconds = QzTicks / QZ_TIMER_HZ;
         QzMmGetStats(&Total, &Free);
         QzSnprintf(Line, sizeof(Line),
-                   " " QZ_PRODUCT_NAME " " QZ_VERSION_STR " | " QZ_KERNEL_NAME
-                   " | NT %d.%d.%d SP1 target | up %02lu:%02lu:%02lu | %lu threads | %lu MB free",
+                   QZ_PRODUCT_NAME " " QZ_VERSION_STR " | " QZ_KERNEL_NAME
+                   " | NT %d.%d.%d SP1 | up %02lu:%02lu:%02lu | %lu thr | %lu MB free",
                    QZ_NT_MAJOR, QZ_NT_MINOR, QZ_NT_BUILD,
                    Seconds / 3600, (Seconds / 60) % 60, Seconds % 60,
                    QzThreadCount(), Free / 256);
