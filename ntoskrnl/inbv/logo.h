@@ -40,6 +40,17 @@
 
 #define VID_FOOTER_BG_TOP        (SCREEN_HEIGHT - 59)
 
+/*
+ * QuarziteOS full-screen boot artwork: the progress bar rectangle inside
+ * IDB_QZ_BOOT (keep in sync with sdk/tools/quarzite/mkbootscreens.py),
+ * and the first line below the shutdown message in IDB_QZ_SHUTDOWN.
+ */
+#define VID_QZ_PROGRESS_BAR_LEFT     225
+#define VID_QZ_PROGRESS_BAR_TOP      355
+#define VID_QZ_PROGRESS_BAR_WIDTH    190
+#define VID_QZ_PROGRESS_BAR_HEIGHT   28
+#define VID_QZ_SHUTDOWN_TEXT_TOP     384
+
 
 //
 // Boot Splash-Screen Functions

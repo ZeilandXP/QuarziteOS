@@ -22,8 +22,14 @@ IDB_SERVER_LOGO     BITMAP "inbv/resources/logo.bmp"
 IDB_SERVER_HEADER   BITMAP "inbv/resources/hserver.bmp"
 IDB_SERVER_FOOTER   BITMAP "inbv/resources/fserver.bmp"
 
-/* QuarziteOS additions */
+/* ReactOS additions */
 //IDB_LOGO_XMAS       BITMAP "inbv/resources/logo_xmas.bmp"
 IDB_ROTATING_LINE   BITMAP "inbv/resources/line.bmp"
 IDB_PROGRESS_BAR    BITMAP "inbv/resources/progress.bmp"
 IDB_COPYRIGHT       BITMAP "inbv/resources/copyright.bmp"
+
+/* QuarziteOS boot and shutdown screens, generated from
+ * the PNGs in inbv/resources/quarzite by sdk/tools/quarzite/mkbootscreens.py */
+IDB_QZ_BOOT         BITMAP "inbv/resources/qz_boot.bmp"
+IDB_QZ_BOOTBAR      BITMAP "inbv/resources/qz_bootbar.bmp"
+IDB_QZ_SHUTDOWN     BITMAP "inbv/resources/qz_shutdown.bmp"

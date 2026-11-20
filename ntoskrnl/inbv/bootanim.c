@@ -94,6 +94,20 @@ static UCHAR RotBarBuffer[24 * 9];
 static UCHAR RotLineBuffer[SCREEN_WIDTH * 6];
 #endif // INBV_ROTBAR_IMPLEMENTED
 
+/*
+ * QuarziteOS: full-screen boot and shutdown artwork (IDB_QZ_*). The boot
+ * splash ships with its progress bar cut out; the bar image is kept in a
+ * screen-format buffer and revealed left to right as boot progresses.
+ * Falls back to the classic boot screen if the bitmaps are missing.
+ */
+#define QUARZITEOS_BOOT_SCREEN
+
+#ifdef QUARZITEOS_BOOT_SCREEN
+#define QZ_BAR_DELTA ((VID_QZ_PROGRESS_BAR_WIDTH + 7) / 8 * 4)  /* bytes per 4bpp line */
+static BOOLEAN QzBootScreenActive = FALSE;
+static UCHAR QzProgressBarBuffer[QZ_BAR_DELTA * VID_QZ_PROGRESS_BAR_HEIGHT];
+#endif
+
 
 /* FADE-IN FUNCTION **********************************************************/
 
@@ -325,6 +339,28 @@ BootAnimTickProgressBar(
            InbvBootDriverInstalled &&
            (InbvGetDisplayState() == INBV_DISPLAY_STATE_OWNED));
 
+#ifdef QUARZITEOS_BOOT_SCREEN
+    if (QzBootScreenActive)
+    {
+        /* Reveal the progress bar artwork up to the current percentage */
+        FillCount = VID_QZ_PROGRESS_BAR_WIDTH * SubPercentTimes100 / (100 * 100);
+        if (FillCount > VID_QZ_PROGRESS_BAR_WIDTH)
+            FillCount = VID_QZ_PROGRESS_BAR_WIDTH;
+        if (FillCount == 0)
+            return;
+
+        InbvAcquireLock();
+        VidBufferToScreenBlt(QzProgressBarBuffer,
+                             ProgressBarLeft,
+                             ProgressBarTop,
+                             FillCount,
+                             VID_QZ_PROGRESS_BAR_HEIGHT,
+                             QZ_BAR_DELTA);
+        InbvReleaseLock();
+        return;
+    }
+#endif
+
     /* Compute fill count */
     FillCount = VID_PROGRESS_BAR_WIDTH * SubPercentTimes100 / (100 * 100);
 
@@ -501,6 +537,54 @@ IsXmasTime(VOID)
 
 #endif // REACTOS_FANCY_BOOT
 
+#ifdef QUARZITEOS_BOOT_SCREEN
+static CODE_SEG("INIT")
+BOOLEAN
+DisplayQuarziteBootScreen(VOID)
+{
+    PVOID Splash = InbvGetResourceAddress(IDB_QZ_BOOT);
+    PVOID Bar = InbvGetResourceAddress(IDB_QZ_BOOTBAR);
+    PBITMAPINFOHEADER BitmapInfoHeader;
+
+    if (!Splash || !Bar)
+        return FALSE;
+
+    /* The palette is changed in place for the fade-in effect */
+    MmChangeKernelResourceSectionProtection(MM_READWRITE);
+
+    /* Save the splash palette; everything is drawn black, then faded in */
+    BitmapInfoHeader = Splash;
+    RtlCopyMemory(MainPalette,
+                  (PUCHAR)Splash + BitmapInfoHeader->biSize,
+                  sizeof(MainPalette));
+    BitBltPalette(Splash, TRUE, 0, 0);
+
+    /* Capture the progress bar artwork, then clear its area */
+    BitBltPalette(Bar, TRUE, VID_QZ_PROGRESS_BAR_LEFT, VID_QZ_PROGRESS_BAR_TOP);
+    InbvScreenToBufferBlt(QzProgressBarBuffer,
+                          VID_QZ_PROGRESS_BAR_LEFT,
+                          VID_QZ_PROGRESS_BAR_TOP,
+                          VID_QZ_PROGRESS_BAR_WIDTH,
+                          VID_QZ_PROGRESS_BAR_HEIGHT,
+                          QZ_BAR_DELTA);
+    InbvSolidColorFill(VID_QZ_PROGRESS_BAR_LEFT,
+                       VID_QZ_PROGRESS_BAR_TOP,
+                       VID_QZ_PROGRESS_BAR_LEFT + VID_QZ_PROGRESS_BAR_WIDTH - 1,
+                       VID_QZ_PROGRESS_BAR_TOP + VID_QZ_PROGRESS_BAR_HEIGHT - 1,
+                       BV_COLOR_BLACK);
+
+    MmChangeKernelResourceSectionProtection(MM_READONLY);
+
+    /* Enables the progress bar (ShowProgressBar) at the artwork's bar */
+    QzBootScreenActive = TRUE;
+    InbvSetProgressBarCoordinates(VID_QZ_PROGRESS_BAR_LEFT,
+                                  VID_QZ_PROGRESS_BAR_TOP);
+
+    BootLogoFadeIn();
+    return TRUE;
+}
+#endif // QUARZITEOS_BOOT_SCREEN
+
 CODE_SEG("INIT")
 VOID
 NTAPI
@@ -599,6 +683,12 @@ DisplayBootBitmap(
 
         /* Is the boot driver installed? */
         if (!InbvBootDriverInstalled) return;
+
+#ifdef QUARZITEOS_BOOT_SCREEN
+        /* QuarziteOS artwork; no rotation bar, the footer uses those rows */
+        if (DisplayQuarziteBootScreen())
+            return;
+#endif
 
         /*
          * Make the kernel resource section temporarily writable,
@@ -811,6 +901,9 @@ FinalizeBootLogo(VOID)
     PltRotBarStatus = RBS_STOP_ANIMATE;
     RotBarThreadActive = FALSE;
 #endif
+#ifdef QUARZITEOS_BOOT_SCREEN
+    QzBootScreenActive = FALSE;
+#endif
     InbvReleaseLock();
 }
 
@@ -941,6 +1034,20 @@ DisplayShutdownBitmap(VOID)
     InbvEnableDisplayString(TRUE);
     InbvSolidColorFill(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, BV_COLOR_BLACK);
     InbvSetScrollRegion(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+
+#ifdef QUARZITEOS_BOOT_SCREEN
+    /* Full-screen QuarziteOS shutdown artwork, with its own palette */
+    Logo1 = InbvGetResourceAddress(IDB_QZ_SHUTDOWN);
+    if (Logo1)
+    {
+        QzBootScreenActive = FALSE;
+        InbvBitBlt(Logo1, 0, 0);
+        /* Any further text goes below the "safe to turn off" message */
+        InbvSetScrollRegion(0, VID_QZ_SHUTDOWN_TEXT_TOP,
+                            SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1);
+        return;
+    }
+#endif
 
     /* Display shutdown logo and message */
     Logo1 = InbvGetResourceAddress(IDB_SHUTDOWN_MSG);

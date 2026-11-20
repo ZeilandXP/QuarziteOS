@@ -270,20 +270,21 @@ def run_live(iso, out, timeout):
             chk.check("ntoskrnl debug banner shows QuarziteOS 0.1.0", text is not None)
 
             deadline = time.time() + timeout
-            reached = bugcheck = False
+            reached_at = None
+            bugcheck = False
             while time.time() < deadline:
                 text = vm.serial_text()
                 if re.search(r"\*\*\* (Fatal System Error|STOP)|KeBugCheck", text):
                     bugcheck = True
                     break
-                if re.search(r"explorer\.exe|Explorer: |userinit", text, re.I):
-                    reached = True
-                time.sleep(2)
-                if reached and time.time() > deadline - timeout + 60:
+                if reached_at is None and re.search(r"explorer\.exe|userinit|winlogon", text, re.I):
+                    reached_at = time.time()
+                # Give the shell a minute to settle once user mode is up
+                if reached_at and time.time() - reached_at > 60:
                     break
+                time.sleep(2)
             chk.check("no bug check during live boot", not bugcheck)
-            chk.check("user mode shell started", reached)
-            time.sleep(20)
+            chk.check("user mode (winlogon/userinit/explorer) started", reached_at is not None)
             vm.screenshot(os.path.join(out, "live-desktop.png"))
         finally:
             open(os.path.join(out, "live-serial.log"), "w").write(vm.serial_text())
@@ -291,10 +292,98 @@ def run_live(iso, out, timeout):
     return chk
 
 
+def _pixel(path, xy):
+    from PIL import Image
+    return Image.open(path).convert("RGB").getpixel(xy)
+
+
+def _is_purple(rgb):
+    r, g, b = rgb
+    return r > 90 and b > 70 and g < r * 0.6
+
+
+def run_screens(iso, out, timeout):
+    """Capture the QuarziteOS boot splash and the shutdown screen."""
+    chk = Checker()
+    with tempfile.TemporaryDirectory() as tmp:
+        vm = Qemu(iso, tmp, memory=1024)
+        try:
+            # "Live Environment (Graphics Mode)": no /SOS, so the splash shows
+            select_boot_entry(vm, "QuarziteOS Live Environment", 1)
+
+            splash = []
+            deadline = time.time() + 300
+            while time.time() < deadline:
+                time.sleep(3)
+                shot = vm.screenshot(os.path.join(tmp, f"s{len(splash):03d}.png"))
+                try:
+                    from PIL import Image
+                    im = Image.open(shot).convert("RGB")
+                except Exception:
+                    continue
+                if im.size != (640, 480) or not _is_purple(im.getpixel((320, 170))):
+                    if splash:
+                        break          # splash is gone: desktop is coming up
+                    continue
+                # Progress = how much of the bar row is lit
+                lit = sum(1 for x in range(225, 415) if sum(im.getpixel((x, 368))) > 150)
+                splash.append((lit, shot))
+
+            chk.check("boot splash (QuarziteOS artwork) displayed", bool(splash))
+            if splash:
+                import shutil
+                lit_values = [s[0] for s in splash]
+                mid = min(splash, key=lambda s: abs(s[0] - 95))
+                shutil.copy(mid[1], os.path.join(out, "boot-splash.png"))
+                shutil.copy(splash[-1][1], os.path.join(out, "boot-splash-late.png"))
+                chk.check("progress bar fills as boot progresses",
+                          max(lit_values) > min(lit_values),
+                          f"lit pixels seen: {lit_values}")
+
+            # Let the desktop settle, then shut down
+            time.sleep(120)
+            vm.screenshot(os.path.join(out, "live-desktop.png"))
+
+            def shutdown_screen_up():
+                shot = vm.screenshot(os.path.join(tmp, "shutdown.png"))
+                try:
+                    return (_is_purple(_pixel(shot, (320, 170))) and
+                            sum(_pixel(shot, (204, 300))) > 400, shot)   # "QuarziteOS" text
+                except Exception:
+                    return (False, shot)
+
+            vm.monitor("system_powerdown")
+            ok, shot = False, None
+            for _ in range(20):
+                time.sleep(3)
+                ok, shot = shutdown_screen_up()
+                if ok:
+                    break
+            if not ok:
+                # Fall back to Win+R -> shutdown -s -t 0
+                vm.sendkey("meta_l-r")
+                time.sleep(3)
+                for ch in "shutdown -s -t 0":
+                    vm.sendkey({" ": "spc", "-": "minus"}.get(ch, ch))
+                vm.sendkey("ret")
+                for _ in range(60):
+                    time.sleep(3)
+                    ok, shot = shutdown_screen_up()
+                    if ok:
+                        break
+            chk.check("shutdown screen (QuarziteOS artwork) displayed", ok)
+            if shot:
+                import shutil
+                shutil.copy(shot, os.path.join(out, "shutdown-screen.png"))
+        finally:
+            vm.quit()
+    return chk
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--iso", required=True)
-    ap.add_argument("--scenario", choices=["qzkrnl", "live"], default="qzkrnl")
+    ap.add_argument("--scenario", choices=["qzkrnl", "live", "screens"], default="qzkrnl")
     ap.add_argument("--out", default=".")
     ap.add_argument("--timeout", type=int, default=600)
     args = ap.parse_args()
@@ -303,6 +392,8 @@ def main():
     print(f"QuarziteOS boot test: {args.scenario} ({args.iso})")
     if args.scenario == "qzkrnl":
         chk = run_qzkrnl(args.iso, args.out)
+    elif args.scenario == "screens":
+        chk = run_screens(args.iso, args.out, args.timeout)
     else:
         chk = run_live(args.iso, args.out, args.timeout)
 

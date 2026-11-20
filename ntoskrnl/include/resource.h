@@ -52,4 +52,9 @@
 #define IDB_PROGRESS_BAR    21
 #define IDB_COPYRIGHT       22
 
-#define IDB_MAX_RESOURCES   IDB_COPYRIGHT
+/* QuarziteOS boot and shutdown screens (full-screen artwork) */
+#define IDB_QZ_BOOT         23
+#define IDB_QZ_BOOTBAR      24
+#define IDB_QZ_SHUTDOWN     25
+
+#define IDB_MAX_RESOURCES   IDB_QZ_SHUTDOWN
