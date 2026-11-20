@@ -100,7 +100,7 @@ GetNextString(LPWSTR Buffer,
 VOID
 DisplayTitle(VOID)
 {
-    LPWSTR szTitle = L"ReactOS Coders Console Parade";
+    LPWSTR szTitle = L"QuarziteOS Coders Console Parade";
     COORD  xy;
 
     xy.X = (ScreenBufferInfo.dwSize.X - (USHORT)wcslen(szTitle)) / 2;

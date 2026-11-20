@@ -66,7 +66,7 @@ FatalError(char *pszFmt,...)
     strcat(szBuffer, "\nRebooting now!");
     MessageBoxA(NULL,
                 szBuffer,
-                "ReactOS Setup",
+                "QuarziteOS Setup",
                 MB_OK);
 }
 
@@ -1216,7 +1216,7 @@ InstallLiveCD(VOID)
 error:
     MessageBoxW(NULL,
                 L"Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.",
-                L"ReactOS LiveCD",
+                L"QuarziteOS LiveCD",
                 MB_OK);
     // HACK: This shouldn't be done here, but by the caller of InstallWindowsNt()
     /* Enable the shutdown privilege and reboot the machine */
@@ -1611,7 +1611,7 @@ InstallReactOS(VOID)
     WCHAR szBuffer[MAX_PATH];
 
     InitializeSetupActionLog(FALSE);
-    LogItem(NULL, L"Installing ReactOS");
+    LogItem(NULL, L"Installing QuarziteOS");
 
     CreateTempDir(L"TEMP");
     CreateTempDir(L"TMP");
@@ -1705,7 +1705,7 @@ InstallReactOS(VOID)
     if (dwHotkeyThreadId)
         PostThreadMessage(dwHotkeyThreadId, WM_QUIT, 0, 0);
 
-    LogItem(NULL, L"Installing ReactOS done");
+    LogItem(NULL, L"Installing QuarziteOS done");
     TerminateSetupActionLog();
 
     if (AdminInfo.Name != NULL)

@@ -690,7 +690,7 @@ LocaleDlgProc(
                         static WCHAR szMsg[RC_STRING_MAX_SIZE];
                         INT ret;
                         LoadStringW(GetModuleHandle(NULL), IDS_CANCEL_CONFIRM, szMsg, ARRAYSIZE(szMsg));
-                        ret = MessageBoxW(hwndDlg, szMsg, L"ReactOS LiveCD", MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2);
+                        ret = MessageBoxW(hwndDlg, szMsg, L"QuarziteOS LiveCD", MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2);
                         if (ret == IDOK || ret == IDYES)
                         {
                             pState->NextPage = DONE;
@@ -786,7 +786,7 @@ StartDlgProc(
                             static WCHAR szMsg[RC_STRING_MAX_SIZE];
                             INT ret;
                             LoadStringW(GetModuleHandle(NULL), IDS_CANCEL_CONFIRM, szMsg, ARRAYSIZE(szMsg));
-                            ret = MessageBoxW(hwndDlg, szMsg, L"ReactOS LiveCD", MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2);
+                            ret = MessageBoxW(hwndDlg, szMsg, L"QuarziteOS LiveCD", MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2);
                             if (ret == IDOK || ret == IDYES)
                             {
                                 pState->NextPage = DONE;
@@ -994,9 +994,9 @@ RunLiveCD(
     if (!ExpandInstallerPath(L"reactos.exe", Installer, _countof(Installer)))
         *Installer = UNICODE_NULL;
     if (*Installer)
-        TRACE("ReactOS Installer: '%S'\n", Installer);
+        TRACE("QuarziteOS Installer: '%S'\n", Installer);
     else
-        WARN("Could not find the ReactOS Installer\n");
+        WARN("Could not find the QuarziteOS Installer\n");
 
     /* If the ReactOS Installer was located, use its path for the
      * unattended file; otherwise, use the current ReactOS directory. */

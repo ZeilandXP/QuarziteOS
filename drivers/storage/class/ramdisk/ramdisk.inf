@@ -62,22 +62,22 @@ ReactOS = "ReactOS Project"
 RamdiskClassName = "Ramdisk"
 RamdiskBus.Desc = "RAM disk controller"
 RamdiskVolume.Desc = "RAM disk device (volume)"
-Ramdisk.ServiceDesc = "ReactOS RAM Disk Driver"
+Ramdisk.ServiceDesc = "QuarziteOS RAM Disk Driver"
 
 [Strings.040C]
 RamdiskClassName = "Ramdisk"
 RamdiskBus.Desc = "Controleur de disque virtuel"
 RamdiskVolume.Desc = "Disque virtuel (volume)"
-Ramdisk.ServiceDesc = "Pilote de disque virtuel ReactOS"
+Ramdisk.ServiceDesc = "Pilote de disque virtuel QuarziteOS"
 
 [Strings.0415]
 RamdiskClassName = "Ramdisk"
 RamdiskBus.Desc = "Kontroler dysku RAM"
 RamdiskVolume.Desc = "Urządzenie dysku RAM (wolumin)"
-Ramdisk.ServiceDesc = "Sterownik dysku RAM systemu ReactOS"
+Ramdisk.ServiceDesc = "Sterownik dysku RAM systemu QuarziteOS"
 
 [Strings.0419]
 RamdiskClassName = "RAM-диски"
 RamdiskBus.Desc = "Контроллер RAM-диска"
 RamdiskVolume.Desc = "Устройство RAM-диска (том)"
-Ramdisk.ServiceDesc = "Драйвер RAM-диска ReactOS"
+Ramdisk.ServiceDesc = "Драйвер RAM-диска QuarziteOS"

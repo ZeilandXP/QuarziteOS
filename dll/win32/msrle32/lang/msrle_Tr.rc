@@ -22,7 +22,7 @@ LANGUAGE LANG_TURKISH, SUBLANG_DEFAULT
 
 STRINGTABLE
 {
-	IDS_NAME	"ReactOS MS-RLE"
-	IDS_DESCRIPTION	"ReactOS MS-RLE Video Kodeki"
-	IDS_ABOUT       "ReactOS MS-RLE Video Kodeki\nTelif Hakkı: 2002 - Michael Günnewig"
+	IDS_NAME	"QuarziteOS MS-RLE"
+	IDS_DESCRIPTION	"QuarziteOS MS-RLE Video Kodeki"
+	IDS_ABOUT       "QuarziteOS MS-RLE Video Kodeki\nTelif Hakkı: 2002 - Michael Günnewig"
 }

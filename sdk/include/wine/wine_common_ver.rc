@@ -8,7 +8,7 @@
 #include "winbase.h"
 #include "winver.h"
 
-/* Convert Wine #defines to ReactOS #defines */
+/* Convert Wine #defines to QuarziteOS #defines */
 #ifdef WINE_FILEVERSION
 #define REACTOS_FILEVERSION WINE_FILEVERSION
 #endif /* WINE_FILEVERSION */

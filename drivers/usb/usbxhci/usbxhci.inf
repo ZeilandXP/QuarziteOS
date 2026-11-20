@@ -88,7 +88,7 @@ HKR,, BootFlags,  0x00010001, 16 ;CM_SERVICE_USB3_DISK_BOOT_LOAD
 
 [Strings]
 ;Non-Localizable
-ReactOS = "ReactOS"
+ReactOS = "QuarziteOS"
 
 ;Localizable
 Generic.Mfg = "Generic USB xHCI Host Controller"

@@ -1215,7 +1215,7 @@ SummaryDlgProc(
                     else
                     {
                         StringCchCopyW(CurrentItemText, ARRAYSIZE(CurrentItemText),
-                                       L"New ReactOS installation");
+                                       L"New QuarziteOS installation");
                     }
                     SetDlgItemTextW(hwndDlg, IDC_INSTALLTYPE, CurrentItemText);
 

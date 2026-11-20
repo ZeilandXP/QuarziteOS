@@ -77,18 +77,18 @@ CreateFreeLoaderReactOSEntries(
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS");
     BootEntry->FriendlyName = L"\"ReactOS\"";
     Options->OsLoadOptions  = L"/FASTDETECT";
-    AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS"));
+    AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"QuarziteOS"));
 
     /* ReactOS_Debug */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_Debug");
-    BootEntry->FriendlyName = L"\"ReactOS (Debug)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (Debug)\"";
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_Debug"));
 
 #ifdef _WINKD_
     /* ReactOS_VBoxDebug */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_VBoxDebug");
-    BootEntry->FriendlyName = L"\"ReactOS (VBox Debug)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (VBox Debug)\"";
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=VBOX /SOS";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_VBoxDebug"));
 #endif
@@ -96,33 +96,33 @@ CreateFreeLoaderReactOSEntries(
 #ifndef _WINKD_
     /* ReactOS_KdSerial */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_KdSerial");
-    BootEntry->FriendlyName = L"\"ReactOS (RosDbg)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (RosDbg)\"";
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /KDSERIAL";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_KdSerial"));
 #endif
 
     /* ReactOS_Screen */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_Screen");
-    BootEntry->FriendlyName = L"\"ReactOS (Screen)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (Screen)\"";
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=SCREEN /SOS";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_Screen"));
 
     /* ReactOS_LogFile */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_LogFile");
-    BootEntry->FriendlyName = L"\"ReactOS (Log file)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (Log file)\"";
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=FILE /SOS";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_LogFile"));
 
     /* ReactOS_Ram */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_Ram");
-    BootEntry->FriendlyName = L"\"ReactOS (RAM Disk)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (RAM Disk)\"";
     Options->OsLoadPath     = L"ramdisk(0)\\ReactOS";
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /RDPATH=reactos.img /RDIMAGEOFFSET=32256";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_Ram"));
 
     /* ReactOS_EMS */
     // BootEntry->BootEntryKey = MAKESTRKEY(L"ReactOS_EMS");
-    BootEntry->FriendlyName = L"\"ReactOS (Emergency Management Services)\"";
+    BootEntry->FriendlyName = L"\"QuarziteOS (Emergency Management Services)\"";
     Options->OsLoadPath     = ArcPath;
     Options->OsLoadOptions  = L"/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /redirect=com2 /redirectbaudrate=115200";
     AddBootStoreEntry(BootStoreHandle, BootEntry, MAKESTRKEY(L"ReactOS_EMS"));
@@ -141,7 +141,7 @@ CreateFreeLoaderReactOSEntries(
 #if DBG
         BootOptions.NextBootEntryKey = MAKESTRKEY(L"ReactOS_Debug");
 #else
-        BootOptions.NextBootEntryKey = MAKESTRKEY(L"ReactOS");
+        BootOptions.NextBootEntryKey = MAKESTRKEY(L"QuarziteOS");
 #endif
     }
 
@@ -386,7 +386,7 @@ SkipThisEntry:
         RtlStringCchPrintfW(Data->SectionName, ARRAYSIZE(Data->SectionName),
                             L"ReactOS_%lu", Data->i);
         RtlStringCchPrintfW(Data->OsName, ARRAYSIZE(Data->OsName),
-                            L"\"ReactOS %lu\"", Data->i);
+                            L"\"QuarziteOS %lu\"", Data->i);
         Data->i++;
     }
     return STATUS_SUCCESS;
@@ -415,7 +415,7 @@ UpdateFreeLoaderIni(
     Data.UseExistingEntry = TRUE;
     Data.i = 1;
     Data.ArcPath = ArcPath;
-    RtlStringCchCopyW(Data.SectionName, ARRAYSIZE(Data.SectionName), L"ReactOS");
+    RtlStringCchCopyW(Data.SectionName, ARRAYSIZE(Data.SectionName), L"QuarziteOS");
     RtlStringCchCopyW(Data.OsName, ARRAYSIZE(Data.OsName), L"\"ReactOS\"");
 
     //
