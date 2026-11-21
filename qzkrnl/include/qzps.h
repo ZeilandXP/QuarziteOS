@@ -107,6 +107,10 @@ typedef struct _QZ_PS_THREAD
     LARGE_INTEGER ExitTime;
     PVOID Win32StartAddress;
     BOOLEAN HardErrorsAreDisabled;
+    BOOLEAN TerminatePending;       /* dies on its way back to user mode */
+    NTSTATUS PendingExitStatus;
+    PCONTEXT InitialContext;        /* user threads, until they first run */
+    BOOLEAN ExitedThread;
 } QZ_PS_THREAD, *PQZ_PS_THREAD;
 
 extern PQZ_PROCESS QzSystemProcess;
@@ -166,6 +170,21 @@ BOOLEAN QzProbe(const VOID *Address, SIZE_T Length, BOOLEAN Write);
 /* ke/user.c: user mode */
 VOID QzUserException(PKTRAP_FRAME TrapFrame, NTSTATUS Code, ULONG_PTR Address, ULONG_PTR Write);
 VOID FASTCALL QzExitToUserMode(PKTRAP_FRAME TrapFrame);
+NTSTATUS QzPsCreateUserThread(PQZ_PROCESS Process, PCONTEXT Context, PVOID Teb, BOOLEAN Suspended,
+                              PQZ_PS_THREAD *Result);
+VOID QzSetTebSelector(PVOID Teb);           /* ke/i386/cpu.c */
+VOID QzContextToTrapFrame(PCONTEXT Context, PKTRAP_FRAME TrapFrame, ULONG Flags);
+VOID QzTrapFrameToContext(PKTRAP_FRAME TrapFrame, PCONTEXT Context);
 
-/* ke/vmtest.c */
+/* ps/thread.c */
+DECLSPEC_NORETURN VOID QzPsTerminateCurrentThread(NTSTATUS ExitStatus);
+VOID QzPsTerminateProcess(PQZ_PROCESS Process, NTSTATUS ExitStatus);
+
+/* ke/syscall.c */
+extern BOOLEAN QzSyscallTrace;
+VOID QzSyscallStats(VOID);
+ULONG QzServiceNumber(PCSTR Name);
+
+/* mm/vmtest.c, ke/usertest.c */
 VOID QzRunVmTests(VOID);
+VOID QzRunUserTests(VOID);

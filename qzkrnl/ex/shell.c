@@ -69,6 +69,9 @@ QzCmdHelp(VOID)
             "  reg [path]        list a registry key (default \\Registry\\Machine\\System)\n"
             "  vmtest            self-test: process address spaces (reserve, commit,\n"
             "                    protect, guard pages, isolation, handles)\n"
+            "  usertest          self-test: ring 3 (system calls, exceptions, preemption,\n"
+            "                    FPU state)\n"
+            "  syscalls [on|off] system service statistics; trace every call\n"
             "  ps                list the processes\n"
             "  vm [pid]          a process's address space (VADs)\n"
             "  regtest           self-test: registry (keys, values, volatile keys, links,\n"
@@ -244,6 +247,15 @@ QzExecute(PCHAR Line)
         QzRunVmTests();
     else if (!strcmp(Cmd, "ps"))
         QzPsDumpProcesses();
+    else if (!strcmp(Cmd, "usertest"))
+        QzRunUserTests();
+    else if (!strcmp(Cmd, "syscalls"))
+    {
+        if (Arg)
+            QzSyscallTrace = !strcmp(Arg, "on");
+        QzSyscallStats();
+        QzPrint("  tracing %s\n", QzSyscallTrace ? "on" : "off");
+    }
     else if (!strcmp(Cmd, "vm"))
     {
         ULONG Pid = Arg ? strtoul(Arg, NULL, 0) : 4;

@@ -132,7 +132,8 @@ QzCreateThreadEx(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context,
 
     /* Fabricate what QzSwapContext pops: SEH head, EFLAGS, edi, esi, ebx, ebp, ret */
     {
-        PULONG_PTR Sp = (PULONG_PTR)(Stack + QZ_THREAD_STACK_SIZE);
+        /* The top of the stack is kept for a ring-3 thread's KTRAP_FRAME */
+        PULONG_PTR Sp = (PULONG_PTR)(Stack + QZ_THREAD_STACK_SIZE - sizeof(KTRAP_FRAME));
         *--Sp = (ULONG_PTR)QzThreadStartup;     /* return address */
         *--Sp = 0;                              /* ebp */
         *--Sp = (ULONG_PTR)Routine;             /* ebx */
@@ -228,6 +229,33 @@ QzSwapThread(VOID)
 
     Flags = QzSaveFlagsAndDisable();
 
+    /* Unlink threads that have ended (not the one running: we are on its stack) */
+    {
+        PQZ_THREAD Prev = Current, Dead = NULL;
+        for (Thread = Current->Next; Thread != Current; Thread = Prev->Next)
+        {
+            if (Thread->State == QzThreadTerminated && Thread != QzIdleThread && Thread != &QzBootThread)
+            {
+                Prev->Next = Thread->Next;
+                Thread->Next = Dead;
+                Dead = Thread;
+            }
+            else
+            {
+                Prev = Thread;
+            }
+        }
+        while (Dead)
+        {
+            Thread = Dead;
+            Dead = Dead->Next;
+            if (Thread->FxSaveArea)
+                ExFreePool(((PVOID *)Thread->FxSaveArea)[-1]);
+            ExFreePoolWithTag(Thread->StackBase, 'ktSQ');
+            ExFreePoolWithTag(Thread, 'dhTQ');
+        }
+    }
+
     for (Thread = Current->Next; ; Thread = Thread->Next)
     {
         if (Thread->State == QzThreadReady && Thread != QzIdleThread)
@@ -248,8 +276,12 @@ QzSwapThread(VOID)
         /* The next thread's address space, and its stack for ring 3 -> 0 */
         if (Next->ApcProcess)
             QzMmSwitchAddressSpace(Next->ApcProcess);
+        /* Ring 3 entries build their frame below Esp0; NT keeps 16 bytes
+           (the V86 segment slots) above it */
         if (Next->InitialStack)
-            ((PULONG)QzPcr.TSS)[1] = (ULONG)Next->InitialStack;
+            ((PULONG)QzPcr.TSS)[1] = (ULONG)Next->InitialStack - 0x10;
+        if (Next->PsThread && ((PQZ_PS_THREAD)Next->PsThread)->Teb)
+            QzSetTebSelector(((PQZ_PS_THREAD)Next->PsThread)->Teb);
         if (Current->FxSaveArea)
             __asm__ __volatile__("fxsave (%0)" : : "r"(Current->FxSaveArea) : "memory");
         if (Next->FxSaveArea)

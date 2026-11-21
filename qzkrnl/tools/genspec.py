@@ -110,6 +110,11 @@ def main():
           f"{stub_funcs} function stubs, {stub_data} data stubs")
     if missing:
         print("note: exported by qzkrnl but not by ntoskrnl:", ", ".join(missing))
+
+    # The system service table follows the same implemented/stub split
+    sys.path.insert(0, os.path.dirname(__file__))
+    import gensys
+    gensys.main()
     return 0
 
 

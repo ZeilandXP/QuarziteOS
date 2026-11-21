@@ -39,7 +39,9 @@ list(APPEND SOURCE
     ke/sched.c
     ke/synctest.c
     ke/timerobj.c
+    ke/syscall.c
     ke/user.c
+    ke/usertest.c
     ke/wait.c
     ke/i386/cpu.c
     ke/i386/trap.c
@@ -62,6 +64,7 @@ list(APPEND SOURCE
     ob/object.c
     ob/obname.c
     ob/obtest.c
+    ps/create.c
     ps/process.c
     ps/thread.c
     se/se.c

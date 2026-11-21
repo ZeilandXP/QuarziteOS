@@ -38,22 +38,224 @@ static GENERIC_MAPPING QzProcessMapping =
 
 DECLSPEC_NORETURN VOID __cdecl QzExitCurrentThread(VOID);
 
+/* The process's last thread is gone: it has exited */
+static VOID
+QzPsProcessExited(PQZ_PROCESS Process, NTSTATUS ExitStatus)
+{
+    PQZ_HANDLE_TABLE Table;
+
+    if (Process->ExitStatus == STATUS_PENDING)
+        Process->ExitStatus = ExitStatus;
+    Process->Exiting = TRUE;
+    KeQuerySystemTime(&Process->ExitTime);
+    DbgPrint(QZ_KERNEL_NAME ": process %s (pid %lu) exited with 0x%08lx\n", Process->ImageFileName,
+             Process->UniqueId, Process->ExitStatus);
+
+    /* Its handles go now (they may keep the process itself alive) */
+    Table = Process->HandleTable;
+    Process->HandleTable = NULL;
+    QzObKillHandleTable(Table);
+    KeSetEvent(&Process->Exited, IO_NO_INCREMENT, FALSE);
+}
+
+/* The way out for every thread with a Thread object */
+DECLSPEC_NORETURN
+VOID
+QzPsTerminateCurrentThread(NTSTATUS ExitStatus)
+{
+    PQZ_THREAD Thread = QzCurrentThread;
+    PQZ_PS_THREAD PsThread = Thread->PsThread;
+    PQZ_PROCESS Process = PsThread->Process;
+
+    if (QzGetCurrentIrql() != PASSIVE_LEVEL)
+        QzLowerIrql(PASSIVE_LEVEL);
+    PsThread->ExitStatus = ExitStatus;
+    PsThread->ExitedThread = TRUE;
+    KeQuerySystemTime(&PsThread->ExitTime);
+    KeSetEvent(&PsThread->Terminated, IO_NO_INCREMENT, FALSE);
+
+    /* Leave the process's address space before it can go away */
+    if (Thread->ApcProcess != QzSystemProcess)
+    {
+        PQZ_PROCESS Ignored;
+        QzPsAttach(QzSystemProcess, &Ignored);
+    }
+    if (Process && InterlockedDecrement((PLONG)&Process->ActiveThreads) == 0 && Process != QzSystemProcess)
+        QzPsProcessExited(Process, ExitStatus);
+
+    Thread->PsThread = NULL;
+    PsThread->Thread = NULL;         /* the scheduler frees it once we are off its stack */
+    ObDereferenceObject(PsThread);   /* the thread's own reference */
+    QzExitCurrentThread();
+    for (;;);
+}
+
 NTSTATUS
 NTAPI
 PsTerminateSystemThread(IN NTSTATUS ExitStatus)
 {
     PQZ_PS_THREAD PsThread = QzCurrentThread->PsThread;
 
-    if (!PsThread)
+    if (!PsThread || PsThread->UserThread)
         return STATUS_INVALID_PARAMETER;   /* not a thread made by PsCreateSystemThread */
-    PsThread->ExitStatus = ExitStatus;
-    KeQuerySystemTime(&PsThread->ExitTime);
-    KeSetEvent(&PsThread->Terminated, IO_NO_INCREMENT, FALSE);
-    if (PsThread->Process)
-        InterlockedDecrement((PLONG)&PsThread->Process->ActiveThreads);
-    QzCurrentThread->PsThread = NULL;
-    ObDereferenceObject(PsThread);   /* the thread's own reference */
-    QzExitCurrentThread();
+    QzPsTerminateCurrentThread(ExitStatus);
+}
+
+/* Ask every thread of Process (but the current one) to end */
+VOID
+QzPsTerminateProcess(PQZ_PROCESS Process, NTSTATUS ExitStatus)
+{
+    PLIST_ENTRY Entry;
+
+    ExAcquireFastMutex(&Process->AddressLock);
+    if (Process->ExitStatus == STATUS_PENDING)
+        Process->ExitStatus = ExitStatus;
+    Process->Exiting = TRUE;
+    for (Entry = Process->ThreadList.Flink; Entry != &Process->ThreadList; Entry = Entry->Flink)
+    {
+        PQZ_PS_THREAD Other = CONTAINING_RECORD(Entry, QZ_PS_THREAD, ProcessLink);
+        if (Other->Thread == QzCurrentThread || Other->ExitedThread)
+            continue;
+        Other->PendingExitStatus = ExitStatus;
+        Other->TerminatePending = TRUE;
+        /* A thread that never ran, or is suspended, goes when it is next scheduled */
+        if (Other->Thread && Other->Thread->State == QzThreadNew)
+            QzReadyNewThread(Other->Thread);
+        else if (Other->SuspendCount)
+        {
+            Other->SuspendCount = 0;
+            KeReleaseSemaphore(&Other->SuspendSemaphore, IO_NO_INCREMENT, 1, FALSE);
+        }
+    }
+    ExReleaseFastMutex(&Process->AddressLock);
+    if (Process->ActiveThreads == 0 && !KeReadStateEvent(&Process->Exited))
+        QzPsProcessExited(Process, ExitStatus);
+}
+
+NTSTATUS
+NTAPI
+NtTerminateThread(IN HANDLE ThreadHandle OPTIONAL,
+                  IN NTSTATUS ExitStatus)
+{
+    PQZ_PS_THREAD PsThread;
+    NTSTATUS Status;
+
+    if (!ThreadHandle || ThreadHandle == NtCurrentThread())
+    {
+        if (!QzCurrentThread->PsThread)
+            return STATUS_INVALID_HANDLE;
+        QzPsTerminateCurrentThread(ExitStatus);
+    }
+    Status = ObReferenceObjectByHandle(ThreadHandle, THREAD_TERMINATE, PsThreadType, ExGetPreviousMode(),
+                                       (PVOID *)&PsThread, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    if (PsThread->Thread == QzCurrentThread)
+    {
+        ObDereferenceObject(PsThread);
+        QzPsTerminateCurrentThread(ExitStatus);
+    }
+    if (!PsThread->ExitedThread)
+    {
+        PsThread->PendingExitStatus = ExitStatus;
+        PsThread->TerminatePending = TRUE;
+        if (PsThread->Thread && PsThread->Thread->State == QzThreadNew)
+            QzReadyNewThread(PsThread->Thread);
+    }
+    ObDereferenceObject(PsThread);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+NtTerminateProcess(IN HANDLE ProcessHandle OPTIONAL,
+                   IN NTSTATUS ExitStatus)
+{
+    PQZ_PROCESS Process;
+    BOOLEAN Self;
+    NTSTATUS Status;
+
+    /* NULL: every thread of the current process but this one */
+    if (!ProcessHandle)
+    {
+        PQZ_PROCESS Current = QzCurrentThread->Process;
+        NTSTATUS Saved = Current->ExitStatus;
+        QzPsTerminateProcess(Current, ExitStatus);
+        Current->Exiting = FALSE;   /* the caller goes on */
+        Current->ExitStatus = Saved;
+        return STATUS_SUCCESS;
+    }
+    Status = ObReferenceObjectByHandle(ProcessHandle, PROCESS_TERMINATE, PsProcessType, ExGetPreviousMode(),
+                                       (PVOID *)&Process, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    if (Process == QzSystemProcess)
+    {
+        ObDereferenceObject(Process);
+        return STATUS_ACCESS_DENIED;
+    }
+    Self = (Process == QzCurrentThread->Process);
+    QzPsTerminateProcess(Process, ExitStatus);
+    ObDereferenceObject(Process);
+    if (Self)
+        QzPsTerminateCurrentThread(ExitStatus);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+ZwTerminateProcess(IN HANDLE ProcessHandle OPTIONAL, IN NTSTATUS ExitStatus)
+{
+    return QZ_AS_KERNEL(NtTerminateProcess(ProcessHandle, ExitStatus));
+}
+
+/* A suspended thread that never ran starts when resumed */
+NTSTATUS
+NTAPI
+NtResumeThread(IN HANDLE ThreadHandle,
+               OUT PULONG SuspendCount OPTIONAL)
+{
+    PQZ_PS_THREAD PsThread;
+    ULONG Previous;
+    NTSTATUS Status;
+
+    Status = ObReferenceObjectByHandle(ThreadHandle, THREAD_SUSPEND_RESUME, PsThreadType, ExGetPreviousMode(),
+                                       (PVOID *)&PsThread, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Previous = (ULONG)PsThread->SuspendCount;
+    if (PsThread->SuspendCount > 0 && --PsThread->SuspendCount == 0)
+    {
+        if (PsThread->Thread && PsThread->Thread->State == QzThreadNew)
+            QzReadyNewThread(PsThread->Thread);
+        else
+            KeReleaseSemaphore(&PsThread->SuspendSemaphore, IO_NO_INCREMENT, 1, FALSE);
+    }
+    ObDereferenceObject(PsThread);
+    if (SuspendCount)
+        QzWriteArg(ExGetPreviousMode(), SuspendCount, &Previous, sizeof(Previous));
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+NtSuspendThread(IN HANDLE ThreadHandle,
+                OUT PULONG PreviousSuspendCount OPTIONAL)
+{
+    PQZ_PS_THREAD PsThread;
+    ULONG Previous;
+    NTSTATUS Status;
+
+    /* Suspension takes effect at the next return to user mode */
+    Status = ObReferenceObjectByHandle(ThreadHandle, THREAD_SUSPEND_RESUME, PsThreadType, ExGetPreviousMode(),
+                                       (PVOID *)&PsThread, NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Previous = (ULONG)PsThread->SuspendCount++;
+    ObDereferenceObject(PsThread);
+    if (PreviousSuspendCount)
+        QzWriteArg(ExGetPreviousMode(), PreviousSuspendCount, &Previous, sizeof(Previous));
+    return STATUS_SUCCESS;
 }
 
 static VOID NTAPI

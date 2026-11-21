@@ -63,6 +63,9 @@ C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, HardwareEsp) == TF_ESP);
 
 extern UCHAR QzTrapStubTable[];
 VOID FASTCALL QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector);
+VOID FASTCALL QzSystemCall(PKTRAP_FRAME TrapFrame);
+VOID FASTCALL QzDebugService(PKTRAP_FRAME TrapFrame);
+VOID FASTCALL QzGetTickCountService(PKTRAP_FRAME TrapFrame);
 
 __asm__(
     ".text\n"
@@ -82,6 +85,27 @@ __asm__(
     "    jmp QzTrapCommon\n"
     "    .set qzvec, qzvec + 1\n"
     ".endr\n"
+    "\n"
+    /*
+     * sysenter from ntdll's KiFastSystemCall (EDX = user ESP). Build what an
+     * int from ring 3 would have pushed, returning to
+     * SharedUserData->SystemCallReturn, and take the common path with the
+     * pseudo vector 0x100. FS still holds the user's TEB selector here.
+     */
+    ".globl _QzFastCallEntry\n"
+    "_QzFastCallEntry:\n"
+    "    movl _QzTss+4, %esp\n"
+    "    pushl $0x23\n"                          /* SS */
+    "    pushl %edx\n"                           /* ESP */
+    "    pushfl\n"
+    "    orl $0x200, (%esp)\n"                   /* sysenter cleared IF */
+    "    pushl $0x1B\n"                          /* CS */
+    "    pushl 0x7FFE0304\n"                     /* EIP: KiFastSystemCallRet */
+    "    pushl $0\n"                             /* error code */
+    "    subl $" STR(TF_ERRCODE) ", %esp\n"
+    "    movl %eax, " STR(TF_EAX) "(%esp)\n"
+    "    movl $0x100, %eax\n"
+    "    jmp QzTrapCommon\n"
     "\n"
     /* esp = KTRAP_FRAME, eax = vector */
     "QzTrapCommon:\n"
@@ -247,6 +271,36 @@ QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector)
             TrapFrame->Eip = QzCurrentThread->FaultRecovery;
             return;
         }
+        if (Address < QZ_SYSTEM_RANGE_START && QzCurrentThread && QzCurrentThread->SyscallRecovery)
+        {
+            DbgPrint(QZ_KERNEL_NAME ": system service touched bad user address %08lx at %08lx; aborted\n",
+                     Address, TrapFrame->Eip);
+            TrapFrame->Eip = QzCurrentThread->SyscallRecovery;
+            return;
+        }
+    }
+
+    /* The system interrupts */
+    if (Vector == 0x100)
+    {
+        TrapFrame->Edx += 8;   /* KiFastSystemCall's stack: two return addresses, then the arguments */
+        QzSystemCall(TrapFrame);
+        return;
+    }
+    if (Vector == 0x2E && (TrapFrame->SegCs & 1))
+    {
+        QzSystemCall(TrapFrame);
+        return;
+    }
+    if (Vector == 0x2D && (TrapFrame->SegCs & 1))
+    {
+        QzDebugService(TrapFrame);
+        return;
+    }
+    if (Vector == 0x2A)
+    {
+        QzGetTickCountService(TrapFrame);
+        return;
     }
     if (Vector < 32 && (TrapFrame->SegCs & 1))
     {
@@ -260,6 +314,16 @@ QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector)
             STATUS_DATATYPE_MISALIGNMENT, 0, STATUS_FLOAT_MULTIPLE_TRAPS
         };
         NTSTATUS Code = Vector < 20 ? Codes[Vector] : 0;
+        if (Vector == 13)
+        {
+            /* #GP from a privileged instruction is reported as such */
+            UCHAR Opcode = 0;
+            if (QzCopyFromUser(&Opcode, (PVOID)TrapFrame->Eip, 1) &&
+                (Opcode == 0xF4 || Opcode == 0xFA || Opcode == 0xFB || Opcode == 0x0F ||
+                 (Opcode >= 0xE4 && Opcode <= 0xE7) || (Opcode >= 0xEC && Opcode <= 0xEF) ||
+                 (Opcode >= 0x6C && Opcode <= 0x6F)))
+                Code = STATUS_PRIVILEGED_INSTRUCTION;
+        }
         if (Code)
         {
             if (Vector == 3)

@@ -123,6 +123,9 @@ typedef struct _QZ_THREAD
     PKTRAP_FRAME TrapFrame;        /* the user-mode frame at the top of the stack */
     KPROCESSOR_MODE PreviousMode;  /* of the system call being served */
     ULONG_PTR FaultRecovery;       /* EIP to resume at on a bad user access */
+    ULONG_PTR SyscallRecovery;     /* ... or, failing that, abort the system call */
+    ULONG_PTR SyscallEsp;
+    PVOID SyscallExceptionList;
     PVOID FxSaveArea;              /* user threads: FPU/SSE state, 512 bytes, 16-aligned */
     BOOLEAN Alerted;
 } QZ_THREAD, *PQZ_THREAD;

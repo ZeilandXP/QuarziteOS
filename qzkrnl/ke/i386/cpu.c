@@ -59,7 +59,7 @@ C_ASSERT(FIELD_OFFSET(KIPCR, PrcbData.CurrentThread) == 0x124);
 
 static QZ_GDT_ENTRY QzGdt[16] __attribute__((aligned(16)));
 static QZ_IDT_ENTRY QzIdt[256] __attribute__((aligned(16)));
-static QZ_TSS QzTss __attribute__((aligned(16)));
+QZ_TSS QzTss __attribute__((aligned(16)));   /* the sysenter entry reads Esp0 */
 static UCHAR QzTssStack[8192] __attribute__((aligned(16)));
 
 static VOID
@@ -73,6 +73,9 @@ QzSetGdtEntry(ULONG Selector, ULONG Base, ULONG Limit, UCHAR Access, UCHAR Flags
     e->Granularity = (UCHAR)((Flags & 0xF0) | ((Limit >> 16) & 0x0F));
     e->BaseHigh = (UCHAR)((Base >> 24) & 0xFF);
 }
+
+static VOID QzCpuid(ULONG Leaf, ULONG Regs[4]);
+BOOLEAN QzFxsrAvailable, QzSysenterAvailable;
 
 VOID
 QzSetIdtGate(ULONG Vector, PVOID Handler)
@@ -95,6 +98,7 @@ QzCpuInit(VOID)
     QzSetGdtEntry(QZ_SEL_R0_DATA, 0, 0xFFFFF, 0x92, 0xC0);
     QzSetGdtEntry(QZ_SEL_R3_CODE, 0, 0xFFFFF, 0xFA, 0xC0);
     QzSetGdtEntry(QZ_SEL_R3_DATA, 0, 0xFFFFF, 0xF2, 0xC0);
+    QzSetGdtEntry(KGDT_R3_TEB, 0, 0xFFF, 0xF2, 0x40);   /* FS in ring 3: the TEB */
 
     /* TSS: needed so that future ring-3 -> ring-0 transitions find a stack */
     RtlZeroMemory(&QzTss, sizeof(QzTss));
@@ -153,12 +157,67 @@ QzCpuInit(VOID)
           "i"(QZ_SEL_R0_PCR), "i"(QZ_SEL_TSS)
         : "eax", "memory");
 
-    /* IDT: fill every vector with a stub, then load it */
+    /* IDT: fill every vector with a stub, then load it. Ring 3 may raise
+       int3, into, and the system interrupts 2A-2E */
     RtlZeroMemory(QzIdt, sizeof(QzIdt));
     QzInstallTrapStubs();
+    QzIdt[0x03].TypeAttr = 0xEE;
+    QzIdt[0x04].TypeAttr = 0xEE;
+    QzIdt[0x2A].TypeAttr = 0xEE;
+    QzIdt[0x2B].TypeAttr = 0xEE;
+    QzIdt[0x2C].TypeAttr = 0xEE;
+    QzIdt[0x2D].TypeAttr = 0xEE;
+    QzIdt[0x2E].TypeAttr = 0xEE;
     Idtr.Limit = sizeof(QzIdt) - 1;
     Idtr.Base = (ULONG)(ULONG_PTR)QzIdt;
     __asm__ __volatile__("lidt %0" : : "m"(Idtr) : "memory");
+
+    /* sysenter: ring 3 enters at QzFastCallEntry, which takes the stack
+       from TSS.Esp0 like an interrupt from ring 3 would */
+    {
+        ULONG Regs[4];
+        QzCpuid(1, Regs);
+        if (Regs[3] & (1 << 11))
+        {
+            extern UCHAR QzFastCallEntry[];
+            __asm__ __volatile__("wrmsr" : : "c"(0x174), "a"(QZ_SEL_R0_CODE), "d"(0));
+            __asm__ __volatile__("wrmsr" : : "c"(0x175), "a"((ULONG)(ULONG_PTR)&QzTssStack[sizeof(QzTssStack)]), "d"(0));
+            __asm__ __volatile__("wrmsr" : : "c"(0x176), "a"((ULONG)(ULONG_PTR)QzFastCallEntry), "d"(0));
+            QzSysenterAvailable = TRUE;
+        }
+    }
+
+    /* The FPU for user threads: native errors, no emulation, FXSAVE and
+       SSE if the processor has them (the kernel itself uses neither) */
+    {
+        ULONG Regs[4], Cr0, Cr4;
+        QzCpuid(1, Regs);
+        __asm__ __volatile__("movl %%cr0, %0" : "=r"(Cr0));
+        Cr0 = (Cr0 & ~(0x04 | 0x08)) | 0x02 | 0x20;   /* clear EM, TS; set MP, NE */
+        __asm__ __volatile__("movl %0, %%cr0" : : "r"(Cr0));
+        __asm__ __volatile__("fninit");
+        if (Regs[3] & (1 << 24))
+        {
+            __asm__ __volatile__("movl %%cr4, %0" : "=r"(Cr4));
+            Cr4 |= 0x200;                               /* OSFXSR */
+            QzFxsrAvailable = TRUE;
+            if (Regs[3] & (1 << 25))
+                Cr4 |= 0x400;                           /* OSXMMEXCPT */
+            __asm__ __volatile__("movl %0, %%cr4" : : "r"(Cr4));
+        }
+    }
+}
+
+/* The TEB of the thread about to run: FS's base in ring 3 */
+VOID
+QzSetTebSelector(PVOID Teb)
+{
+    QZ_GDT_ENTRY *e = &QzGdt[KGDT_R3_TEB / 8];
+    ULONG Base = (ULONG)(ULONG_PTR)Teb;
+    e->BaseLow = (USHORT)(Base & 0xFFFF);
+    e->BaseMid = (UCHAR)((Base >> 16) & 0xFF);
+    e->BaseHigh = (UCHAR)((Base >> 24) & 0xFF);
+    e->Access = 0xF2;   /* reloading a selector needs it marked present, not busy */
 }
 
 static VOID

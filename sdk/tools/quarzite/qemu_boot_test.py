@@ -266,6 +266,8 @@ def run_qzkrnl(iso, out):
                 # Stage B6: processes and their address spaces
                 ("vmtest", [r"vmtest: \d+ passed, 0 failed"]),
                 ("ps", [r"\s4\s+0\s+System\s"]),
+                ("usertest", [r"usertest: hello from ring 3", r"usertest: \d+ passed, 0 failed"]),
+                ("syscalls", [r"System services: 296 in the table"]),
                 ("reg", [r"\[ControlSet001\]", r"\[CurrentControlSet\]"]),
                 ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0, HAL KeGetCurrentIrql = 0\), \d+ DPCs retired"]),
                 # Stage B4: the real ReactOS boot drivers through qzkrnl's PnP manager
@@ -302,7 +304,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "pnp") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)
