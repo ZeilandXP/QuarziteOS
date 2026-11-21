@@ -19,6 +19,7 @@
  */
 
 #include "qzio.h"
+#include "qzps.h"
 #include <initguid.h>
 #include <wdmguid.h>
 #include <mountmgr.h>
@@ -125,6 +126,8 @@ NTSTATUS QzCmReadValue(PCWSTR KeyPath, PCWSTR ValueName, PVOID Buffer, ULONG Len
                        PULONG Type, PULONG DataLength);
 
 #define QzNodeOf(Device) ((PQZ_DEVICE_NODE)QzDeviceExtension(Device)->DeviceNode)
+
+static VOID QzPnpQueueInstallEvent(PQZ_DEVICE_NODE Node);
 
 static VOID
 QzPnpLockTree(VOID)
@@ -614,6 +617,7 @@ QzPnpAddDrivers(PQZ_DEVICE_NODE Node)
             return;
         }
         Node->Flags |= QZ_DN_NO_DRIVER;
+        QzPnpQueueInstallEvent(Node);   /* umpnpmgr may have a driver for it */
         return;
     }
     if (QzPnpBootPhase && !QzIoIsBootService(&Node->ServiceName))
@@ -2162,6 +2166,9 @@ QzPnpStart(VOID)
     QzPnpProcessNode(QzPnpRoot);
     QzPnpUnlockTree();
 
+    /* The boot drivers no device asked for (ndis, ...) */
+    QzIoStartBootDrivers();
+
     /* The mount manager (a legacy boot driver NT always starts) picks up
        the volumes that are there now and gives them their names */
     {
@@ -2358,4 +2365,453 @@ IoDisconnectInterruptEx(IN PIO_DISCONNECT_INTERRUPT_PARAMETERS Parameters)
 {
     if (Parameters->ConnectionContext.InterruptObject)
         IoDisconnectInterrupt(Parameters->ConnectionContext.InterruptObject);
+}
+
+/* ---------------------------------------------------------------------- */
+/* User-mode PnP: NtPlugPlayControl and NtGetPlugPlayEvent (umpnpmgr,     */
+/* setupapi, cfgmgr32)                                                     */
+/* ---------------------------------------------------------------------- */
+
+#include <ndk/cmtypes.h>
+
+#define QZ_PNP_MAX_INSTANCE 512         /* bytes of an instance path from user mode */
+
+typedef struct _QZ_PNP_EVENT
+{
+    LIST_ENTRY Link;
+    ULONG Size;
+    PLUGPLAY_EVENT_BLOCK Block;         /* variable length */
+} QZ_PNP_EVENT, *PQZ_PNP_EVENT;
+
+static LIST_ENTRY QzPnpEvents = { &QzPnpEvents, &QzPnpEvents };
+static KEVENT QzPnpEventPending;
+static BOOLEAN QzPnpEventsWanted;       /* umpnpmgr listens: new devices get install events */
+
+static const GUID QzGuidDeviceEnumerated =
+    { 0xCB3A400A, 0x46F0, 0x11D0, { 0xB0, 0x8F, 0x00, 0x60, 0x97, 0x13, 0x05, 0x3F } };
+
+/* A device that needs a driver installed, for umpnpmgr */
+static VOID
+QzPnpQueueInstallEvent(PQZ_DEVICE_NODE Node)
+{
+    ULONG Size = FIELD_OFFSET(PLUGPLAY_EVENT_BLOCK, InstallDevice.DeviceId) + Node->InstancePath.Length +
+                 sizeof(WCHAR);
+    PQZ_PNP_EVENT Event;
+
+    if (!QzPnpEventsWanted)
+        return;
+    Event = ExAllocatePoolWithTag(NonPagedPool, FIELD_OFFSET(QZ_PNP_EVENT, Block) + Size, QZ_PNP_TAG);
+    if (!Event)
+        return;
+    RtlZeroMemory(&Event->Block, Size);
+    Event->Size = Size;
+    Event->Block.EventGuid = QzGuidDeviceEnumerated;
+    Event->Block.EventCategory = DeviceInstallEvent;
+    Event->Block.TotalSize = Size;
+    RtlCopyMemory(Event->Block.InstallDevice.DeviceId, Node->InstancePath.Buffer, Node->InstancePath.Length);
+    ExAcquireFastMutex(&QzPnpListLock);
+    InsertTailList(&QzPnpEvents, &Event->Link);
+    KeSetEvent(&QzPnpEventPending, IO_NO_INCREMENT, FALSE);
+    ExReleaseFastMutex(&QzPnpListLock);
+}
+
+/* The node with this instance path (tree locked) */
+static PQZ_DEVICE_NODE
+QzPnpFindInstance(PQZ_DEVICE_NODE Node, PCUNICODE_STRING Instance)
+{
+    PQZ_DEVICE_NODE Child, Found;
+
+    if (RtlEqualUnicodeString(&Node->InstancePath, Instance, TRUE))
+        return Node;
+    for (Child = Node->Child; Child; Child = Child->Sibling)
+        if ((Found = QzPnpFindInstance(Child, Instance)) != NULL)
+            return Found;
+    return NULL;
+}
+
+/* An instance path from the caller's UNICODE_STRING, into Buffer */
+static NTSTATUS
+QzPnpCaptureInstance(KPROCESSOR_MODE Mode, PCUNICODE_STRING From, PUNICODE_STRING To, PWCHAR Buffer)
+{
+    if (!From->Length || From->Length > QZ_PNP_MAX_INSTANCE || (From->Length & 1))
+        return STATUS_INVALID_PARAMETER;
+    if (!QzReadArg(Mode, Buffer, From->Buffer, From->Length))
+        return STATUS_ACCESS_VIOLATION;
+    To->Buffer = Buffer;
+    To->Length = To->MaximumLength = From->Length;
+    return STATUS_SUCCESS;
+}
+
+/* NT's DN_* status bits and CM_PROB_* problem of a node */
+static VOID
+QzPnpNodeStatus(PQZ_DEVICE_NODE Node, PULONG Status, PULONG Problem)
+{
+    *Status = 0x00800000 /* DN_NT_ENUMERATOR */ | 0x01000000 /* DN_NT_DRIVER */;
+    *Problem = 0;
+    if (Node->Flags & QZ_DN_ADDED)
+        *Status |= 0x00000002;          /* DN_DRIVER_LOADED */
+    if (Node->Flags & QZ_DN_STARTED)
+        *Status |= 0x00000008;          /* DN_STARTED */
+    if (Node->Flags & QZ_DN_NO_DRIVER)
+    {
+        *Status |= 0x00000400;          /* DN_HAS_PROBLEM */
+        *Problem = 28;                  /* CM_PROB_FAILED_INSTALL: no driver installed */
+    }
+    else if (Node->Flags & QZ_DN_FAILED)
+    {
+        *Status |= 0x00000400;
+        *Problem = 10;                  /* CM_PROB_FAILED_START */
+    }
+    if (!Node->Parent || Node->Parent == QzPnpRoot)
+        *Status |= 0x00000001;          /* DN_ROOT_ENUMERATED */
+}
+
+/* MULTI_SZ out to the caller: Bytes in and out, STATUS_BUFFER_TOO_SMALL if it does not fit */
+static NTSTATUS
+QzPnpReturnMultiSz(KPROCESSOR_MODE Mode, PCWSTR List, ULONG Needed, PVOID Buffer, PULONG Bytes)
+{
+    ULONG Have = *Bytes;
+    *Bytes = Needed;
+    if (!Buffer || Have < Needed)
+        return STATUS_BUFFER_TOO_SMALL;
+    return QzWriteArg(Mode, Buffer, List, Needed) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
+}
+
+NTSTATUS
+NTAPI
+NtPlugPlayControl(IN PLUGPLAY_CONTROL_CLASS PlugPlayControlClass, IN OUT PVOID Buffer, IN ULONG BufferLength)
+{
+    KPROCESSOR_MODE Mode = ExGetPreviousMode();
+    union
+    {
+        PLUGPLAY_CONTROL_DEVICE_CONTROL_DATA Control;
+        PLUGPLAY_CONTROL_ENUMERATE_DEVICE_DATA Enumerate;
+        PLUGPLAY_CONTROL_STATUS_DATA Status;
+        PLUGPLAY_CONTROL_DEPTH_DATA Depth;
+        PLUGPLAY_CONTROL_RELATED_DEVICE_DATA Related;
+        PLUGPLAY_CONTROL_PROPERTY_DATA Property;
+        PLUGPLAY_CONTROL_DEVICE_RELATIONS_DATA Relations;
+        PLUGPLAY_CONTROL_INTERFACE_DEVICE_LIST_DATA List;
+        PLUGPLAY_CONTROL_CLASS_ASSOCIATION_DATA Association;
+        PLUGPLAY_CONTROL_QUERY_REMOVE_DATA Remove;
+        UCHAR Bytes[64];
+    } Data;
+    WCHAR InstanceBuffer[QZ_PNP_MAX_INSTANCE / sizeof(WCHAR)];
+    UNICODE_STRING Instance;
+    PQZ_DEVICE_NODE Node = NULL;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    if (BufferLength > sizeof(Data) || (BufferLength && !QzReadArg(Mode, &Data, Buffer, BufferLength)))
+        return BufferLength > sizeof(Data) ? STATUS_INVALID_PARAMETER : STATUS_ACCESS_VIOLATION;
+
+    /* Most classes start with the device instance */
+    switch (PlugPlayControlClass)
+    {
+        case PlugPlayControlEnumerateDevice:
+        case PlugPlayControlInitializeDevice:
+        case PlugPlayControlStartDevice:
+        case PlugPlayControlResetDevice:
+        case PlugPlayControlDeviceStatus:
+        case PlugPlayControlGetDeviceDepth:
+        case PlugPlayControlProperty:
+        case PlugPlayControlQueryDeviceRelations:
+        case PlugPlayControlDeviceClassAssociation:
+        case PlugPlayControlQueryAndRemoveDevice:
+            if (BufferLength < sizeof(UNICODE_STRING))
+                return STATUS_INVALID_PARAMETER;
+            Status = QzPnpCaptureInstance(Mode, &Data.Control.DeviceInstance, &Instance, InstanceBuffer);
+            break;
+        case PlugPlayControlGetRelatedDevice:
+            if (BufferLength < sizeof(Data.Related))
+                return STATUS_INVALID_PARAMETER;
+            Status = QzPnpCaptureInstance(Mode, &Data.Related.TargetDeviceInstance, &Instance, InstanceBuffer);
+            break;
+        case PlugPlayControlGetInterfaceDeviceList:
+            if (BufferLength < sizeof(Data.List))
+                return STATUS_INVALID_PARAMETER;
+            if (Data.List.DeviceInstance.Length)
+                Status = QzPnpCaptureInstance(Mode, &Data.List.DeviceInstance, &Instance, InstanceBuffer);
+            else
+                Instance.Length = 0;
+            break;
+        default:
+            Instance.Length = 0;
+            break;
+    }
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    QzPnpLockTree();
+    if (Instance.Length)
+    {
+        Node = QzPnpFindInstance(QzPnpRoot, &Instance);
+        if (!Node)
+        {
+            QzPnpUnlockTree();
+            return STATUS_NO_SUCH_DEVICE;
+        }
+    }
+
+    switch (PlugPlayControlClass)
+    {
+        case PlugPlayControlEnumerateDevice:
+            if (Node->Flags & QZ_DN_STARTED)
+                IoInvalidateDeviceRelations(Node->Pdo, BusRelations);
+            break;
+
+        case PlugPlayControlInitializeDevice:
+            break;                      /* the node exists: nothing more to set up */
+
+        case PlugPlayControlStartDevice:
+        case PlugPlayControlResetDevice:
+            /* A driver was installed for it (umpnpmgr, newdev): try again */
+            if (!(Node->Flags & QZ_DN_STARTED))
+            {
+                Node->Flags &= ~(QZ_DN_NO_DRIVER | QZ_DN_FAILED | QZ_DN_DEFERRED);
+                Node->Problem = STATUS_SUCCESS;
+                Node->ProblemText = NULL;
+                QzPnpProcessNode(Node);
+                if (!(Node->Flags & QZ_DN_STARTED))
+                    Status = (Node->Flags & QZ_DN_NO_DRIVER) ? STATUS_NO_SUCH_DEVICE : STATUS_UNSUCCESSFUL;
+            }
+            break;
+
+        case PlugPlayControlDeviceStatus:
+            if (Data.Status.Operation == PNP_GET_DEVICE_STATUS)
+            {
+                ULONG DeviceStatus, Problem;
+                QzPnpNodeStatus(Node, &DeviceStatus, &Problem);
+                Data.Status.DeviceStatus = DeviceStatus;
+                Data.Status.DeviceProblem = Problem;
+                if (!QzWriteArg(Mode, Buffer, &Data.Status, sizeof(Data.Status)))
+                    Status = STATUS_ACCESS_VIOLATION;
+            }
+            break;
+
+        case PlugPlayControlGetDeviceDepth:
+            Data.Depth.Depth = Node->Level;
+            if (!QzWriteArg(Mode, Buffer, &Data.Depth, sizeof(Data.Depth)))
+                Status = STATUS_ACCESS_VIOLATION;
+            break;
+
+        case PlugPlayControlGetRelatedDevice:
+        {
+            PQZ_DEVICE_NODE Related = Data.Related.Relation == PNP_GET_PARENT_DEVICE ? Node->Parent
+                                    : Data.Related.Relation == PNP_GET_CHILD_DEVICE ? Node->Child
+                                    : Data.Related.Relation == PNP_GET_SIBLING_DEVICE ? Node->Sibling : NULL;
+            if (!Related)
+            {
+                Status = STATUS_NO_SUCH_DEVICE;
+                break;
+            }
+            if (Data.Related.RelatedDeviceInstanceLength < Related->InstancePath.Length)
+            {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+            Data.Related.RelatedDeviceInstanceLength = Related->InstancePath.Length;
+            if (!QzWriteArg(Mode, Data.Related.RelatedDeviceInstance, Related->InstancePath.Buffer,
+                            Related->InstancePath.Length) ||
+                !QzWriteArg(Mode, Buffer, &Data.Related, sizeof(Data.Related)))
+                Status = STATUS_ACCESS_VIOLATION;
+            break;
+        }
+
+        case PlugPlayControlProperty:
+        {
+            static const DEVICE_REGISTRY_PROPERTY Map[] =
+            {
+                DevicePropertyUINumber, DevicePropertyPhysicalDeviceObjectName, DevicePropertyBusTypeGuid,
+                DevicePropertyLegacyBusType, DevicePropertyBusNumber, (DEVICE_REGISTRY_PROPERTY)-1,
+                DevicePropertyRemovalPolicy, (DEVICE_REGISTRY_PROPERTY)-1, DevicePropertyAddress,
+                DevicePropertyEnumeratorName, DevicePropertyRemovalPolicy, DevicePropertyInstallState,
+            };
+            ULONG Size = Data.Property.BufferSize, Result = 0;
+            PVOID Local;
+            if (Data.Property.Property >= RTL_NUMBER_OF(Map) || Map[Data.Property.Property] == (DEVICE_REGISTRY_PROPERTY)-1)
+            {
+                Status = STATUS_NOT_SUPPORTED;
+                break;
+            }
+            Local = ExAllocatePoolWithTag(NonPagedPool, max(Size, 1), QZ_PNP_TAG);
+            if (!Local)
+            {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+            Status = IoGetDeviceProperty(Node->Pdo, Map[Data.Property.Property], Size, Local, &Result);
+            if (NT_SUCCESS(Status) && !QzWriteArg(Mode, Data.Property.Buffer, Local, Result))
+                Status = STATUS_ACCESS_VIOLATION;
+            ExFreePoolWithTag(Local, QZ_PNP_TAG);
+            Data.Property.BufferSize = Result;
+            QzWriteArg(Mode, Buffer, &Data.Property, sizeof(Data.Property));
+            break;
+        }
+
+        case PlugPlayControlQueryDeviceRelations:
+        {
+            PQZ_DEVICE_NODE Child;
+            ULONG Needed = sizeof(WCHAR), Used = 0;
+            PWCHAR List;
+            if (Data.Relations.Relations == PNP_BUS_RELATIONS)
+                for (Child = Node->Child; Child; Child = Child->Sibling)
+                    Needed += Child->InstancePath.Length + sizeof(WCHAR);
+            List = ExAllocatePoolWithTag(NonPagedPool, Needed, QZ_PNP_TAG);
+            if (!List)
+            {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+                break;
+            }
+            if (Data.Relations.Relations == PNP_BUS_RELATIONS)
+            {
+                for (Child = Node->Child; Child; Child = Child->Sibling)
+                {
+                    RtlCopyMemory((PUCHAR)List + Used, Child->InstancePath.Buffer, Child->InstancePath.Length);
+                    Used += Child->InstancePath.Length;
+                    *(PWCHAR)((PUCHAR)List + Used) = UNICODE_NULL;
+                    Used += sizeof(WCHAR);
+                }
+            }
+            *(PWCHAR)((PUCHAR)List + Used) = UNICODE_NULL;
+            if (Needed == sizeof(WCHAR))
+                Needed = 0;             /* no relations: an empty answer, as NT gives */
+            Status = QzPnpReturnMultiSz(Mode, List, Needed, Data.Relations.Buffer, &Data.Relations.BufferSize);
+            if (!Needed)
+                Status = STATUS_SUCCESS;
+            ExFreePoolWithTag(List, QZ_PNP_TAG);
+            QzWriteArg(Mode, Buffer, &Data.Relations, sizeof(Data.Relations));
+            break;
+        }
+
+        case PlugPlayControlGetInterfaceDeviceList:
+        {
+            GUID Filter;
+            PWSTR Links, End;
+            if (!QzReadArg(Mode, &Filter, Data.List.FilterGuid, sizeof(Filter)))
+            {
+                Status = STATUS_ACCESS_VIOLATION;
+                break;
+            }
+            QzPnpUnlockTree();
+            Status = IoGetDeviceInterfaces(&Filter, Node ? Node->Pdo : NULL, Data.List.Flags, &Links);
+            QzPnpLockTree();
+            if (!NT_SUCCESS(Status))
+                break;
+            for (End = Links; *End; End += wcslen(End) + 1)
+                ;
+            Status = QzPnpReturnMultiSz(Mode, Links, (ULONG)(End - Links + 1) * sizeof(WCHAR), Data.List.Buffer,
+                                        &Data.List.BufferSize);
+            ExFreePool(Links);
+            QzWriteArg(Mode, Buffer, &Data.List, sizeof(Data.List));
+            break;
+        }
+
+        case PlugPlayControlDeviceClassAssociation:
+        {
+            GUID InterfaceGuid;
+            UNICODE_STRING Link, Reference;
+            WCHAR ReferenceBuffer[64];
+            if (!Data.Association.Register)
+                break;                  /* interfaces go when their device goes */
+            if (!QzReadArg(Mode, &InterfaceGuid, Data.Association.InterfaceGuid, sizeof(InterfaceGuid)))
+            {
+                Status = STATUS_ACCESS_VIOLATION;
+                break;
+            }
+            RtlInitEmptyUnicodeString(&Reference, ReferenceBuffer, sizeof(ReferenceBuffer));
+            if (Data.Association.Reference.Length)
+            {
+                if (Data.Association.Reference.Length > sizeof(ReferenceBuffer) ||
+                    !QzReadArg(Mode, ReferenceBuffer, Data.Association.Reference.Buffer,
+                               Data.Association.Reference.Length))
+                {
+                    Status = STATUS_INVALID_PARAMETER;
+                    break;
+                }
+                Reference.Length = Data.Association.Reference.Length;
+            }
+            QzPnpUnlockTree();
+            Status = IoRegisterDeviceInterface(Node->Pdo, &InterfaceGuid, Reference.Length ? &Reference : NULL,
+                                               &Link);
+            QzPnpLockTree();
+            if (!NT_SUCCESS(Status))
+                break;
+            if (Data.Association.SymbolicLinkNameLength < Link.Length + sizeof(WCHAR))
+                Status = STATUS_BUFFER_TOO_SMALL;
+            else if (!QzWriteArg(Mode, Data.Association.SymbolicLinkName, Link.Buffer, Link.Length) ||
+                     !QzWriteArg(Mode, (PUCHAR)Data.Association.SymbolicLinkName + Link.Length, L"", sizeof(WCHAR)))
+                Status = STATUS_ACCESS_VIOLATION;
+            Data.Association.SymbolicLinkNameLength = Link.Length + sizeof(WCHAR);
+            QzWriteArg(Mode, Buffer, &Data.Association, sizeof(Data.Association));
+            RtlFreeUnicodeString(&Link);
+            break;
+        }
+
+        case PlugPlayControlUserResponse:
+        {
+            /* umpnpmgr is done with the event at the head */
+            PQZ_PNP_EVENT Event = NULL;
+            ExAcquireFastMutex(&QzPnpListLock);
+            if (!IsListEmpty(&QzPnpEvents))
+                Event = CONTAINING_RECORD(RemoveHeadList(&QzPnpEvents), QZ_PNP_EVENT, Link);
+            if (IsListEmpty(&QzPnpEvents))
+                KeClearEvent(&QzPnpEventPending);
+            ExReleaseFastMutex(&QzPnpListLock);
+            if (Event)
+                ExFreePoolWithTag(Event, QZ_PNP_TAG);
+            break;
+        }
+
+        case PlugPlayControlQueryAndRemoveDevice:
+            Status = STATUS_NOT_SUPPORTED;      /* devices are not removed yet */
+            break;
+
+        case PlugPlayControlRetrieveDock:
+            Status = STATUS_NO_SUCH_DEVICE;     /* no docking stations */
+            break;
+
+        default:
+            DbgPrint(QZ_KERNEL_NAME ": NtPlugPlayControl: class %lu not supported yet\n", PlugPlayControlClass);
+            Status = STATUS_NOT_IMPLEMENTED;
+            break;
+    }
+    QzPnpUnlockTree();
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+NtGetPlugPlayEvent(IN ULONG Reserved1, IN ULONG Reserved2, OUT PPLUGPLAY_EVENT_BLOCK Buffer, IN ULONG BufferSize)
+{
+    KPROCESSOR_MODE Mode = ExGetPreviousMode();
+    PQZ_PNP_EVENT Event;
+    NTSTATUS Status;
+
+    UNREFERENCED_PARAMETER(Reserved1);
+    UNREFERENCED_PARAMETER(Reserved2);
+    if (!QzPnpEventsWanted)
+    {
+        KeInitializeEvent(&QzPnpEventPending, NotificationEvent, FALSE);
+        QzPnpEventsWanted = TRUE;
+    }
+    Status = KeWaitForSingleObject(&QzPnpEventPending, UserRequest, Mode, TRUE, NULL);
+    if (Status != STATUS_WAIT_0)
+        return Status;                  /* STATUS_USER_APC, STATUS_ALERTED */
+
+    /* The head event stays queued until PlugPlayControlUserResponse */
+    ExAcquireFastMutex(&QzPnpListLock);
+    if (IsListEmpty(&QzPnpEvents))
+    {
+        ExReleaseFastMutex(&QzPnpListLock);
+        return STATUS_NO_MORE_ENTRIES;
+    }
+    Event = CONTAINING_RECORD(QzPnpEvents.Flink, QZ_PNP_EVENT, Link);
+    if (BufferSize < Event->Size)
+        Status = STATUS_BUFFER_TOO_SMALL;
+    else if (!QzWriteArg(Mode, Buffer, &Event->Block, Event->Size))
+        Status = STATUS_ACCESS_VIOLATION;
+    else
+        Status = STATUS_SUCCESS;
+    ExReleaseFastMutex(&QzPnpListLock);
+    return Status;
 }

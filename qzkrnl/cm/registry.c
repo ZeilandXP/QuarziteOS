@@ -962,7 +962,7 @@ QzCmReferenceKey(HANDLE KeyHandle, PQZ_KEY *Key)
 /* Everything the KEY_*_INFORMATION classes report */
 typedef struct _QZ_KEY_FACTS
 {
-    WCHAR Name[256];
+    WCHAR Name[512];                   /* KeyNameInformation: the full path */
     ULONG NameBytes;
     ULONG SubKeys, Values, MaxNameLen, MaxValueNameLen, MaxValueDataLen;
     LARGE_INTEGER LastWriteTime;
@@ -1076,6 +1076,63 @@ QzCmKeyInformation(PQZ_KEY_FACTS Facts, KEY_INFORMATION_CLASS Class, PVOID Buffe
     return (Length < Needed) ? STATUS_BUFFER_OVERFLOW : STATUS_SUCCESS;
 }
 
+/* The in-memory key a hive is mounted at (the first, for DEFAULT's two) */
+static PQZ_MEM_KEY
+QzCmFindMount(PQZ_MEM_KEY Mem, PCMHIVE CmHive)
+{
+    PQZ_MEM_KEY Child, Found;
+    if (Mem->MountedHive == CmHive)
+        return Mem;
+    for (Child = Mem->Child; Child; Child = Child->Sibling)
+        if ((Found = QzCmFindMount(Child, CmHive)) != NULL)
+            return Found;
+    return NULL;
+}
+
+/* Put Name (Bytes long) in front of the path being built backwards in Buffer */
+static BOOLEAN
+QzCmPrepend(PWCHAR Buffer, PULONG Start, PCWSTR Name, ULONG Bytes)
+{
+    if (*Start < Bytes + sizeof(WCHAR))
+        return FALSE;
+    *Start -= Bytes;
+    RtlCopyMemory((PUCHAR)Buffer + *Start, Name, Bytes);
+    *Start -= sizeof(WCHAR);
+    *(PWCHAR)((PUCHAR)Buffer + *Start) = L'\\';
+    return TRUE;
+}
+
+/* "\REGISTRY\MACHINE\SOFTWARE\Classes\..." for a key (registry lock held, its hive selected) */
+static ULONG
+QzCmFullName(PQZ_KEY Key, PWCHAR Buffer, ULONG MaxBytes)
+{
+    ULONG Start = MaxBytes & ~1UL, Bytes;
+    PQZ_MEM_KEY Mem = Key->Mem;
+    WCHAR Name[128];
+
+    if (Key->IsCell)
+    {
+        HCELL_INDEX Cell = Key->Cell;
+        while (Cell != HCELL_NIL && Cell != QzHive->BaseBlock->RootCell)
+        {
+            PCM_KEY_NODE Node = QzCmNode(Cell);
+            Bytes = min(QzCmNodeName(Node, NULL, 0), sizeof(Name));
+            QzCmNodeName(Node, Name, Bytes);
+            if (!QzCmPrepend(Buffer, &Start, Name, Bytes))
+                break;
+            Cell = Node->Parent;
+        }
+        Mem = QzCmFindMount(QzRegistryRoot, Key->CmHive);
+    }
+    for (; Mem && Mem != QzRegistryRoot; Mem = Mem->Parent)
+        if (!QzCmPrepend(Buffer, &Start, Mem->Name, Mem->NameLength))
+            break;
+    QzCmPrepend(Buffer, &Start, L"REGISTRY", 8 * sizeof(WCHAR));
+    Bytes = (MaxBytes & ~1UL) - Start;
+    RtlMoveMemory(Buffer, (PUCHAR)Buffer + Start, Bytes);
+    return Bytes;
+}
+
 NTSTATUS
 NTAPI
 ZwQueryKey(IN HANDLE KeyHandle, IN KEY_INFORMATION_CLASS KeyInformationClass,
@@ -1090,6 +1147,9 @@ ZwQueryKey(IN HANDLE KeyHandle, IN KEY_INFORMATION_CLASS KeyInformationClass,
     ExAcquireFastMutex(&QzRegistryLock);
     QzSelectHive(Key);
     QzCmGetFacts(Key->IsCell, Key->Cell, Key->Mem, &Facts);
+    /* NT names the key in full here (advapi32 finds HKCR's merge points by it) */
+    if (KeyInformationClass == KeyNameInformation)
+        Facts.NameBytes = QzCmFullName(Key, Facts.Name, sizeof(Facts.Name));
     ExReleaseFastMutex(&QzRegistryLock);
     Status = QzCmKeyInformation(&Facts, KeyInformationClass, KeyInformation, Length, ResultLength);
     ObDereferenceObject(Key);

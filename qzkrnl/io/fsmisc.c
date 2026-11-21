@@ -149,13 +149,14 @@ ExSystemTimeToLocalTime(IN PLARGE_INTEGER SystemTime, OUT PLARGE_INTEGER LocalTi
 
 BOOLEAN QzMmIsImageInUse(PSECTION_OBJECT_POINTERS Sop);          /* mm/section.c */
 BOOLEAN QzMmIsDataMappedBeyond(PSECTION_OBJECT_POINTERS Sop, LONGLONG Size);
+BOOLEAN QzMmPurgeImage(PSECTION_OBJECT_POINTERS Sop);
 
 BOOLEAN
 NTAPI
 MmFlushImageSection(IN PSECTION_OBJECT_POINTERS SectionPointer, IN MMFLUSH_TYPE FlushType)
 {
     UNREFERENCED_PARAMETER(FlushType);
-    return !QzMmIsImageInUse(SectionPointer);
+    return QzMmPurgeImage(SectionPointer);  /* drops the shared image unless it is mapped */
 }
 
 BOOLEAN

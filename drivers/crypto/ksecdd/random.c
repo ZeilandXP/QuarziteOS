@@ -114,7 +114,7 @@ KsecGatherEntropyData(
                                             &EntropyData->PerformanceFrequency);
 
     /* Check if we have a TEB/PEB for the process environment */
-    Teb = PsGetCurrentThread()->Tcb.Teb;
+    Teb = PsGetThreadTeb(PsGetCurrentThread());
     if (Teb != NULL)
     {
         Peb = Teb->ProcessEnvironmentBlock;

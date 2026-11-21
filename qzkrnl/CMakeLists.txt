@@ -46,6 +46,7 @@ list(APPEND SOURCE
     ke/syscall.c
     ke/callback.c
     ke/apc.c
+    ke/config.c
     ke/user.c
     ke/usertest.c
     ke/wait.c

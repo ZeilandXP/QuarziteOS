@@ -1118,3 +1118,20 @@
 @ stdcall KeReadStateQueue(ptr)
 @ stdcall KeRundownQueue(ptr)
 @ stdcall IoSetIoCompletion(ptr ptr ptr long ptr long)
+
+# Network stack (B8)
+@ stdcall DbgQueryDebugFilterState(long long)
+@ stdcall ObSetSecurityObjectByPointer(ptr long ptr)
+@ stdcall ExGetCurrentProcessorCounts(ptr ptr ptr)
+@ stdcall ExGetCurrentProcessorCpuUsage(ptr)
+@ stdcall KeGetRecommendedSharedDataAlignment()
+
+# Boot drivers (B8)
+@ extern KeLoaderBlock
+@ stdcall KeFindConfigurationNextEntry(ptr long long ptr ptr)
+@ stdcall KeFindConfigurationEntry(ptr long long ptr)
+@ stdcall RtlRandomEx(ptr)
+@ stdcall KeRegisterNmiCallback(ptr ptr)
+@ stdcall KeDeregisterNmiCallback(ptr)
+@ stdcall IoWMIOpenBlock(ptr long ptr)
+@ stdcall IoWMIQueryAllData(ptr ptr ptr)

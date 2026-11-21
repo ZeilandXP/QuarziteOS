@@ -995,6 +995,19 @@
 @ stdcall KeReadStateQueue(ptr)
 @ stdcall KeRundownQueue(ptr)
 @ stdcall IoSetIoCompletion(ptr ptr ptr long ptr long)
+@ stdcall DbgQueryDebugFilterState(long long)
+@ stdcall ObSetSecurityObjectByPointer(ptr long ptr)
+@ stdcall ExGetCurrentProcessorCounts(ptr ptr ptr)
+@ stdcall ExGetCurrentProcessorCpuUsage(ptr)
+@ stdcall KeGetRecommendedSharedDataAlignment()
+@ extern KeLoaderBlock
+@ stdcall KeFindConfigurationNextEntry(ptr long long ptr ptr)
+@ stdcall KeFindConfigurationEntry(ptr long long ptr)
+@ stdcall RtlRandomEx(ptr)
+@ stdcall KeRegisterNmiCallback(ptr ptr)
+@ stdcall KeDeregisterNmiCallback(ptr)
+@ stdcall IoWMIOpenBlock(ptr long ptr)
+@ stdcall IoWMIQueryAllData(ptr ptr ptr)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ extern CcFastMdlReadWait QzUnimplementedData
@@ -1010,7 +1023,6 @@
 @ stub DbgLoadImageSymbols
 @ stub DbgPrintReturnControlC
 @ stub DbgPrompt
-@ stub DbgQueryDebugFilterState
 @ stub DbgSetDebugFilterState
 @ stub -arch=x86_64 ExAcquireFastMutex
 @ stub ExAllocatePoolWithTagPriority
@@ -1018,8 +1030,6 @@
 @ stub ExEnterCriticalRegionAndAcquireSharedWaitForExclusive
 @ stub ExEnumHandleTable
 @ stub ExExtendZone
-@ stub ExGetCurrentProcessorCounts
-@ stub ExGetCurrentProcessorCpuUsage
 @ stub ExInitializeZone
 @ stub -arch=i386 ExInterlockedCompareExchange64
 @ stub -arch=i386 ExInterlockedDecrementLong
@@ -1142,8 +1152,6 @@
 @ stub -arch=x86_64 IoWMIDeviceObjectToProviderId
 @ stub IoWMIExecuteMethod
 @ stub IoWMIHandleToInstanceName
-@ stub IoWMIOpenBlock
-@ stub IoWMIQueryAllData
 @ stub IoWMIQueryAllDataMultiple
 @ stub IoWMIQuerySingleInstance
 @ stub IoWMIQuerySingleInstanceMultiple
@@ -1173,14 +1181,10 @@
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToSynch
 @ stub KeCapturePersistentThreadState
 @ stub KeDeregisterBugCheckReasonCallback
-@ stub KeDeregisterNmiCallback
 @ stub KeEnterKernelDebugger
-@ stub KeFindConfigurationEntry
-@ stub KeFindConfigurationNextEntry
 @ stub KeFlushEntireTb
 @ stub -arch=arm KeFlushIoBuffers
 @ stub KeGenericCallDpc
-@ stub KeGetRecommendedSharedDataAlignment
 @ stub -arch=i386 KeI386AbiosCall
 @ stub -arch=i386 KeI386AllocateGdtSelectors
 @ stub -arch=i386 KeI386Call16BitCStyleFunction
@@ -1195,7 +1199,6 @@
 @ stub KeInvalidateAllCaches
 @ stub KeIpiGenericCall
 @ stub KeIsWaitListEmpty
-@ extern KeLoaderBlock QzUnimplementedData
 @ stub -arch=x86_64 KeLowerIrql
 @ stub KeProfileInterruptWithSource
 @ stub KeQueryPriorityThread
@@ -1203,7 +1206,6 @@
 @ stub -arch=x86_64 KeRaiseIrqlToDpcLevel
 @ stub KeRaiseUserException
 @ stub KeRegisterBugCheckReasonCallback
-@ stub KeRegisterNmiCallback
 @ stub -arch=x86_64 KeReleaseInStackQueuedSpinLock
 @ stub KeReleaseInStackQueuedSpinLockForDpc
 @ stub -arch=x86_64 KeReleaseQueuedSpinLock
@@ -1316,7 +1318,6 @@
 @ stub ObQueryObjectAuditingByHandle
 @ stub ObSetHandleAttributes
 @ stub ObSetSecurityDescriptorInfo
-@ stub ObSetSecurityObjectByPointer
 @ stub PfxFindPrefix
 @ stub PfxInitialize
 @ stub PfxInsertPrefix
@@ -1479,7 +1480,6 @@
 @ stub RtlPrefixString
 @ stub RtlQueryTimeZoneInformation
 @ stub RtlRandom
-@ stub RtlRandomEx
 @ stub RtlReserveChunk
 @ stub -arch=x86_64 RtlRestoreContext
 @ stub RtlSecondsSince1970ToTime

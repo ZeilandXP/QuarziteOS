@@ -365,3 +365,53 @@ NtVdmControl(IN ULONG ControlCode, IN PVOID ControlData)
     MmUnmapIoSpace(Low, 1024 + 256);
     return STATUS_SUCCESS;
 }
+
+/* ---------------------------------------------------------------------- */
+/* For the network stack (ndis.sys, tcpip.sys)                             */
+/* ---------------------------------------------------------------------- */
+
+NTSTATUS NTAPI NtQueryDebugFilterState(IN ULONG ComponentId, IN ULONG Level);
+
+NTSTATUS
+NTAPI
+DbgQueryDebugFilterState(IN ULONG ComponentId, IN ULONG Level)
+{
+    return NtQueryDebugFilterState(ComponentId, Level);
+}
+
+/* No per-object security yet: accepted, as NtSetSecurityObject is */
+NTSTATUS
+NTAPI
+ObSetSecurityObjectByPointer(IN PVOID Object, IN SECURITY_INFORMATION SecurityInformation,
+                             IN PSECURITY_DESCRIPTOR SecurityDescriptor)
+{
+    UNREFERENCED_PARAMETER(Object);
+    UNREFERENCED_PARAMETER(SecurityInformation);
+    UNREFERENCED_PARAMETER(SecurityDescriptor);
+    return STATUS_SUCCESS;
+}
+
+/* The processor's idle and busy time, in clock ticks (ndis's load balancing): idle time is not counted yet */
+VOID
+NTAPI
+ExGetCurrentProcessorCounts(OUT PULONG IdleTime, OUT PULONG KernelAndUserTime, OUT PULONG ProcessorNumber)
+{
+    *IdleTime = 0;
+    *KernelAndUserTime = (ULONG)(QzInterruptTime / (QzTimeIncrement ? QzTimeIncrement : 1));
+    *ProcessorNumber = 0;
+}
+
+VOID
+NTAPI
+ExGetCurrentProcessorCpuUsage(OUT PULONG CpuUsage)
+{
+    *CpuUsage = 0;
+}
+
+/* Spread data shared between processors over cache lines */
+ULONG
+NTAPI
+KeGetRecommendedSharedDataAlignment(VOID)
+{
+    return 64;
+}

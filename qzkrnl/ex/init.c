@@ -142,6 +142,7 @@ QzExRecordBootOptions(PLOADER_PARAMETER_BLOCK LoaderBlock)
 }
 
 VOID QzSeRmInit(VOID);                          /* se/srm.c */
+VOID QzKeSetLoaderBlock(PLOADER_PARAMETER_BLOCK LoaderBlock);   /* ke/config.c */
 
 DECLSPEC_NORETURN
 VOID
@@ -152,6 +153,7 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     CHAR Vendor[13], Brand[49];
 
     QzLoaderBlock = LoaderBlock;
+    QzKeSetLoaderBlock(LoaderBlock);
 
     /* Serial first, so that everything below can report progress */
     QzSerialInit();

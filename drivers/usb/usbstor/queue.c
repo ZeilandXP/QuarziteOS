@@ -112,8 +112,9 @@ USBSTOR_QueueAddIrp(
 
     if (SrbProcessing)
     {
-        ASSERT(FDODeviceExtension->ActiveSrb != NULL);
-
+        /* No ASSERT(ActiveSrb != NULL): the active request can complete (a DPC)
+         * between dropping IrpListLock and taking the cancel lock. This IRP is
+         * already queued, and USBSTOR_QueueNextRequest starts it. */
         OldDriverCancel = IoSetCancelRoutine(Irp, USBSTOR_Cancel);
     }
     else

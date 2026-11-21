@@ -753,6 +753,58 @@ QzMmDeleteSectionView(PQZ_PROCESS Process, PQZ_VAD Vad)
 /* System services                                                         */
 /* ---------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------- */
+/* Shared images                                                           */
+/* ---------------------------------------------------------------------- */
+
+static ULONG QzMmImageCacheHits;
+
+static BOOLEAN
+QzObjectAttributesHaveName(KPROCESSOR_MODE Mode, POBJECT_ATTRIBUTES ObjectAttributes)
+{
+    OBJECT_ATTRIBUTES Local;
+    return QzReadArg(Mode, &Local, ObjectAttributes, sizeof(Local)) && Local.ObjectName;
+}
+
+/* The file's image: kept (referenced) in its SectionObjectPointer until the file changes */
+static VOID
+QzMmCacheImage(PQZ_SECTION Section, PSECTION_OBJECT_POINTERS Sop)
+{
+    ExAcquireFastMutex(&QzMmFileLock);
+    if (!Sop->ImageSectionObject)
+    {
+        ObReferenceObject(Section);
+        Sop->ImageSectionObject = Section;
+    }
+    ExReleaseFastMutex(&QzMmFileLock);
+}
+
+/* MmFlushImageSection: the file is about to be written or deleted. FALSE if a process maps it */
+BOOLEAN
+QzMmPurgeImage(PSECTION_OBJECT_POINTERS Sop)
+{
+    PQZ_SECTION Section;
+
+    ExAcquireFastMutex(&QzMmFileLock);
+    Section = Sop->ImageSectionObject;
+    if (Section && Section->Views)
+    {
+        ExReleaseFastMutex(&QzMmFileLock);
+        return FALSE;
+    }
+    Sop->ImageSectionObject = NULL;
+    ExReleaseFastMutex(&QzMmFileLock);
+    if (Section)
+        ObDereferenceObject(Section);
+    return TRUE;
+}
+
+ULONG
+QzMmImageCacheStats(VOID)
+{
+    return QzMmImageCacheHits;
+}
+
 NTSTATUS
 NTAPI
 NtCreateSection(OUT PHANDLE SectionHandle,
@@ -794,16 +846,42 @@ NtCreateSection(OUT PHANDLE SectionHandle,
         if (!NT_SUCCESS(Status))
             return Status;
     }
+    /*
+     * An image already built for this file is shared, as NT shares its
+     * image control area: every process maps the same pages, copy on
+     * write. A named section (\KnownDlls) still gets its own object.
+     */
+    if ((AllocationAttributes & SEC_IMAGE) && FileObject && FileObject->SectionObjectPointer &&
+        !(ObjectAttributes && QzObjectAttributesHaveName(Mode, ObjectAttributes)))
+    {
+        PQZ_SECTION Cached;
+        ExAcquireFastMutex(&QzMmFileLock);
+        Cached = FileObject->SectionObjectPointer->ImageSectionObject;
+        if (Cached)
+            ObReferenceObject(Cached);
+        ExReleaseFastMutex(&QzMmFileLock);
+        if (Cached)
+        {
+            Status = ObOpenObjectByPointer(Cached, 0, NULL, DesiredAccess ? DesiredAccess : SECTION_ALL_ACCESS,
+                                           MmSectionObjectType, Mode, &Handle);
+            ObDereferenceObject(Cached);
+            QzMmImageCacheHits++;
+            goto Done;
+        }
+    }
     Status = ObCreateObject(Mode, MmSectionObjectType, ObjectAttributes, Mode, NULL, sizeof(QZ_SECTION), 0, 0,
                             (PVOID *)&Section);
     if (NT_SUCCESS(Status))
     {
         Status = QzMmInitializeSection(Section, &Size, SectionPageProtection, AllocationAttributes, FileObject);
+        if (NT_SUCCESS(Status) && Section->Image && FileObject && FileObject->SectionObjectPointer)
+            QzMmCacheImage(Section, FileObject->SectionObjectPointer);
         if (NT_SUCCESS(Status))
             Status = ObInsertObject(Section, NULL, DesiredAccess, 0, NULL, &Handle);
         else
             ObDereferenceObject(Section);
     }
+Done:
     if (FileObject)
         ObDereferenceObject(FileObject);
     if (NT_SUCCESS(Status) && !QzWriteArg(Mode, SectionHandle, &Handle, sizeof(Handle)))
@@ -1026,8 +1104,8 @@ NtAreMappedFilesTheSame(IN PVOID File1MappedAsAnImage,
 BOOLEAN
 QzMmIsImageInUse(PSECTION_OBJECT_POINTERS Sop)
 {
-    UNREFERENCED_PARAMETER(Sop);
-    return FALSE;
+    PQZ_SECTION Section = Sop->ImageSectionObject;
+    return Section && Section->Views > 0;
 }
 
 /* Is some view of a mapped file's section beyond Size? */

@@ -334,12 +334,24 @@ Out:
         ZwClose(Data);
     if (Image)
         ZwClose(Image);
-    if (File)
-        ZwClose(File);
     if (A)
         ObDereferenceObject(A);
     if (B)
         ObDereferenceObject(B);
+    if (File)
+    {
+        /* The image stays shared for the next process until the file
+           changes: let it go, as a file system does before a write */
+        PFILE_OBJECT FileObject;
+        if (NT_SUCCESS(ObReferenceObjectByHandle(File, 0, IoFileObjectType, KernelMode, (PVOID *)&FileObject,
+                                                 NULL)))
+        {
+            if (FileObject->SectionObjectPointer)
+                MmFlushImageSection(FileObject->SectionObjectPointer, MmFlushForWrite);
+            ObDereferenceObject(FileObject);
+        }
+        ZwClose(File);
+    }
     /* The file's pages stay in the cache until the lazy writer lets an
        unused cache map go (a couple of passes) */
     CcWaitForCurrentLazyWriterActivity();

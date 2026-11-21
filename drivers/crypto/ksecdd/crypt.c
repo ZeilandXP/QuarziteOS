@@ -94,9 +94,11 @@ KsecGetKeyData (
         /* Hash some process specific data to generate the key */
         RtlZeroMemory(&ProcessData, sizeof(ProcessData));
         ProcessData.Process = CurrentProcess;
-        ProcessData.ProcessId = CurrentProcess->UniqueProcessId;
+        ProcessData.ProcessId = PsGetProcessId(CurrentProcess);
         ProcessData.CreateTime = PsGetProcessCreateTimeQuadPart(CurrentProcess);
-        ProcessData.DirectoryTableBase = CurrentProcess->Pcb.DirectoryTableBase[0];
+        /* Through exported routines only, so that any NT kernel will do:
+           the page directory is not one of them, and the process is already in the key */
+        ProcessData.DirectoryTableBase = 0;
         MD5Update(&Md5Contexts[0], (PVOID)&ProcessData, sizeof(ProcessData));
         MD5Update(&Md5Contexts[1], (PVOID)&ProcessData, sizeof(ProcessData));
     }

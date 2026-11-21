@@ -652,8 +652,8 @@ QzIoStartDriver(PCUNICODE_STRING ServiceName, PQZ_LDR_ENTRY Module, PUNICODE_STR
  * the ones that must be there by then, to register and get the first try
  * at it.
  */
-VOID
-QzIoStartBootFileSystems(VOID)
+static VOID
+QzIoStartBootDriverList(BOOLEAN FileSystems)
 {
     PLIST_ENTRY Entry;
 
@@ -680,7 +680,7 @@ QzIoStartBootFileSystems(VOID)
         Status = ZwQueryValueKey(Key, &ValueName, KeyValuePartialInformation, Value, sizeof(Buffer), &Length);
         ZwClose(Key);
         if (!NT_SUCCESS(Status) || Value->Type != REG_DWORD ||
-            !(*(PULONG)Value->Data & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)))
+            !(*(PULONG)Value->Data & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)) != !FileSystems)
             continue;
 
         Service = Boot->RegistryPath;
@@ -689,16 +689,36 @@ QzIoStartBootFileSystems(VOID)
         Service.Buffer += i;
         Service.Length -= i * sizeof(WCHAR);
         Service.MaximumLength = Service.Length;
+        if (QzIoFindDriver(&Service))
+            continue;                   /* PnP started it already */
         Status = QzIoLoadDriver(&Service, &Driver);
-        DbgPrint(QZ_KERNEL_NAME ": boot file system %wZ: 0x%08lx\n", &Service, Status);
+        DbgPrint(QZ_KERNEL_NAME ": boot %s %wZ: 0x%08lx\n", FileSystems ? "file system" : "driver", &Service,
+                 Status);
     }
 }
 
+/* File systems among the boot drivers */
+VOID
+QzIoStartBootFileSystems(VOID)
+{
+    QzIoStartBootDriverList(TRUE);
+}
+
 /*
- * System-start file systems (fs_rec, npfs, msfs): NT starts every
- * system-start driver once the boot volume is up. For now only file
- * systems and recognizers are started: the rest (i8042prt, beep, ...)
- * would compete with qzkrnl's own console drivers.
+ * The other boot drivers: NT runs DriverEntry for every one the loader
+ * loaded; PnP function drivers among them only wait for AddDevice, and
+ * the rest (ndis, the export drivers others link to) set themselves up.
+ */
+VOID
+QzIoStartBootDrivers(VOID)
+{
+    QzIoStartBootDriverList(FALSE);
+}
+
+/*
+ * System-start drivers, once the boot volume is up, as NT starts them:
+ * the file systems (fs_rec, npfs, msfs) and the kernel drivers (null,
+ * blue, ndisuio). PnP drivers among them wait for their devices.
  */
 VOID
 QzIoStartSystemFileSystems(VOID)
@@ -728,10 +748,12 @@ QzIoStartSystemFileSystems(VOID)
         Name.Buffer = Info->Name;
         Name.Length = Name.MaximumLength = (USHORT)Info->NameLength;
         if (!NT_SUCCESS(QzIoQueryService(&Name, &Service)) || Service.Start != SERVICE_SYSTEM_START ||
-            !(Service.Type & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)) || QzIoFindDriver(&Name))
+            !(Service.Type & (SERVICE_KERNEL_DRIVER | SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)) ||
+            QzIoFindDriver(&Name))
             continue;
         Status = QzIoLoadDriver(&Name, &Driver);
-        DbgPrint(QZ_KERNEL_NAME ": system file system %wZ: 0x%08lx\n", &Name, Status);
+        DbgPrint(QZ_KERNEL_NAME ": system %s %wZ: 0x%08lx\n",
+                 (Service.Type & SERVICE_KERNEL_DRIVER) ? "driver" : "file system", &Name, Status);
     }
     ZwClose(Services);
 }
