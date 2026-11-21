@@ -860,6 +860,132 @@
 @ extern CcFastReadNotPossible
 @ extern CcFastReadWait
 @ stdcall ZwFlushVirtualMemory(ptr ptr ptr ptr)
+@ extern ExDesktopObjectType
+@ extern ExWindowStationObjectType
+@ extern PsJobType
+@ fastcall ExEnterCriticalRegionAndAcquireFastMutexUnsafe(ptr)
+@ fastcall ExReleaseFastMutexUnsafeAndLeaveCriticalRegion(ptr)
+@ stdcall ExEnterCriticalRegionAndAcquireResourceShared(ptr)
+@ stdcall ExRaiseAccessViolation()
+@ fastcall ExfAcquirePushLockExclusive(ptr)
+@ fastcall ExfAcquirePushLockShared(ptr)
+@ fastcall ExfReleasePushLock(ptr)
+@ fastcall ExfReleasePushLockExclusive(ptr)
+@ fastcall ExfReleasePushLockShared(ptr)
+@ fastcall ExfTryToWakePushLock(ptr)
+@ stdcall KdSystemDebugControl(long ptr long ptr long ptr long)
+@ stdcall KeAddSystemServiceTable(ptr ptr long ptr long)
+@ stdcall KeRemoveSystemServiceTable(long)
+@ stdcall KeIsAttachedProcess()
+@ stdcall -arch=i386 KeRestoreFloatingPointState(ptr)
+@ stdcall -arch=x86_64 KeRestoreFloatingPointState(ptr) KxRestoreFloatingPointState
+@ stdcall -arch=i386 KeSaveFloatingPointState(ptr)
+@ stdcall -arch=x86_64 KeSaveFloatingPointState(ptr) KxSaveFloatingPointState
+@ stdcall KeSetKernelStackSwapEnable(long)
+@ stdcall KeUserModeCallback(long ptr long ptr ptr)
+@ stdcall MmCreateSection(ptr long ptr ptr long long ptr ptr)
+@ stdcall MmMapViewInSessionSpace(ptr ptr ptr)
+@ stdcall MmMapViewInSystemSpace(ptr ptr ptr)
+@ stdcall MmMapViewOfSection(ptr ptr ptr long long ptr ptr long long long)
+@ stdcall MmUnmapViewInSessionSpace(ptr)
+@ stdcall MmUnmapViewInSystemSpace(ptr)
+@ stdcall MmUnmapViewOfSection(ptr ptr)
+@ stdcall MmSecureVirtualMemory(ptr long long)
+@ stdcall MmUnsecureVirtualMemory(ptr)
+@ stdcall NtAddAtom(wstr long ptr)
+@ stdcall NtFindAtom(wstr long ptr)
+@ stdcall NtDeleteAtom(ptr)
+@ stdcall NtQueryInformationAtom(long long ptr long ptr)
+@ stdcall NtQuerySystemInformation(long ptr long ptr)
+@ stdcall ObAssignSecurity(ptr ptr ptr ptr)
+@ stdcall ObFindHandleForObject(ptr ptr ptr ptr ptr)
+@ stdcall PoRequestShutdownEvent(ptr)
+@ stdcall PsEstablishWin32Callouts(ptr)
+@ stdcall PsGetJobUIRestrictionsClass(ptr)
+@ stdcall PsGetProcessExitProcessCalled(ptr)
+@ stdcall PsGetProcessJob(ptr)
+@ stdcall PsGetProcessWin32WindowStation(ptr)
+@ stdcall PsGetThreadFreezeCount(ptr)
+@ stdcall PsIsSystemProcess(ptr)
+@ stdcall PsReferenceImpersonationToken(ptr ptr ptr ptr)
+@ stdcall PsReferencePrimaryToken(ptr)
+@ stdcall PsSetProcessWin32Process(ptr ptr ptr)
+@ stdcall PsSetProcessWindowStation(ptr ptr)
+@ stdcall PsSetThreadWin32Thread(ptr ptr ptr)
+@ stdcall RtlAbsoluteToSelfRelativeSD(ptr ptr ptr)
+@ stdcall RtlAddAccessAllowedAceEx(ptr long long long ptr)
+@ stdcall RtlAddAccessAllowedAce(ptr long long ptr)
+@ stdcall RtlAddAtomToAtomTable(ptr wstr ptr)
+@ stdcall RtlAllocateHeap(ptr long long)
+@ stdcall RtlAreAllAccessesGranted(long long)
+@ stdcall RtlAreAnyAccessesGranted(long long)
+@ stdcall RtlCreateAcl(ptr long long)
+@ stdcall RtlCreateAtomTable(long ptr)
+@ stdcall RtlCreateHeap(long ptr long long ptr ptr)
+@ stdcall RtlDestroyHeap(ptr)
+@ stdcall RtlCreateSecurityDescriptor(ptr long)
+@ stdcall RtlDeleteAtomFromAtomTable(ptr ptr)
+@ stdcall RtlDestroyAtomTable(ptr)
+@ stdcall RtlFormatCurrentUserKeyPath(ptr)
+@ stdcall RtlFreeHeap(ptr long ptr)
+@ stdcall RtlGetDefaultCodePage(ptr ptr)
+@ stdcall RtlLookupAtomInAtomTable(ptr wstr ptr)
+@ stdcall RtlNtStatusToDosError(long)
+@ stdcall RtlNtStatusToDosErrorNoTeb(long)
+@ stdcall RtlPinAtomInAtomTable(ptr ptr)
+@ stdcall RtlQueryAtomInAtomTable(ptr long ptr ptr ptr ptr)
+@ stdcall RtlSetDaclSecurityDescriptor(ptr long ptr long)
+@ stdcall RtlSetGroupSecurityDescriptor(ptr ptr long)
+@ stdcall RtlSetOwnerSecurityDescriptor(ptr ptr long)
+@ stdcall RtlSetSaclSecurityDescriptor(ptr long ptr long)
+@ stdcall RtlGetDaclSecurityDescriptor(ptr ptr ptr ptr)
+@ stdcall RtlLengthSecurityDescriptor(ptr)
+@ stdcall RtlValidSecurityDescriptor(ptr)
+@ stdcall RtlSizeHeap(ptr long ptr)
+@ stdcall RtlWalkFrameChain(ptr long long)
+@ stdcall SeQueryAuthenticationIdToken(ptr ptr)
+@ stdcall ZwCancelIoFile(ptr ptr)
+@ stdcall ZwOpenThreadToken(ptr long long ptr)
+@ stdcall ZwOpenThreadTokenEx(ptr long long long ptr)
+@ stdcall ZwQueryDefaultLocale(long ptr)
+@ stdcall ZwYieldExecution()
+@ stdcall ZwSetSecurityObject(ptr long ptr)
+@ stdcall ZwQuerySecurityObject(ptr long ptr long ptr)
+@ stdcall NtQuerySecurityObject(ptr long ptr long ptr)
+@ stdcall NtSetSecurityObject(ptr long ptr)
+@ stdcall PsGetProcessSectionBaseAddress(ptr)
+@ stdcall ZwSetInformationObject(ptr long ptr long)
+@ stdcall InbvAcquireDisplayOwnership()
+@ stdcall InbvCheckDisplayOwnership()
+@ stdcall InbvDisplayString(str)
+@ stdcall InbvEnableDisplayString(long)
+@ stdcall InbvIsBootDriverInstalled()
+@ stdcall InbvNotifyDisplayOwnershipLost(ptr)
+@ stdcall IoAssignResources(ptr ptr ptr ptr ptr ptr)
+@ stdcall -arch=i386 Ke386CallBios(long ptr)
+@ stdcall NtVdmControl(long ptr)
+@ stdcall NtOpenProcess(ptr long ptr ptr)
+@ stdcall NtOpenThread(ptr long ptr ptr)
+@ stdcall ZwOpenProcess(ptr long ptr ptr)
+@ stdcall ZwOpenThread(ptr long ptr ptr)
+@ stdcall IoThreadToProcess(ptr)
+@ stdcall ObDereferenceSecurityDescriptor(ptr long)
+@ stdcall ObLogSecurityDescriptor(ptr ptr long)
+@ stdcall ObReferenceSecurityDescriptor(ptr long)
+@ stdcall SeAppendPrivileges(ptr ptr)
+@ stdcall SeAssignSecurity(ptr ptr ptr long ptr ptr ptr)
+@ stdcall SeDeassignSecurity(ptr)
+@ stdcall SeCreateClientSecurity(ptr ptr long ptr)
+@ stdcall SeFreePrivileges(ptr)
+@ stdcall SeImpersonateClientEx(ptr ptr)
+@ stdcall SeImpersonateClient(ptr ptr)
+@ stdcall SeOpenObjectAuditAlarm(ptr ptr ptr ptr ptr long long long ptr)
+@ stdcall SeQuerySecurityDescriptorInfo(ptr ptr ptr ptr)
+@ stdcall SeSetSecurityDescriptorInfo(ptr ptr ptr ptr long ptr)
+@ stdcall SeTokenType(ptr)
+@ stdcall PsDereferencePrimaryToken(ptr)
+@ stdcall PsDereferenceImpersonationToken(ptr) PsDereferencePrimaryToken
+@ stdcall PsRevertToSelf()
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ extern CcFastMdlReadWait QzUnimplementedData
@@ -879,10 +1005,7 @@
 @ stub DbgSetDebugFilterState
 @ stub -arch=x86_64 ExAcquireFastMutex
 @ stub ExAllocatePoolWithTagPriority
-@ extern ExDesktopObjectType QzUnimplementedData
 @ stub ExDisableResourceBoostLite
-@ stub ExEnterCriticalRegionAndAcquireFastMutexUnsafe
-@ stub ExEnterCriticalRegionAndAcquireResourceShared
 @ stub ExEnterCriticalRegionAndAcquireSharedWaitForExclusive
 @ stub ExEnumHandleTable
 @ stub ExExtendZone
@@ -896,25 +1019,16 @@
 @ stub -arch=i386 ExInterlockedIncrementLong
 @ stub -arch=x86_64,arm ExQueryDepthSList
 @ stub ExQueryPoolBlockSize
-@ stub ExRaiseAccessViolation
 @ stub ExRaiseDatatypeMisalignment
 @ stub ExRaiseHardError
 @ stub -arch=x86_64 ExReleaseFastMutex
-@ stub ExReleaseFastMutexUnsafeAndLeaveCriticalRegion
 @ stub ExRundownCompleted
 @ stub ExRundownCompletedCacheAware
 @ stub ExSetTimerResolution
 @ stub ExSystemExceptionFilter
 @ stub -arch=x86_64 ExTryToAcquireFastMutex
 @ stub ExVerifySuite
-@ extern ExWindowStationObjectType QzUnimplementedData
-@ stub ExfAcquirePushLockExclusive
-@ stub ExfAcquirePushLockShared
 @ stub -arch=i386 ExfInterlockedCompareExchange64
-@ stub ExfReleasePushLock
-@ stub ExfReleasePushLockExclusive
-@ stub ExfReleasePushLockShared
-@ stub ExfTryToWakePushLock
 @ stub ExfUnblockPushLock
 @ stub -arch=x86_64,arm ExpInterlockedFlushSList
 @ stub -arch=x86_64,arm ExpInterlockedPopEntrySList
@@ -961,14 +1075,8 @@
 @ stub FsRtlTruncateMcb
 @ stub FsRtlUninitializeMcb
 @ stub HeadlessDispatch
-@ stub InbvAcquireDisplayOwnership
-@ stub InbvCheckDisplayOwnership
-@ stub InbvDisplayString
 @ stub InbvEnableBootDriver
-@ stub InbvEnableDisplayString
 @ stub InbvInstallDisplayStringFilter
-@ stub InbvIsBootDriverInstalled
-@ stub InbvNotifyDisplayOwnershipLost
 @ stub InbvResetDisplay
 @ stub InbvSetScrollRegion
 @ stub InbvSetTextColor
@@ -980,7 +1088,6 @@
 @ stub -arch=i386,arm InterlockedIncrement
 @ stub -arch=x86_64 InitializeSListHead
 @ stub IoAssignDriveLetters
-@ stub IoAssignResources
 @ stub IoCancelFileOpen
 @ stub IoCheckDesiredAccess
 @ stub IoCheckEaBufferValidity
@@ -1018,7 +1125,6 @@
 @ stub IoSetInformation
 @ stub IoSetIoCompletion
 @ extern IoStatisticsLock QzUnimplementedData
-@ stub IoThreadToProcess
 @ stub IoTranslateBusAddress
 @ stub IoValidateDeviceIoControlAccess
 @ stub IoVerifyPartitionTable
@@ -1046,8 +1152,6 @@
 @ extern KdEnteredDebugger QzUnimplementedData
 @ stub KdPollBreakIn
 @ stub KdPowerTransition
-@ stub KdSystemDebugControl
-@ stub -arch=i386 Ke386CallBios
 @ stub -arch=i386 Ke386IoSetAccessProcess
 @ stub -arch=i386 Ke386QueryIoAccessMap
 @ stub -arch=i386 Ke386SetIoAccessMap
@@ -1059,7 +1163,6 @@
 @ stub KeAcquireSpinLockForDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToSynch
-@ stub KeAddSystemServiceTable
 @ stub KeCapturePersistentThreadState
 @ stub KeDeregisterBugCheckReasonCallback
 @ stub KeDeregisterNmiCallback
@@ -1088,7 +1191,6 @@
 @ stub KeInsertQueueApc
 @ stub KeInvalidateAllCaches
 @ stub KeIpiGenericCall
-@ stub KeIsAttachedProcess
 @ stub KeIsWaitListEmpty
 @ extern KeLoaderBlock QzUnimplementedData
 @ stub -arch=x86_64 KeLowerIrql
@@ -1106,20 +1208,14 @@
 @ stub -arch=x86_64 KeReleaseSpinLock
 @ stub KeReleaseSpinLockForDpc
 @ stub KeRemoveQueue
-@ stub KeRemoveSystemServiceTable
-@ stub -arch=i386 KeRestoreFloatingPointState
-@ stub -arch=x86_64 KeRestoreFloatingPointState
 @ stub KeRevertToUserAffinityThread
 @ stub KeRundownQueue
-@ stub -arch=i386 KeSaveFloatingPointState
-@ stub -arch=x86_64 KeSaveFloatingPointState
 @ stub KeSaveStateForHibernate
 @ stub KeSetAffinityThread
 @ stub KeSetBasePriorityThread
 @ stub KeSetDmaIoCoherency
 @ stub KeSetEventBoostPriority
 @ stub KeSetIdealProcessorThread
-@ stub KeSetKernelStackSwapEnable
 @ stub KeSetProfileIrql
 @ stub KeSetSystemAffinityThread
 @ stub KeSignalCallDpcDone
@@ -1128,7 +1224,6 @@
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLockRaiseToSynch
 @ stub KeUpdateRunTime
-@ stub KeUserModeCallback
 @ stub -arch=x86_64 KfRaiseIrql
 @ stub -arch=i386,arm KiAcquireSpinLock
 @ stub KiCheckForKernelApcDelivery
@@ -1157,7 +1252,6 @@
 @ stub MmCommitSessionMappedView
 @ stub MmCreateMdl
 @ stub MmCreateMirror
-@ stub MmCreateSection
 @ stub MmDisableModifiedWriteOfSection
 @ stub MmDoesFileHaveUserWritableReferences
 @ stub MmForceSectionClosed
@@ -1174,9 +1268,6 @@
 @ stub MmMapMemoryDumpMdl
 @ stub MmMapUserAddressesToPage
 @ stub MmMapVideoDisplay
-@ stub MmMapViewInSessionSpace
-@ stub MmMapViewInSystemSpace
-@ stub MmMapViewOfSection
 @ stub MmMarkPhysicalMemoryAsBad
 @ stub MmMarkPhysicalMemoryAsGood
 @ stub MmPrefetchPages
@@ -1184,42 +1275,29 @@
 @ stub MmProbeAndLockSelectedPages
 @ stub MmProtectMdlSystemAddress
 @ stub MmRemovePhysicalMemory
-@ stub MmSecureVirtualMemory
 @ stub MmSetAddressRangeModified
 @ stub MmSetBankedSection
 @ stub MmTrimAllSystemPagableMemory
 @ stub MmUnmapVideoDisplay
-@ stub MmUnmapViewInSessionSpace
-@ stub MmUnmapViewInSystemSpace
-@ stub MmUnmapViewOfSection
-@ stub MmUnsecureVirtualMemory
-@ stub NtAddAtom
 @ stub NtAllocateLocallyUniqueId
 @ stub NtAllocateUuids
 @ stub NtAllocateVirtualMemory
 @ stub NtConnectPort
 @ stub NtCreateSection
-@ stub NtDeleteAtom
 @ stub NtDeleteFile
-@ stub NtFindAtom
 @ stub NtFreeVirtualMemory
 @ extern NtGlobalFlag QzUnimplementedData
 @ stub NtLockFile
 @ stub NtMapViewOfSection
 @ stub NtNotifyChangeDirectoryFile
-@ stub NtOpenProcess
-@ stub NtOpenThread
 @ stub NtOpenThreadToken
 @ stub NtOpenThreadTokenEx
 @ stub NtQueryDirectoryFile
 @ stub NtQueryEaFile
-@ stub NtQueryInformationAtom
 @ stub NtQueryInformationFile
 @ stub NtQueryInformationProcess
 @ stub NtQueryInformationThread
 @ stub NtQueryQuotaInformationFile
-@ stub NtQuerySecurityObject
-@ stub NtQuerySystemInformation
 @ stub NtQueryVolumeInformationFile
 @ stub NtRequestPort
 @ stub NtRequestWaitReplyPort
@@ -1228,21 +1306,14 @@
 @ stub NtSetInformationProcess
 @ stub NtSetInformationThread
 @ stub NtSetQuotaInformationFile
-@ stub NtSetSecurityObject
 @ stub NtSetVolumeInformationFile
 @ stub NtShutdownSystem
 @ stub NtTraceEvent
 @ stub NtUnlockFile
-@ stub NtVdmControl
-@ stub ObAssignSecurity
 @ stub ObCheckCreateObjectAccess
 @ stub ObCheckObjectAccess
 @ stub ObDeleteCapturedInsertInfo
-@ stub ObDereferenceSecurityDescriptor
-@ stub ObFindHandleForObject
-@ stub ObLogSecurityDescriptor
 @ stub ObQueryObjectAuditingByHandle
-@ stub ObReferenceSecurityDescriptor
 @ stub ObSetHandleAttributes
 @ stub ObSetSecurityDescriptorInfo
 @ stub ObSetSecurityObjectByPointer
@@ -1264,7 +1335,6 @@
 @ stub PoQueueShutdownWorkItem
 @ stub PoRegisterDeviceNotify
 @ stub PoRegisterSystemState
-@ stub PoRequestShutdownEvent
 @ stub PoSetHiberRange
 @ stub PoSetSystemState
 @ stub PoShutdownBugCheck
@@ -1275,10 +1345,7 @@
 @ stub PsChargeProcessPagedPoolQuota
 @ stub PsChargeProcessPoolQuota
 @ stub PsCreateSystemProcess
-@ stub PsDereferenceImpersonationToken
-@ stub PsDereferencePrimaryToken
 @ stub PsDisableImpersonation
-@ stub PsEstablishWin32Callouts
 @ stub PsGetContextThread
 @ stub PsGetCurrentThreadPreviousMode
 @ stub PsGetCurrentThreadStackBase
@@ -1286,24 +1353,14 @@
 @ stub PsGetCurrentThreadWin32ThreadAndEnterCriticalRegion
 @ stub PsGetJobLock
 @ stub PsGetJobSessionId
-@ stub PsGetJobUIRestrictionsClass
-@ stub PsGetProcessExitProcessCalled
 @ stub PsGetProcessExitTime
-@ stub PsGetProcessJob
 @ stub PsGetProcessPriorityClass
-@ stub PsGetProcessSectionBaseAddress
 @ stub PsGetProcessSecurityPort
 @ stub PsGetProcessSessionIdEx
-@ stub PsGetProcessWin32WindowStation
-@ stub PsGetThreadFreezeCount
 @ stub PsGetThreadSessionId
 @ stub PsImpersonateClient
-@ stub PsIsSystemProcess
 @ stub PsIsThreadImpersonating
-@ extern PsJobType QzUnimplementedData
 @ stub PsLookupProcessThreadByCid
-@ stub PsReferenceImpersonationToken
-@ stub PsReferencePrimaryToken
 @ stub PsRemoveCreateThreadNotifyRoutine
 @ stub PsRemoveLoadImageNotifyRoutine
 @ stub PsRestoreImpersonation
@@ -1311,7 +1368,6 @@
 @ stub PsReturnProcessNonPagedPoolQuota
 @ stub PsReturnProcessPagedPoolQuota
 @ stub PsRevertThreadToSelf
-@ stub PsRevertToSelf
 @ stub PsSetContextThread
 @ stub PsSetCreateProcessNotifyRoutine
 @ stub PsSetCreateThreadNotifyRoutine
@@ -1321,22 +1377,12 @@
 @ stub PsSetProcessPriorityByClass
 @ stub PsSetProcessPriorityClass
 @ stub PsSetProcessSecurityPort
-@ stub PsSetProcessWin32Process
-@ stub PsSetProcessWindowStation
-@ stub PsSetThreadWin32Thread
 @ stub PsWrapApcWow64Thread
-@ stub RtlAbsoluteToSelfRelativeSD
-@ stub RtlAddAccessAllowedAce
-@ stub RtlAddAccessAllowedAceEx
 @ stub RtlAddAce
-@ stub RtlAddAtomToAtomTable
 @ stub RtlAddRange
-@ stub RtlAllocateHeap
 @ stub RtlAnsiStringToUnicodeSize
 @ stub RtlAppendAsciizToString
 @ stub RtlAppendStringToString
-@ stub RtlAreAllAccessesGranted
-@ stub RtlAreAnyAccessesGranted
 @ stub RtlCharToInteger
 @ stub RtlCmDecodeMemIoResource
 @ stub RtlCmEncodeMemIoResource
@@ -1349,21 +1395,14 @@
 @ stub -arch=x86_64 RtlCopyMemory
 @ stub -arch=x86_64 RtlCopyMemoryNonTemporal
 @ stub RtlCopyRangeList
-@ stub RtlCreateAcl
-@ stub RtlCreateAtomTable
-@ stub RtlCreateHeap
-@ stub RtlCreateSecurityDescriptor
 @ stub RtlCustomCPToUnicodeN
 @ stub RtlDecompressBuffer
 @ stub RtlDecompressChunks
 @ stub RtlDecompressFragment
 @ stub RtlDeleteAce
-@ stub RtlDeleteAtomFromAtomTable
 @ stub RtlDeleteOwnersRanges
 @ stub RtlDeleteRange
 @ stub RtlDescribeChunk
-@ stub RtlDestroyAtomTable
-@ stub RtlDestroyHeap
 @ stub RtlEmptyAtomTable
 @ stub -arch=win32 RtlEnlargedIntegerMultiply
 @ stub -arch=win32 RtlEnlargedUnsignedDivide
@@ -1379,14 +1418,10 @@
 @ stub RtlFindMessage
 @ stub RtlFindNextForwardRunClear
 @ stub RtlFindRange
-@ stub RtlFormatCurrentUserKeyPath
-@ stub RtlFreeHeap
 @ stub RtlFreeRangeList
 @ stub RtlGetAce
 @ stub RtlGetCallersAddress
 @ stub RtlGetCompressionWorkSpaceSize
-@ stub RtlGetDaclSecurityDescriptor
-@ stub RtlGetDefaultCodePage
 @ stub RtlGetFirstRange
 @ stub RtlGetGroupSecurityDescriptor
 @ stub RtlGetLastRange
@@ -1433,21 +1468,15 @@
 @ stub -arch=win32 RtlLargeIntegerShiftLeft
 @ stub -arch=win32 RtlLargeIntegerShiftRight
 @ stub -arch=win32 RtlLargeIntegerSubtract
-@ stub RtlLengthSecurityDescriptor
 @ stub RtlLockBootStatusData
-@ stub RtlLookupAtomInAtomTable
 @ stub RtlLookupElementGenericTableFullAvl
 @ stub -arch=x86_64 RtlLookupFunctionEntry
 @ stub RtlMapSecurityErrorToNtStatus
 @ stub RtlMergeRangeLists
-@ stub RtlNtStatusToDosError
-@ stub RtlNtStatusToDosErrorNoTeb
 @ stub RtlOemStringToUnicodeSize
 @ stub -arch=x86_64 RtlPcToFileHeader
-@ stub RtlPinAtomInAtomTable
 @ stub RtlPrefetchMemoryNonTemporal
 @ stub RtlPrefixString
-@ stub RtlQueryAtomInAtomTable
 @ stub RtlQueryTimeZoneInformation
 @ stub RtlRandom
 @ stub RtlRandomEx
@@ -1457,12 +1486,7 @@
 @ stub RtlSecondsSince1980ToTime
 @ stub RtlSelfRelativeToAbsoluteSD
 @ stub RtlSelfRelativeToAbsoluteSD2
-@ stub RtlSetDaclSecurityDescriptor
-@ stub RtlSetGroupSecurityDescriptor
-@ stub RtlSetOwnerSecurityDescriptor
-@ stub RtlSetSaclSecurityDescriptor
 @ stub RtlSetTimeZoneInformation
-@ stub RtlSizeHeap
 @ stub RtlTimeToElapsedTimeFields
 @ stub RtlTimeToSecondsSince1970
 @ stub RtlTimeToSecondsSince1980
@@ -1488,14 +1512,10 @@
 @ stub RtlUpcaseUnicodeToMultiByteN
 @ stub -arch=i386,arm RtlUshortByteSwap
 @ stub RtlValidRelativeSecurityDescriptor
-@ stub RtlValidSecurityDescriptor
 @ stub RtlVerifyVersionInfo
 @ stub -arch=x86_64,arm RtlVirtualUnwind
 @ stub RtlVolumeDeviceToDosName
-@ stub RtlWalkFrameChain
 @ stub RtlZeroHeap
-@ stub SeAppendPrivileges
-@ stub SeAssignSecurity
 @ stub SeAssignSecurityEx
 @ stub SeAuditHardLinkCreation
 @ stub SeAuditingFileEvents
@@ -1506,34 +1526,24 @@
 @ stub SeCaptureSecurityDescriptor
 @ stub SeCloseObjectAuditAlarm
 @ stub SeCreateAccessState
-@ stub SeCreateClientSecurity
 @ stub SeCreateClientSecurityFromSubjectContext
-@ stub SeDeassignSecurity
 @ stub SeDeleteAccessState
 @ stub SeDeleteObjectAuditAlarm
-@ stub SeFreePrivileges
-@ stub SeImpersonateClient
-@ stub SeImpersonateClientEx
 @ stub SeMarkLogonSessionForTerminationNotification
-@ stub SeOpenObjectAuditAlarm
 @ stub SeOpenObjectForDeleteAuditAlarm
 @ stub SePrivilegeObjectAuditAlarm
 @ extern SePublicDefaultDacl QzUnimplementedData
-@ stub SeQueryAuthenticationIdToken
 @ stub SeQueryInformationToken
-@ stub SeQuerySecurityDescriptorInfo
 @ stub SeQuerySessionIdToken
 @ stub SeRegisterLogonSessionTerminatedRoutine
 @ stub SeReleaseSecurityDescriptor
 @ stub SeReportSecurityEvent
 @ stub SeSetAccessStateGenericMapping
 @ stub SeSetAuditParameter
-@ stub SeSetSecurityDescriptorInfo
 @ stub SeSetSecurityDescriptorInfoEx
 @ extern SeSystemDefaultDacl QzUnimplementedData
 @ stub SeTokenImpersonationLevel
 @ stub SeTokenIsRestricted
-@ stub SeTokenType
 @ stub SeUnregisterLogonSessionTerminatedRoutine
 @ stub SeValidSecurityDescriptor
 @ stub VerSetConditionMask
@@ -1557,7 +1567,6 @@
 @ stub ZwAddDriverEntry
 @ stub ZwAlertThread
 @ stub ZwAssignProcessToJobObject
-@ stub ZwCancelIoFile
 @ stub ZwCloseObjectAuditAlarm
 @ stub ZwCreateJobObject
 @ stub ZwDeleteBootEntry
@@ -1573,13 +1582,8 @@
 @ stub ZwModifyBootEntry
 @ stub ZwModifyDriverEntry
 @ stub ZwOpenJobObject
-@ stub ZwOpenProcess
-@ stub ZwOpenThread
-@ stub ZwOpenThreadToken
-@ stub ZwOpenThreadTokenEx
 @ stub ZwQueryBootEntryOrder
 @ stub ZwQueryBootOptions
-@ stub ZwQueryDefaultLocale
 @ stub ZwQueryDefaultUILanguage
 @ stub ZwQueryDriverEntryOrder
 @ stub ZwQueryEaFile
@@ -1589,7 +1593,6 @@
 @ stub ZwQueryInformationThread
 @ stub ZwQueryInstallUILanguage
 @ stub ZwQuerySection
-@ stub ZwQuerySecurityObject
 @ stub ZwReplaceKey
 @ stub ZwRestoreKey
 @ stub ZwSaveKey
@@ -1601,17 +1604,14 @@
 @ stub ZwSetDriverEntryOrder
 @ stub ZwSetEaFile
 @ stub ZwSetInformationJobObject
-@ stub ZwSetInformationObject
 @ stub ZwSetInformationProcess
 @ stub ZwSetInformationThread
-@ stub ZwSetSecurityObject
 @ stub ZwSetSystemTime
 @ stub ZwSetVolumeInformationFile
 @ stub ZwTerminateJobObject
 @ stub ZwTerminateProcess
 @ stub ZwTranslateFilePath
 @ stub ZwUnloadKey
-@ stub ZwYieldExecution
 @ stub -arch=x86_64,arm __C_specific_handler
 @ stub -arch=arm __jump_unwind
 @ stub -arch=x86_64 __chkstk

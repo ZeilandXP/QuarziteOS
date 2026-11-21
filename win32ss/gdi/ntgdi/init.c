@@ -28,8 +28,8 @@ GdiProcessCreate(PEPROCESS Process)
     InitializeListHead(&ppiCurrent->GDIDcAttrFreeList);
 
     /* Map the GDI handle table to user land */
-    Process->Peb->GdiSharedHandleTable = GDI_MapHandleTable(Process);
-    Process->Peb->GdiDCAttributeList = GDI_BATCH_LIMIT;
+    (PsGetProcessPeb(Process))->GdiSharedHandleTable = GDI_MapHandleTable(Process);
+    (PsGetProcessPeb(Process))->GdiDCAttributeList = GDI_BATCH_LIMIT;
 
     /* Create pools for GDI object attributes */
     ppiCurrent->pPoolDcAttr = GdiPoolCreate(sizeof(DC_ATTR), 'acdG');

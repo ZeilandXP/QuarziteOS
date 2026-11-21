@@ -130,7 +130,7 @@ IntWinStaObjectDelete(
 
             /* Close the handle in the CSRSS process */
             ASSERT(gpepCSRSS);
-            KeStackAttachProcess(&gpepCSRSS->Pcb, &ApcState);
+            KeStackAttachProcess((PKPROCESS)(gpepCSRSS), &ApcState);
             ObCloseHandle(ghDesktopSwitchEvent, UserMode);
             KeUnstackDetachProcess(&ApcState);
             ghDesktopSwitchEvent = NULL;
@@ -563,7 +563,7 @@ IntCreateDesktopSwitchEvent(VOID)
     KAPC_STATE ApcState;
 
     ASSERT(gpepCSRSS);
-    KeStackAttachProcess(&gpepCSRSS->Pcb, &ApcState);
+    KeStackAttachProcess((PKPROCESS)(gpepCSRSS), &ApcState);
     InitializeObjectAttributes(&ObjectAttributes,
                                &Name,
                                /* No OBJ_KERNEL_HANDLE: directly create a user-mode handle */
@@ -596,7 +596,7 @@ IntCreateDesktopSwitchEvent(VOID)
              * *ALTERNATIVELY*, we would duplicate the handle in the CSRSS process:
              *
              * KAPC_STATE ApcState;
-             * KeStackAttachProcess(&gpepCSRSS->Pcb, &ApcState);
+             * KeStackAttachProcess((PKPROCESS)(gpepCSRSS), &ApcState);
              * Status = ObOpenObjectByPointer(gpDesktopSwitchEvent,
              *                                0,
              *                                NULL,

@@ -153,6 +153,28 @@ QzMmpFindModuleW(PCUNICODE_STRING BaseName)
     return NULL;
 }
 
+/* "module+offset" for an address in a loaded image (crash dumps); FALSE if none */
+BOOLEAN
+QzMmDescribeAddress(ULONG_PTR Address, PCHAR Buffer, ULONG Size)
+{
+    PLIST_ENTRY Entry;
+
+    if (!QzLoaderBlock)
+        return FALSE;
+    for (Entry = QzLoaderBlock->LoadOrderListHead.Flink; Entry != &QzLoaderBlock->LoadOrderListHead;
+         Entry = Entry->Flink)
+    {
+        PLDR_DATA_TABLE_ENTRY Module = CONTAINING_RECORD(Entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+        ULONG_PTR Base = (ULONG_PTR)Module->DllBase;
+        if (Address >= Base && Address - Base < Module->SizeOfImage)
+        {
+            QzSnprintf(Buffer, Size, "%wZ+%lx", &Module->BaseDllName, (ULONG)(Address - Base));
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Exports                                                                 */
 /* ---------------------------------------------------------------------- */
@@ -349,8 +371,10 @@ QzMmpRelocate(PUCHAR Base, PIMAGE_NT_HEADERS Nt)
 
     if (!Delta)
         return STATUS_SUCCESS;
-    if (!Dir->VirtualAddress || !Dir->Size || (Nt->FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED))
+    if (Nt->FileHeader.Characteristics & IMAGE_FILE_RELOCS_STRIPPED)
         return STATUS_CONFLICTING_ADDRESSES;
+    if (!Dir->VirtualAddress || !Dir->Size)
+        return STATUS_SUCCESS;          /* nothing to fix up (dxgthk.sys: forwarders only) */
     if (Dir->VirtualAddress > Size || Dir->Size > Size - Dir->VirtualAddress)
         return STATUS_INVALID_IMAGE_FORMAT;
 

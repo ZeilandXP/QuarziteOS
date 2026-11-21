@@ -14,6 +14,7 @@
 /* ---------------------------------------------------------------------- */
 
 #define QZ_USER_LOWEST          0x00010000UL
+#define QZ_VAD_AT_ZERO          1UL            /* QzMmInsertVad: exactly at address 0 */
 #define QZ_USER_HIGHEST         0x7FFEFFFFUL   /* MmHighestUserAddress */
 #define QZ_USER_PROBE_ADDRESS   0x7FFF0000UL   /* MmUserProbeAddress */
 #define QZ_SYSTEM_RANGE_START   0x80000000UL
@@ -64,6 +65,7 @@ typedef struct _QZ_SECTION
     PUSHORT PageProtect;            /* images: each page's Win32 protection */
     PFILE_OBJECT FileObject;        /* referenced, if file-backed */
     BOOLEAN Image;
+    BOOLEAN Physical;               /* \Device\PhysicalMemory: Pfns name RAM it does not own */
     ULONG_PTR ImageBase;            /* images: the preferred base */
     SECTION_IMAGE_INFORMATION ImageInformation;
     volatile LONG Views;
@@ -75,6 +77,7 @@ typedef struct _QZ_SECTION
 
 extern POBJECT_TYPE MmSectionObjectType;
 VOID QzMmSectionInit(VOID);
+VOID QzMmCreatePhysicalMemorySection(VOID);
 NTSTATUS QzMmCreateSection(PQZ_SECTION *Result, PLARGE_INTEGER MaximumSize, ULONG Protect, ULONG Attributes,
                            PFILE_OBJECT FileObject);
 NTSTATUS QzMmMapView(PQZ_SECTION Section, struct _QZ_PROCESS *Process, PVOID *BaseAddress, ULONG_PTR ZeroBits,
@@ -126,6 +129,9 @@ typedef struct _QZ_PROCESS
     ULONG_PTR EntryPoint;           /* the image's, once relocated */
     BOOLEAN RanImage;               /* the loader handed over to the image */
     ULONG_PTR NextTeb;              /* where the next TEB goes (downwards) */
+    /* win32k (stage B7) */
+    PVOID Win32Process;
+    PVOID Win32WindowStation;
 } QZ_PROCESS, *PQZ_PROCESS;
 
 /* The Thread object body (ps/thread.c) */
@@ -151,7 +157,17 @@ typedef struct _QZ_PS_THREAD
     NTSTATUS PendingExitStatus;
     PCONTEXT InitialContext;        /* user threads, until they first run */
     BOOLEAN ExitedThread;
+    /* win32k (stage B7) */
+    PVOID Win32Thread;
+    BOOLEAN GuiThread;              /* the Win32 thread callout ran */
 } QZ_PS_THREAD, *PQZ_PS_THREAD;
+
+BOOLEAN QzPsIsObject(PVOID Body);
+PQZ_PS_THREAD QzPsThreadOf(PVOID Thread);
+NTSTATUS QzPsConvertToGuiThread(VOID);
+VOID QzPsWin32ThreadExit(PQZ_PS_THREAD Thread);
+VOID QzPsWin32ProcessExit(PQZ_PROCESS Process);
+VOID QzExInitWin32Types(VOID);
 
 extern PQZ_PROCESS QzSystemProcess;
 
@@ -207,6 +223,10 @@ BOOLEAN QzWriteArg(KPROCESSOR_MODE Mode, PVOID Destination, const VOID *Source, 
 BOOLEAN QzCopyFromUser(PVOID Destination, const VOID *UserSource, SIZE_T Length);
 BOOLEAN QzCopyToUser(PVOID UserDestination, const VOID *Source, SIZE_T Length);
 BOOLEAN QzProbe(const VOID *Address, SIZE_T Length, BOOLEAN Write);
+
+/* ps/win32.c, ps/create.c: for ke/callback.c */
+VOID QzPsWin32FlushBatch(VOID);
+ULONG_PTR QzPsUserCallbackDispatcher(VOID);
 
 /* ke/user.c: user mode */
 VOID QzUserException(PKTRAP_FRAME TrapFrame, NTSTATUS Code, ULONG_PTR Address, ULONG_PTR Write);

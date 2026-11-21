@@ -1593,7 +1593,7 @@ GDI_CleanupForProcess(struct _EPROCESS *Process)
     PPROCESSINFO ppi;
 
     DPRINT("CleanupForProcess prochandle %p Pid %p\n",
-           Process, Process->UniqueProcessId);
+           Process, PsGetProcessId(Process));
 
     ASSERT(Process == PsGetCurrentProcess());
 
@@ -1621,7 +1621,7 @@ GDI_CleanupForProcess(struct _EPROCESS *Process)
 #endif
 
     ppi = PsGetCurrentProcessWin32Process();
-    DPRINT("Completed cleanup for process %p\n", Process->UniqueProcessId);
+    DPRINT("Completed cleanup for process %p\n", PsGetProcessId(Process));
     if (ppi->GDIHandleCount != 0)
     {
         DPRINT1("Leaking %d handles!\n", ppi->GDIHandleCount);

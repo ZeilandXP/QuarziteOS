@@ -75,6 +75,13 @@ QzPsTerminateCurrentThread(NTSTATUS ExitStatus)
     PsThread->ExitStatus = ExitStatus;
     PsThread->ExitedThread = TRUE;
     KeQuerySystemTime(&PsThread->ExitTime);
+
+    /* win32k lets go of the thread (and, with the last one, the process)
+       while the process's address space is still loaded */
+    if (PsThread->GuiThread)
+        QzPsWin32ThreadExit(PsThread);
+    if (Process && Process != QzSystemProcess && Process->ActiveThreads == 1 && Process->Win32Process)
+        QzPsWin32ProcessExit(Process);
     KeSetEvent(&PsThread->Terminated, IO_NO_INCREMENT, FALSE);
 
     /* Leave the process's address space before it can go away */
@@ -405,4 +412,5 @@ QzPsInit(VOID)
     QzLpcInit();
     QzSeInitTokens();
     QzExInitKeyedEvents();
+    QzExInitWin32Types();
 }

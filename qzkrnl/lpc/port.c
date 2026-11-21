@@ -777,15 +777,25 @@ QzLpcSendOn(PQZ_PORT Port, PQZ_LPC_MESSAGE Message, CSHORT Type)
     PQZ_PORT Target, Tag;
 
     ExAcquireFastMutex(&QzLpcLock);
-    if (Port->Kind == QZ_PORT_SERVER_CONNECTION || Port->Closed || !Port->Peer)
+    if (Port->Closed || (Port->Kind != QZ_PORT_SERVER_CONNECTION && !Port->Peer))
     {
         ExReleaseFastMutex(&QzLpcLock);
         return STATUS_PORT_DISCONNECTED;
     }
-    Target = QzLpcTargetQueue(Port);
-    /* The receiver learns the connection from the server's end of it */
-    Tag = (Port->Kind == QZ_PORT_CLIENT_COMMUNICATION) ? Port->Peer : Port;
-    ObReferenceObject(Tag);
+    if (Port->Kind == QZ_PORT_SERVER_CONNECTION)
+    {
+        /* Straight to the server's own queue, outside any connection (win32k
+           to csrss's API port): it receives the message with no port context */
+        Target = Port;
+        Tag = NULL;
+    }
+    else
+    {
+        Target = QzLpcTargetQueue(Port);
+        /* The receiver learns the connection from the server's end of it */
+        Tag = (Port->Kind == QZ_PORT_CLIENT_COMMUNICATION) ? Port->Peer : Port;
+        ObReferenceObject(Tag);
+    }
     ObReferenceObject(Target);
     ExReleaseFastMutex(&QzLpcLock);
 
@@ -1141,4 +1151,46 @@ NTAPI
 ZwRequestWaitReplyPort(IN HANDLE PortHandle, IN PPORT_MESSAGE LpcRequest, IN OUT PPORT_MESSAGE LpcReply)
 {
     return QZ_AS_KERNEL(NtRequestWaitReplyPort(PortHandle, LpcRequest, LpcReply));
+}
+
+/* Kernel-mode servers (the reference monitor) */
+NTSTATUS
+NTAPI
+ZwCreatePort(OUT PHANDLE PortHandle, IN POBJECT_ATTRIBUTES ObjectAttributes, IN ULONG MaxConnectInfoLength,
+             IN ULONG MaxDataLength, IN ULONG MaxPoolUsage)
+{
+    return QZ_AS_KERNEL(NtCreatePort(PortHandle, ObjectAttributes, MaxConnectInfoLength, MaxDataLength,
+                                     MaxPoolUsage));
+}
+
+NTSTATUS
+NTAPI
+ZwListenPort(IN HANDLE PortHandle, OUT PPORT_MESSAGE ConnectMessage)
+{
+    return QZ_AS_KERNEL(NtListenPort(PortHandle, ConnectMessage));
+}
+
+NTSTATUS
+NTAPI
+ZwAcceptConnectPort(OUT PHANDLE PortHandle, IN PVOID PortContext OPTIONAL, IN PPORT_MESSAGE ReplyMessage,
+                    IN BOOLEAN AcceptConnection, IN OUT PPORT_VIEW ServerView OPTIONAL,
+                    OUT PREMOTE_PORT_VIEW ClientView OPTIONAL)
+{
+    return QZ_AS_KERNEL(NtAcceptConnectPort(PortHandle, PortContext, ReplyMessage, AcceptConnection, ServerView,
+                                            ClientView));
+}
+
+NTSTATUS
+NTAPI
+ZwCompleteConnectPort(IN HANDLE PortHandle)
+{
+    return QZ_AS_KERNEL(NtCompleteConnectPort(PortHandle));
+}
+
+NTSTATUS
+NTAPI
+ZwReplyWaitReceivePort(IN HANDLE PortHandle, OUT PVOID *PortContext OPTIONAL, IN PPORT_MESSAGE ReplyMessage OPTIONAL,
+                       OUT PPORT_MESSAGE ReceiveMessage)
+{
+    return QZ_AS_KERNEL(NtReplyWaitReceivePort(PortHandle, PortContext, ReplyMessage, ReceiveMessage));
 }

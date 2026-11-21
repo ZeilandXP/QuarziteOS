@@ -10,6 +10,8 @@
 #include "qzio.h"
 #include "qzps.h"
 
+PVOID NTAPI RtlImageDirectoryEntryToData(PVOID BaseAddress, BOOLEAN MappedAsImage, USHORT Directory, PULONG Size);
+
 /* ---------------------------------------------------------------------- */
 /* ERESOURCE: shared/exclusive locks with recursion and hand-off           */
 /* ---------------------------------------------------------------------- */
@@ -828,6 +830,37 @@ NtSetSystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
             Name.MaximumLength = Name.Length;
             return QzExLoadServiceTableImage(&Name);
         }
+
+        case SystemLoadGdiDriverInformation:
+        {
+            /* win32k's display drivers and dxg.sys: kernel images it binds itself */
+            PSYSTEM_GDI_DRIVER_INFORMATION Info = SystemInformation;
+            PLDR_DATA_TABLE_ENTRY Entry;
+            ULONG ExportSize;
+            NTSTATUS Status;
+            if (Mode != KernelMode)
+                return STATUS_PRIVILEGE_NOT_HELD;
+            if (Length != sizeof(*Info))
+                return STATUS_INFO_LENGTH_MISMATCH;
+            Status = QzMmLoadSystemImage(&Info->DriverName, (PVOID *)&Entry);
+            if (!NT_SUCCESS(Status))
+                return Status;
+            Info->ImageAddress = Entry->DllBase;
+            Info->SectionPointer = Entry;       /* what SystemUnloadGdiDriverInformation gets back */
+            Info->EntryPoint = Entry->EntryPoint;
+            Info->ImageLength = Entry->SizeOfImage;
+            Info->ExportSectionPointer = RtlImageDirectoryEntryToData(Entry->DllBase, TRUE,
+                                                                      IMAGE_DIRECTORY_ENTRY_EXPORT, &ExportSize);
+            return STATUS_SUCCESS;
+        }
+
+        case SystemUnloadGdiDriverInformation:
+            if (Mode != KernelMode)
+                return STATUS_PRIVILEGE_NOT_HELD;
+            if (Length != sizeof(PVOID))
+                return STATUS_INFO_LENGTH_MISMATCH;
+            QzMmUnloadSystemImage(*(PVOID *)SystemInformation);
+            return STATUS_SUCCESS;
 
         case SystemFlagsInformation:
         case SystemTimeAdjustmentInformation:

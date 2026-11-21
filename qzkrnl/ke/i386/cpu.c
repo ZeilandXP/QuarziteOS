@@ -112,7 +112,7 @@ QzCpuInit(VOID)
     /* PCR: FS points at the processor control region, like on NT */
     RtlZeroMemory(&QzPcr, sizeof(QzPcr));
     QzPcr.NtTib.ExceptionList = EXCEPTION_CHAIN_END;
-    QzPcr.NtTib.Self = &QzPcr.NtTib;
+    QzPcr.NtTib.Self = NULL;            /* the current TEB: none for system threads */
     QzPcr.SelfPcr = (PKPCR)&QzPcr;
     QzPcr.Prcb = &QzPcr.PrcbData;
     QzPcr.Irql = HIGH_LEVEL;              /* interrupts stay off until init is done */

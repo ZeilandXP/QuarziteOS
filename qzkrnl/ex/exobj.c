@@ -1,7 +1,7 @@
 /*
  * PROJECT:     QuarziteOS Kernel (qzkrnl)
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
- * PURPOSE:     Executive objects (Event, Semaphore, Timer) and the
+ * PURPOSE:     Executive objects (Event, Semaphore, Timer, Mutant) and the
  *              handle-based wait services
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  *
@@ -17,6 +17,15 @@
 POBJECT_TYPE ExEventObjectType;
 POBJECT_TYPE ExSemaphoreObjectType;
 POBJECT_TYPE ExTimerObjectType;
+POBJECT_TYPE ExMutantObjectType;
+
+static GENERIC_MAPPING QzMutantMapping =
+{
+    STANDARD_RIGHTS_READ | MUTANT_QUERY_STATE,
+    STANDARD_RIGHTS_WRITE,
+    STANDARD_RIGHTS_EXECUTE | SYNCHRONIZE,
+    MUTANT_ALL_ACCESS
+};
 
 static GENERIC_MAPPING QzEventMapping =
 {
@@ -79,6 +88,7 @@ QzExObjectsInit(VOID)
                    &ExSemaphoreObjectType);
     QzExCreateType(L"Timer", TIMER_ALL_ACCESS, &QzTimerMapping, QzExDeleteTimer,
                    &ExTimerObjectType);
+    QzExCreateType(L"Mutant", MUTANT_ALL_ACCESS, &QzMutantMapping, NULL, &ExMutantObjectType);
 }
 
 /* Look up a handle and modify its object under the given type and right */
@@ -420,4 +430,81 @@ Done:
     for (i = 0; i < Referenced; i++)
         ObfDereferenceObject(Objects[i]);
     return Status;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Mutants (Win32 mutexes)                                                 */
+/* ---------------------------------------------------------------------- */
+
+NTSTATUS
+NTAPI
+NtCreateMutant(OUT PHANDLE MutantHandle, IN ACCESS_MASK DesiredAccess,
+               IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL, IN BOOLEAN InitialOwner)
+{
+    PKMUTANT Mutant;
+    NTSTATUS Status;
+
+    Status = ObCreateObject(KernelMode, ExMutantObjectType, ObjectAttributes, KernelMode, NULL,
+                            sizeof(KMUTANT), 0, 0, (PVOID *)&Mutant);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    KeInitializeMutant(Mutant, InitialOwner);
+    return ObInsertObject(Mutant, NULL, DesiredAccess, 0, NULL, MutantHandle);
+}
+
+NTSTATUS
+NTAPI
+NtOpenMutant(OUT PHANDLE MutantHandle, IN ACCESS_MASK DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes)
+{
+    return ObOpenObjectByName(ObjectAttributes, ExMutantObjectType, KernelMode, NULL, DesiredAccess, NULL,
+                              MutantHandle);
+}
+
+NTSTATUS
+NTAPI
+NtReleaseMutant(IN HANDLE MutantHandle, OUT PLONG PreviousCount OPTIONAL)
+{
+    PKMUTANT Mutant;
+    LONG Previous;
+    NTSTATUS Status;
+
+    Status = QzExReference(MutantHandle, ExMutantObjectType, 0, (PVOID *)&Mutant);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    /* KeReleaseMutant bugchecks for a thread that does not own it; a service fails */
+    if (Mutant->OwnerThread != (PKTHREAD)QzCurrentThread)
+    {
+        ObfDereferenceObject(Mutant);
+        return STATUS_MUTANT_NOT_OWNED;
+    }
+    Previous = KeReleaseMutant(Mutant, IO_NO_INCREMENT, FALSE, FALSE);
+    ObfDereferenceObject(Mutant);
+    if (PreviousCount)
+        *PreviousCount = Previous;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+NtQueryMutant(IN HANDLE MutantHandle, IN MUTANT_INFORMATION_CLASS MutantInformationClass,
+              OUT PVOID MutantInformation, IN ULONG MutantInformationLength, OUT PULONG ResultLength OPTIONAL)
+{
+    PMUTANT_BASIC_INFORMATION Info = MutantInformation;
+    PKMUTANT Mutant;
+    NTSTATUS Status;
+
+    if (MutantInformationClass != MutantBasicInformation)
+        return STATUS_INVALID_INFO_CLASS;
+    if (MutantInformationLength < sizeof(*Info))
+        return STATUS_INFO_LENGTH_MISMATCH;
+    Status = QzExReference(MutantHandle, ExMutantObjectType, MUTANT_QUERY_STATE, (PVOID *)&Mutant);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Info->CurrentCount = Mutant->Header.SignalState;
+    Info->OwnedByCaller = Mutant->OwnerThread == (PKTHREAD)QzCurrentThread;
+    Info->AbandonedState = Mutant->Abandoned;
+    ObfDereferenceObject(Mutant);
+    if (ResultLength)
+        *ResultLength = sizeof(*Info);
+    return STATUS_SUCCESS;
 }

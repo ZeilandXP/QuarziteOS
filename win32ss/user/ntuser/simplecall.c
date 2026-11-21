@@ -27,7 +27,7 @@ co_IntRegisterLogonProcess(HANDLE ProcessId, BOOL Register)
         return FALSE;
     }
 
-    ProcessId = Process->UniqueProcessId;
+    ProcessId = PsGetProcessId(Process);
 
     ObDereferenceObject(Process);
 
@@ -86,7 +86,7 @@ NtUserCallNoParam(DWORD Routine)
             break;
 
         case NOPARAM_ROUTINE_DESTROY_CARET:
-            Result = (DWORD_PTR)co_IntDestroyCaret(PsGetCurrentThread()->Tcb.Win32Thread);
+            Result = (DWORD_PTR)co_IntDestroyCaret(PsGetCurrentThreadWin32Thread());
             break;
 
         case NOPARAM_ROUTINE_INIT_MESSAGE_PUMP:

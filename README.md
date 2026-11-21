@@ -16,8 +16,9 @@ It is two things in one tree:
    ntoskrnl with `/KERNEL=qzkrnl.exe`.
 
 > **Alpha quality.** QuarziteOS inherits ReactOS's alpha status, and qzkrnl
-> is in its early stages: it boots to a kernel debug shell, but cannot run
-> drivers or user mode yet. Use a virtual machine.
+> is in its early stages: it boots to a kernel debug shell, from which it
+> can start the native and Win32 subsystems as far as winlogon's desktop,
+> but not a usable session yet. Use a virtual machine.
 
 ## What changed compared to ReactOS
 

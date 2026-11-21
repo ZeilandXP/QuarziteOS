@@ -296,7 +296,7 @@ void DbgUserDumpHandleTable(VOID)
     ppiList = gppiList;
     while (ppiList)
     {
-        ERR("Process %s (%p) handles count: %d\n\t", ppiList->peProcess->ImageFileName, ppiList->peProcess->UniqueProcessId, ppiList->UserHandleCount);
+        ERR("Process %s (%p) handles count: %d\n\t", PsGetProcessImageFileName(ppiList->peProcess), PsGetProcessId(ppiList->peProcess), ppiList->UserHandleCount);
 
         for (i = 1 ;i < TYPE_CTYPES; i++)
         {

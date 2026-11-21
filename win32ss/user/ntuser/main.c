@@ -73,12 +73,12 @@ AllocW32Process(IN  PEPROCESS Process,
     if (ppiCurrent == NULL)
     {
         ERR_CH(UserProcess, "Failed to allocate ppi for PID:0x%lx\n",
-               HandleToUlong(Process->UniqueProcessId));
+               HandleToUlong(PsGetProcessId(Process)));
         return STATUS_NO_MEMORY;
     }
 
     TRACE_CH(UserProcess, "Allocated ppi 0x%p for PID:0x%lx\n",
-             ppiCurrent, HandleToUlong(Process->UniqueProcessId));
+             ppiCurrent, HandleToUlong(PsGetProcessId(Process)));
 
     RtlZeroMemory(ppiCurrent, sizeof(*ppiCurrent));
 
@@ -158,8 +158,8 @@ UserProcessCreate(PEPROCESS Process)
 
     /* Setup process flags */
     ppiCurrent->W32PF_flags |= W32PF_PROCESSCONNECTED;
-    if (Process->Peb->ProcessParameters &&
-        (Process->Peb->ProcessParameters->WindowFlags & STARTF_SCREENSAVER))
+    if ((PsGetProcessPeb(Process))->ProcessParameters &&
+        ((PsGetProcessPeb(Process))->ProcessParameters->WindowFlags & STARTF_SCREENSAVER))
     {
         ppiScrnSaver = ppiCurrent;
         ppiCurrent->W32PF_flags |= W32PF_SCREENSAVER;
@@ -196,7 +196,7 @@ UserProcessDestroy(PEPROCESS Process)
     if (DBG_IS_CHANNEL_ENABLED(ppiCurrent, DbgChUserObj, WARN_LEVEL))
     {
         TRACE_CH(UserObj, "Dumping user handles at the end of the process %s (Info %p).\n",
-            ppiCurrent->peProcess->ImageFileName, ppiCurrent);
+            PsGetProcessImageFileName(ppiCurrent->peProcess), ppiCurrent);
         DbgUserDumpHandleTable();
     }
 #endif
@@ -207,7 +207,7 @@ UserProcessDestroy(PEPROCESS Process)
     /*
      * Deregister logon application automatically
      */
-    if (gpidLogon == ppiCurrent->peProcess->UniqueProcessId)
+    if (gpidLogon == PsGetProcessId(ppiCurrent->peProcess))
         gpidLogon = 0;
 
     /* Close the current window station */
@@ -249,7 +249,7 @@ InitProcessCallback(PEPROCESS Process)
     if (!NT_SUCCESS(Status))
     {
         ERR_CH(UserProcess, "Failed to allocate ppi for PID:0x%lx\n",
-               HandleToUlong(Process->UniqueProcessId));
+               HandleToUlong(PsGetProcessId(Process)));
         return Status;
     }
 
@@ -305,7 +305,7 @@ InitProcessCallback(PEPROCESS Process)
 
 error:
     ERR_CH(UserProcess, "InitProcessCallback failed! Freeing ppi 0x%p for PID:0x%lx\n",
-           ppiCurrent, HandleToUlong(Process->UniqueProcessId));
+           ppiCurrent, HandleToUlong(PsGetProcessId(Process)));
     ExitProcessCallback(Process);
     return Status;
 }
@@ -358,7 +358,7 @@ Win32kProcessCallback(PEPROCESS Process,
 {
     NTSTATUS Status;
 
-    ASSERT(Process->Peb);
+    ASSERT(PsGetProcessPeb(Process));
 
     TRACE_CH(UserProcess, "Win32kProcessCallback -->\n");
 
@@ -401,12 +401,12 @@ AllocW32Thread(IN  PETHREAD Thread,
     if (ptiCurrent == NULL)
     {
         ERR_CH(UserThread, "Failed to allocate pti for TID:0x%lx\n",
-               HandleToUlong(Thread->Cid.UniqueThread));
+               HandleToUlong(PsGetThreadId(Thread)));
         return STATUS_NO_MEMORY;
     }
 
     TRACE_CH(UserThread, "Allocated pti 0x%p for TID:0x%lx\n",
-             ptiCurrent, HandleToUlong(Thread->Cid.UniqueThread));
+             ptiCurrent, HandleToUlong(PsGetThreadId(Thread)));
 
     RtlZeroMemory(ptiCurrent, sizeof(*ptiCurrent));
 
@@ -478,7 +478,7 @@ InitThreadCallback(PETHREAD Thread)
     PKL pDefKL;
     BOOLEAN bFirstThread;
 
-    Process = Thread->ThreadsProcess;
+    Process = PsGetThreadProcess(Thread);
 
     pTeb = NtCurrentTeb();
     ASSERT(pTeb);
@@ -490,7 +490,7 @@ InitThreadCallback(PETHREAD Thread)
     if (!NT_SUCCESS(Status))
     {
         ERR_CH(UserThread, "Failed to allocate pti for TID:0x%lx\n",
-               HandleToUlong(Thread->Cid.UniqueThread));
+               HandleToUlong(PsGetThreadId(Thread)));
         return Status;
     }
 
@@ -577,8 +577,8 @@ InitThreadCallback(PETHREAD Thread)
     }
 
     /* Populate dwExpWinVer */
-    if (Process->Peb)
-        ptiCurrent->dwExpWinVer = RtlGetExpWinVer(Process->SectionBaseAddress);
+    if (PsGetProcessPeb(Process))
+        ptiCurrent->dwExpWinVer = RtlGetExpWinVer(PsGetProcessSectionBaseAddress(Process));
     else
         ptiCurrent->dwExpWinVer = WINVER_WINNT4;
     pci->dwExpWinVer = ptiCurrent->dwExpWinVer;
@@ -680,7 +680,7 @@ InitThreadCallback(PETHREAD Thread)
 
         /* Store the parsed desktop as the initial desktop */
         ASSERT(ptiCurrent->ppi->hdeskStartup == NULL);
-        ASSERT(Process->UniqueProcessId != gpidLogon);
+        ASSERT(PsGetProcessId(Process) != gpidLogon);
         ptiCurrent->ppi->hdeskStartup = hDesk;
         ptiCurrent->ppi->rpdeskStartup = pdesk;
     }
@@ -734,7 +734,7 @@ InitThreadCallback(PETHREAD Thread)
 
 error:
     ERR_CH(UserThread, "InitThreadCallback failed! Freeing pti 0x%p for TID:0x%lx\n",
-           ptiCurrent, HandleToUlong(Thread->Cid.UniqueThread));
+           ptiCurrent, HandleToUlong(PsGetThreadId(Thread)));
     ExitThreadCallback(Thread);
     return Status;
 }
@@ -753,7 +753,7 @@ ExitThreadCallback(PETHREAD Thread)
     PTHREADINFO ptiCurrent;
     PWINDOWLIST pwl, pwlNext;
 
-    Process = Thread->ThreadsProcess;
+    Process = PsGetThreadProcess(Thread);
 
     /* Get the Win32 Thread */
     ptiCurrent = PsGetThreadWin32Thread(Thread);

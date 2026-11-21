@@ -3239,7 +3239,7 @@ NtUserGetThreadDesktop(DWORD dwThreadId, HDESK hConsoleDesktop)
      * Switch into the context of the thread we are trying to get
      * the desktop from, so we can use the handle.
      */
-    KeAttachProcess(&Process->Pcb);
+    KeAttachProcess((PKPROCESS)(Process));
     Status = ObReferenceObjectByHandle(hDesk,
                                        0,
                                        ExDesktopObjectType,
@@ -3499,7 +3499,7 @@ IntSetThreadDesktop(IN HDESK hDesktop,
         pti->ppi->rpdeskStartup == NULL && hDesktop != NULL)
     {
         ERR("The process 0x%p '%s' didn't have an assigned startup desktop before, assigning it now!\n",
-            pti->ppi->peProcess, pti->ppi->peProcess->ImageFileName);
+            pti->ppi->peProcess, PsGetProcessImageFileName(pti->ppi->peProcess));
 
         pti->ppi->hdeskStartup = hDesktop;
         pti->ppi->rpdeskStartup = pdesk;

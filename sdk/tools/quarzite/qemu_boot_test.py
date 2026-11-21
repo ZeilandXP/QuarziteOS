@@ -369,17 +369,30 @@ def run_qzkrnl(iso, out):
                 ("lpctest", [r"lpctest: \d+ passed, 0 failed"]),
                 ("ldrtest", [r"ldrtest: \d+ passed, 0 failed"]),
                 ("fstest", [r"fstest: \d+ passed, 0 failed"]),
-                # The exit criterion of stage B6: smss.exe starts
-                ("smss", [r"ps: started \\SystemRoot\\System32\\smss\.exe",
-                          r"smss\.exe \(pid \d+\): ntdll's loader is done; running the image",
-                          r"loaded \\SystemRoot\\System32\\win32k\.sys at",
-                          r"win32k\.sys is loaded but not started: it imports \d+ export",
-                          r"smss: pid \d+, ran its own code"]),
+                # The exit criterion of stage B6: smss.exe starts; stage B7: it
+                # loads win32k.sys, which starts, and csrss.exe runs its image
+                ("smss 30000", [r"ps: started \\SystemRoot\\System32\\smss\.exe",
+                                r"smss\.exe \(pid \d+\): ntdll's loader is done; running the image",
+                                r"loaded \\SystemRoot\\System32\\win32k\.sys at",
+                                r"DriverEntry win32k\.sys -> 0x00000000",
+                                r"csrss\.exe \(pid \d+\): ntdll's loader is done; running the image",
+                                r"smss: pid \d+, ran its own code"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
                          r"[1-9]\d* interrupt objects connected"]),
             ]
+            def check_console():
+                screen = vm.screen_text()
+                open(os.path.join(out, "qzkrnl-screen.txt"), "w").write(screen)
+                chk.check("VGA console + status line are live",
+                          "QuarziteOS 0.1.0 | qzkrnl" in screen and "qz>" in screen)
+                vm.screenshot(os.path.join(out, "qzkrnl-shell.png"))
+
             for cmd, patterns, *action in commands:
+                if cmd.startswith("smss"):
+                    # Before the native subsystem: once csrss opens the video
+                    # miniport, it owns the display and the console is serial only
+                    check_console()
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
                 if action and action[0] == "click":
@@ -389,7 +402,7 @@ def run_qzkrnl(iso, out):
                     vm.monitor("mouse_button 1")
                     time.sleep(0.3)
                     vm.monitor("mouse_button 0")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "ldrtest", "fstest", "smss", "pnp") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd.split()[0] in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "ldrtest", "fstest", "smss", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)
@@ -400,17 +413,12 @@ def run_qzkrnl(iso, out):
             chk.check("scheduler: 3 demo threads ran to completion",
                       demo and all(f"[demo {i}] done" in demo for i in (1, 2, 3)))
 
-            screen = vm.screen_text()
-            open(os.path.join(out, "qzkrnl-screen.txt"), "w").write(screen)
-            chk.check("VGA console + status line are live",
-                      "QuarziteOS 0.1.0 | qzkrnl" in screen and "qz>" in screen)
-            vm.screenshot(os.path.join(out, "qzkrnl-shell.png"))
-
             # Calling an unimplemented export must produce a clean stop screen
-            vm.send_serial("call KeUserModeCallback\r")
+            # (on VGA again: the bugcheck takes the display back from videoprt)
+            vm.send_serial("call KeSetDmaIoCoherency\r")
             text = vm.wait_serial(r"\*\*\* STOP: 0x0000001E", 20)
             chk.check("unimplemented export -> KMODE_EXCEPTION_NOT_HANDLED stop",
-                      text and re.search(r"Unimplemented kernel export: (ntoskrnl|qzkrnl)\.exe!KeUserModeCallback", text))
+                      text and re.search(r"Unimplemented kernel export: (ntoskrnl|qzkrnl)\.exe!KeSetDmaIoCoherency", text))
             time.sleep(1)
             screen = vm.screen_text()
             open(os.path.join(out, "qzkrnl-bugcheck.txt"), "w").write(screen)

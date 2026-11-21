@@ -21,7 +21,7 @@
 #include "qz.h"
 #include "qzps.h"
 
-#define QZ_THREAD_STACK_SIZE   (16 * 1024)
+#define QZ_THREAD_STACK_SIZE   (96 * 1024)   /* win32k recurses deep, and nests callbacks */
 
 /* Exported: drivers read the processor count directly */
 CCHAR KeNumberProcessors = 1;
@@ -280,6 +280,9 @@ QzSwapThread(VOID)
            (the V86 segment slots) above it */
         if (Next->InitialStack)
             ((PULONG)QzPcr.TSS)[1] = (ULONG)Next->InitialStack - 0x10;
+        /* NT keeps the current TEB in the PCR's NtTib.Self (kernel-mode
+           NtCurrentTeb() reads it): NULL for system threads */
+        QzPcr.NtTib.Self = Next->PsThread ? (PNT_TIB)((PQZ_PS_THREAD)Next->PsThread)->Teb : NULL;
         if (Next->PsThread && ((PQZ_PS_THREAD)Next->PsThread)->Teb)
             QzSetTebSelector(((PQZ_PS_THREAD)Next->PsThread)->Teb);
         if (Current->FxSaveArea)

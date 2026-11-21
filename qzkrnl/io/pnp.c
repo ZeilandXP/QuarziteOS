@@ -67,6 +67,7 @@ typedef struct _QZ_DEVICE_NODE
     WCHAR ClassGuid[40];
     WCHAR DriverKey[48];              /* "{class guid}\NNNN" below Control\Class */
     PCM_RESOURCE_LIST BootResources;
+    PIO_RESOURCE_REQUIREMENTS_LIST Requirements;  /* from the PDO, until the start */
     PCM_RESOURCE_LIST RawResources;
     PCM_RESOURCE_LIST TranslatedResources;
     DEVICE_CAPABILITIES Capabilities;
@@ -346,6 +347,23 @@ QzPnpQueryIdentity(PQZ_DEVICE_NODE Node)
     QzPnpSetString(&Node->InstancePath, Path);
     if (InstanceId)
         ExFreePool(InstanceId);
+
+    /*
+     * Resources, as NT asks for them: from the PDO alone, before any driver
+     * is added above it (function drivers such as videoprt complete these
+     * queries themselves instead of passing them down). The instance path
+     * must exist by now: a KMDF PDO registers its device interfaces when
+     * it gets IRP_MN_QUERY_RESOURCE_REQUIREMENTS.
+     */
+    if (!(Node->Flags & QZ_DN_REPORTED))
+    {
+        Information = 0;
+        if (NT_SUCCESS(QzPnpSend(Node->Pdo, IRP_MN_QUERY_RESOURCES, NULL, &Information)) && Information)
+            Node->BootResources = (PCM_RESOURCE_LIST)Information;
+        Information = 0;
+        if (NT_SUCCESS(QzPnpSend(Node->Pdo, IRP_MN_QUERY_RESOURCE_REQUIREMENTS, NULL, &Information)) && Information)
+            Node->Requirements = (PIO_RESOURCE_REQUIREMENTS_LIST)Information;
+    }
 }
 
 /* Service and class for an ID from CriticalDeviceDatabase ("\" -> "#") */
@@ -789,29 +807,20 @@ QzPnpStartNode(PQZ_DEVICE_NODE Node)
     ULONG_PTR Information;
     NTSTATUS Status;
 
+    Requirements = Node->Requirements;
+    Node->Requirements = NULL;
     if (!(Node->Flags & QZ_DN_REPORTED))
     {
-        Information = 0;
-        if (NT_SUCCESS(QzPnpSend(Node->Pdo, IRP_MN_QUERY_RESOURCES, NULL, &Information)) && Information)
-            Node->BootResources = (PCM_RESOURCE_LIST)Information;
-        Information = 0;
-        if (NT_SUCCESS(QzPnpSend(Node->Pdo, IRP_MN_QUERY_RESOURCE_REQUIREMENTS, NULL, &Information)))
+        /* Let the drivers above the PDO adjust them (videoprt adds the
+           miniport's legacy ranges). One that replaces the list frees the
+           old one itself */
+        RtlZeroMemory(&Stack, sizeof(Stack));
+        Stack.Parameters.FilterResourceRequirements.IoResourceRequirementList = Requirements;
+        Information = (ULONG_PTR)Requirements;
+        if (NT_SUCCESS(QzPnpSend(Node->Pdo, IRP_MN_FILTER_RESOURCE_REQUIREMENTS, &Stack, &Information)) &&
+            Information && Information != (ULONG_PTR)Requirements)
             Requirements = (PIO_RESOURCE_REQUIREMENTS_LIST)Information;
-        if (Requirements)
-        {
-            /* Let the function driver adjust them */
-            RtlZeroMemory(&Stack, sizeof(Stack));
-            Stack.Parameters.FilterResourceRequirements.IoResourceRequirementList = Requirements;
-            Information = (ULONG_PTR)Requirements;
-            if (NT_SUCCESS(QzPnpSend(Node->Pdo, IRP_MN_FILTER_RESOURCE_REQUIREMENTS, &Stack,
-                                     &Information)) && Information && Information != (ULONG_PTR)Requirements)
-            {
-                ExFreePool(Requirements);
-                Requirements = (PIO_RESOURCE_REQUIREMENTS_LIST)Information;
-            }
-        }
     }
-
     if (!Node->RawResources)
     {
         if (Requirements)
@@ -837,7 +846,9 @@ QzPnpStartNode(PQZ_DEVICE_NODE Node)
         Stack.Parameters.StartDevice.AllocatedResources = Node->RawResources;
         Stack.Parameters.StartDevice.AllocatedResourcesTranslated = Node->TranslatedResources;
     }
-    DbgPrint(QZ_KERNEL_NAME ": PnP: start %wZ\n", &Node->InstancePath);
+    DbgPrint(QZ_KERNEL_NAME ": PnP: start %wZ (%lu resources)\n", &Node->InstancePath,
+             (Node->RawResources && Node->TranslatedResources && Node->RawResources->Count)
+                 ? Node->RawResources->List[0].PartialResourceList.Count : 0);
     Status = QzPnpSend(Node->Pdo, IRP_MN_START_DEVICE, &Stack, NULL);
     if (!NT_SUCCESS(Status))
     {
@@ -1227,6 +1238,81 @@ IoReportResourceForDetection(IN PDRIVER_OBJECT DriverObject,
     UNREFERENCED_PARAMETER(DeviceList);
     UNREFERENCED_PARAMETER(DeviceListSize);
     *ConflictDetected = FALSE;
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Legacy resource assignment (videoprt, for adapters it finds itself):
+ * nothing arbitrates resources yet, so each requirement gets the start of
+ * its range, from the first alternative list.
+ */
+NTSTATUS
+NTAPI
+IoAssignResources(IN PUNICODE_STRING RegistryPath, IN PUNICODE_STRING DriverClassName OPTIONAL,
+                  IN PDRIVER_OBJECT DriverObject, IN PDEVICE_OBJECT DeviceObject OPTIONAL,
+                  IN PIO_RESOURCE_REQUIREMENTS_LIST RequestedResources OPTIONAL,
+                  IN OUT PCM_RESOURCE_LIST *AllocatedResources)
+{
+    PIO_RESOURCE_LIST Alternative;
+    PCM_RESOURCE_LIST List;
+    PCM_PARTIAL_RESOURCE_LIST Partial;
+    ULONG i, Count = 0, Size;
+
+    UNREFERENCED_PARAMETER(RegistryPath);
+    UNREFERENCED_PARAMETER(DriverClassName);
+    UNREFERENCED_PARAMETER(DriverObject);
+    UNREFERENCED_PARAMETER(DeviceObject);
+    if (!RequestedResources || !RequestedResources->AlternativeLists)
+        return STATUS_INVALID_PARAMETER;
+    Alternative = &RequestedResources->List[0];
+    for (i = 0; i < Alternative->Count; i++)
+        if (!(Alternative->Descriptors[i].Option & IO_RESOURCE_ALTERNATIVE))
+            Count++;
+    Size = FIELD_OFFSET(CM_RESOURCE_LIST, List[0].PartialResourceList.PartialDescriptors[Count]);
+    List = ExAllocatePoolWithTag(PagedPool, Size, 'rAzQ');
+    if (!List)
+        return STATUS_INSUFFICIENT_RESOURCES;
+    RtlZeroMemory(List, Size);
+    List->Count = 1;
+    List->List[0].InterfaceType = RequestedResources->InterfaceType;
+    List->List[0].BusNumber = RequestedResources->BusNumber;
+    Partial = &List->List[0].PartialResourceList;
+    Partial->Version = Alternative->Version;
+    Partial->Revision = Alternative->Revision;
+    for (i = 0; i < Alternative->Count; i++)
+    {
+        PIO_RESOURCE_DESCRIPTOR In = &Alternative->Descriptors[i];
+        PCM_PARTIAL_RESOURCE_DESCRIPTOR Out;
+        if (In->Option & IO_RESOURCE_ALTERNATIVE)
+            continue;
+        Out = &Partial->PartialDescriptors[Partial->Count++];
+        Out->Type = In->Type;
+        Out->ShareDisposition = In->ShareDisposition;
+        Out->Flags = In->Flags;
+        switch (In->Type)
+        {
+            case CmResourceTypePort:
+            case CmResourceTypeMemory:
+                Out->u.Generic.Start = In->u.Generic.MinimumAddress;
+                Out->u.Generic.Length = In->u.Generic.Length;
+                break;
+            case CmResourceTypeInterrupt:
+                Out->u.Interrupt.Level = In->u.Interrupt.MinimumVector;
+                Out->u.Interrupt.Vector = In->u.Interrupt.MinimumVector;
+                Out->u.Interrupt.Affinity = 1;
+                break;
+            case CmResourceTypeDma:
+                Out->u.Dma.Channel = In->u.Dma.MinimumChannel;
+                break;
+            case CmResourceTypeBusNumber:
+                Out->u.BusNumber.Start = In->u.BusNumber.MinBusNumber;
+                Out->u.BusNumber.Length = In->u.BusNumber.Length;
+                break;
+            default:
+                break;
+        }
+    }
+    *AllocatedResources = List;
     return STATUS_SUCCESS;
 }
 

@@ -2307,7 +2307,7 @@ NtUserPostThreadMessage(DWORD idThread,
 
     if ( Status == STATUS_SUCCESS )
     {
-        pThread = (PTHREADINFO)peThread->Tcb.Win32Thread;
+        pThread = (PTHREADINFO)PsGetThreadWin32Thread(peThread);
         if( !pThread ||
             !pThread->MessageQueue ||
             (pThread->TIF_flags & TIF_INCLEANUP))
@@ -3132,7 +3132,7 @@ NtUserWaitForInputIdle( IN HANDLE hProcess,
 
     pti = PsGetCurrentThreadWin32Thread();
 
-    W32Process = (PPROCESSINFO)Process->Win32Process;
+    W32Process = (PPROCESSINFO)PsGetProcessWin32Process(Process);
 
     if ( PsGetProcessExitProcessCalled(Process) ||
          !W32Process ||
@@ -3158,7 +3158,7 @@ NtUserWaitForInputIdle( IN HANDLE hProcess,
     if (dwMilliseconds != INFINITE)
        Timeout.QuadPart = (LONGLONG) dwMilliseconds * (LONGLONG) -10000;
 
-    KeStackAttachProcess(&Process->Pcb, &ApcState);
+    KeStackAttachProcess((PKPROCESS)(Process), &ApcState);
     W32Process->W32PF_flags |= W32PF_WAITFORINPUTIDLE;
     for (pti = W32Process->ptiList; pti; pti = pti->ptiSibling)
     {
@@ -3223,7 +3223,7 @@ NtUserWaitForInputIdle( IN HANDLE hProcess,
     while (TRUE);
 
 WaitExit:
-    KeStackAttachProcess(&Process->Pcb, &ApcState);
+    KeStackAttachProcess((PKPROCESS)(Process), &ApcState);
     for (pti = W32Process->ptiList; pti; pti = pti->ptiSibling)
     {
        pti->TIF_flags &= ~TIF_WAITFORINPUTIDLE;

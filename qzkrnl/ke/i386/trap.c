@@ -16,6 +16,7 @@
 
 #include "qz.h"
 #include "qzps.h"
+#include "qzio.h"
 
 /* KTRAP_FRAME offsets, checked against the SDK definition */
 #define TF_DBGEBP   0x00
@@ -207,6 +208,29 @@ QzDumpTrapFrame(PKTRAP_FRAME TrapFrame)
     DbgPrint("  EIP=%08lx CS=%04lx EFLAGS=%08lx ERR=%08lx CR2=%08lx CR3=%08lx IRQL=%u\n",
              TrapFrame->Eip, TrapFrame->SegCs, TrapFrame->EFlags, TrapFrame->ErrCode,
              QzReadCr2(), QzReadCr3(), QzPcr.Irql);
+    if (!(TrapFrame->SegCs & 1))
+    {
+        /* Kernel mode: where it was, and the EBP chain of callers */
+        CHAR Where[64];
+        PULONG_PTR Frame = (PULONG_PTR)TrapFrame->Ebp;
+        ULONG Depth;
+        if (QzMmDescribeAddress(TrapFrame->Eip, Where, sizeof(Where)))
+            DbgPrint("  at %s\n", Where);
+        for (Depth = 0; Depth < 16; Depth++)
+        {
+            ULONG_PTR Return;
+            if ((ULONG_PTR)Frame < 0x80000000UL || ((ULONG_PTR)Frame & 3) ||
+                !MmIsAddressValid(Frame) || !MmIsAddressValid(Frame + 1))
+                break;
+            Return = Frame[1];
+            if (!QzMmDescribeAddress(Return, Where, sizeof(Where)))
+                QzSnprintf(Where, sizeof(Where), "?");
+            DbgPrint("  called from %08lx %s\n", (ULONG)Return, Where);
+            if (Frame[0] <= (ULONG_PTR)Frame)
+                break;
+            Frame = (PULONG_PTR)Frame[0];
+        }
+    }
 }
 
 static DECLSPEC_NORETURN VOID

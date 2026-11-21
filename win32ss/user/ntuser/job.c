@@ -111,7 +111,7 @@ IntSetProcessRestricted(
     /* The CLIENTINFO of a thread lives in its own process */
     if (ppi->peProcess != NULL && ppi != PsGetCurrentProcessWin32Process())
     {
-        KeStackAttachProcess(&ppi->peProcess->Pcb, &ApcState);
+        KeStackAttachProcess((PKPROCESS)(ppi->peProcess), &ApcState);
         bAttached = TRUE;
     }
 

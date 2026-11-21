@@ -5069,7 +5069,7 @@ HMENU FASTCALL UserCreateMenu(PDESKTOP Desktop, BOOL PopupMenu)
        * gpepCSRSS does not have a Win32WindowStation
        */
 
-      Status = IntValidateWindowStationHandle(CurrentProcess->Win32WindowStation,
+      Status = IntValidateWindowStationHandle(PsGetProcessWin32WindowStation(CurrentProcess),
                      UserMode,
                      0,
                      &WinStaObject,
@@ -5078,7 +5078,7 @@ HMENU FASTCALL UserCreateMenu(PDESKTOP Desktop, BOOL PopupMenu)
        if (!NT_SUCCESS(Status))
        {
           ERR("Validation of window station handle (%p) failed\n",
-              CurrentProcess->Win32WindowStation);
+              PsGetProcessWin32WindowStation(CurrentProcess));
           SetLastNtError(Status);
           return (HMENU)0;
        }

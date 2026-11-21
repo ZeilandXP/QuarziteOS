@@ -557,7 +557,7 @@ NtUserGetGuiResources(
       goto Exit; // Return 0
    }
 
-   W32Process = (PPROCESSINFO)Process->Win32Process;
+   W32Process = (PPROCESSINFO)PsGetProcessWin32Process(Process);
    if(!W32Process)
    {
       ObDereferenceObject(Process);

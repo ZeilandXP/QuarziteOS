@@ -2285,7 +2285,7 @@ IntCheckImeShowStatus(
         bDifferent = FALSE;
         if (pwndNode->head.pti->ppi != ptiCurrent->ppi)
         {
-            KeAttachProcess(&(pwndNode->head.pti->ppi->peProcess->Pcb));
+            KeAttachProcess((PKPROCESS)(pwndNode->head.pti->ppi->peProcess));
             bDifferent = TRUE;
         }
 
@@ -2355,7 +2355,7 @@ IntSendMessageToUI(
     if (ptiIME != GetW32ThreadInfo())
     {
         bDifferent = TRUE;
-        KeAttachProcess(&(ptiIME->ppi->peProcess->Pcb));
+        KeAttachProcess((PKPROCESS)(ptiIME->ppi->peProcess));
     }
 
     // Get the pwndUI
@@ -2399,7 +2399,7 @@ IntSendMessageToUI(
 
     // Attach to the process if necessary
     if (bDifferent)
-        KeAttachProcess(&(ptiIME->ppi->peProcess->Pcb));
+        KeAttachProcess((PKPROCESS)(ptiIME->ppi->peProcess));
 
     // Decrement the recursion count of the IME procedure
     _SEH2_TRY
@@ -2467,7 +2467,7 @@ IntNotifyImeShowStatus(_In_ PWND pImeWnd)
 
     // Attach to the process if necessary
     if (pti != ptiIME)
-        KeAttachProcess(&(ptiIME->ppi->peProcess->Pcb));
+        KeAttachProcess((PKPROCESS)(ptiIME->ppi->peProcess));
 
     // Get an IMEUI and check whether hwndIMC is valid and update fShowStatus
     _SEH2_TRY

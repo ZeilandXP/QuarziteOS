@@ -363,6 +363,27 @@ DbgPrintEx(IN ULONG ComponentId,
     return STATUS_SUCCESS;
 }
 
+/* User-mode DbgPrintEx asks this first: the same filter as DbgPrintEx above */
+NTSTATUS
+NTAPI
+NtQueryDebugFilterState(IN ULONG ComponentId, IN ULONG Level)
+{
+    UNREFERENCED_PARAMETER(ComponentId);
+    if (QzDebugVerbose || Level == DPFLTR_ERROR_LEVEL || (Level > 31 && (Level & 1)))
+        return (NTSTATUS)TRUE;
+    return (NTSTATUS)FALSE;
+}
+
+NTSTATUS
+NTAPI
+NtSetDebugFilterState(IN ULONG ComponentId, IN ULONG Level, IN BOOLEAN State)
+{
+    UNREFERENCED_PARAMETER(ComponentId);
+    UNREFERENCED_PARAMETER(Level);
+    UNREFERENCED_PARAMETER(State);
+    return STATUS_SUCCESS;
+}
+
 /*
  * MSVCRT semantics, which ntstrsafe relies on: at most Count characters
  * are stored; a NUL only if there is room; the result is the length when

@@ -109,6 +109,40 @@ QzCountModules(VOID)
     return Count;
 }
 
+/* What NT records in Control at boot: the loader's options and boot device */
+static VOID
+QzExRecordBootOptions(PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    UNICODE_STRING KeyName = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Control");
+    static const struct { PCWSTR Name; ULONG Offset; } Values[] =
+    {
+        { L"SystemStartOptions", FIELD_OFFSET(LOADER_PARAMETER_BLOCK, LoadOptions) },
+        { L"SystemBootDevice", FIELD_OFFSET(LOADER_PARAMETER_BLOCK, ArcBootDeviceName) },
+    };
+    OBJECT_ATTRIBUTES Attributes;
+    HANDLE Key;
+    ULONG i;
+
+    InitializeObjectAttributes(&Attributes, &KeyName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwOpenKey(&Key, KEY_SET_VALUE, &Attributes)))
+        return;
+    for (i = 0; i < RTL_NUMBER_OF(Values); i++)
+    {
+        PCSTR Text = *(PCSTR *)((PUCHAR)LoaderBlock + Values[i].Offset);
+        ANSI_STRING Ansi;
+        UNICODE_STRING Name, Data;
+        RtlInitAnsiString(&Ansi, Text ? Text : "");
+        if (!NT_SUCCESS(RtlAnsiStringToUnicodeString(&Data, &Ansi, TRUE)))
+            continue;
+        RtlInitUnicodeString(&Name, Values[i].Name);
+        ZwSetValueKey(Key, &Name, 0, REG_SZ, Data.Buffer, Data.Length + sizeof(WCHAR));
+        RtlFreeUnicodeString(&Data);
+    }
+    ZwClose(Key);
+}
+
+VOID QzSeRmInit(VOID);                          /* se/srm.c */
+
 DECLSPEC_NORETURN
 VOID
 NTAPI
@@ -192,8 +226,11 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzPsInit();
     QzExWorkerInit();
     QzCmInit(LoaderBlock);
+    QzExRecordBootOptions(LoaderBlock);
     QzIoInit();
+    QzMmCreatePhysicalMemorySection();
     QzPnpInit();
+    QzSeRmInit();
     DbgPrint(QZ_KERNEL_NAME ": object manager up, %lu objects\n", QzObObjectCount());
 
     DbgPrint(QZ_KERNEL_NAME ": interrupts on, scheduler running\n");

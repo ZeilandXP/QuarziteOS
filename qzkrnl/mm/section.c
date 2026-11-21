@@ -378,7 +378,7 @@ QzMmDeleteSection(PVOID Object)
 
     if (Section->Pfns)
     {
-        for (i = 0; i < Section->PageCount; i++)
+        for (i = 0; i < Section->PageCount && !Section->Physical; i++)
             if (Section->Pfns[i])
                 QzFreePhysicalPage(Section->Pfns[i]);
         ExFreePoolWithTag(Section->Pfns, QZ_SECTION_TAG);
@@ -414,6 +414,47 @@ QzMmSectionInit(VOID)
     InitializeListHead(&QzMmFileSections);
     ExInitializeFastMutex(&QzMmFileLock);
     QzMmCollectFileDirty = QzMmCollectDirty;
+}
+
+/*
+ * \Device\PhysicalMemory, for the first megabyte: videoprt maps the video
+ * memory and BIOS area (A0000-FFFFF) into csrss for its int 10h support.
+ */
+#define QZ_PHYSICAL_SECTION_PAGES   256
+
+VOID
+QzMmCreatePhysicalMemorySection(VOID)
+{
+    UNICODE_STRING Name = RTL_CONSTANT_STRING(L"\\Device\\PhysicalMemory");
+    OBJECT_ATTRIBUTES Attributes;
+    PQZ_SECTION Section;
+    HANDLE Handle;
+    ULONG i;
+    NTSTATUS Status;
+
+    InitializeObjectAttributes(&Attributes, &Name, OBJ_PERMANENT | OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE,
+                               NULL, NULL);
+    Status = ObCreateObject(KernelMode, MmSectionObjectType, &Attributes, KernelMode, NULL, sizeof(QZ_SECTION), 0, 0,
+                            (PVOID *)&Section);
+    if (!NT_SUCCESS(Status))
+        return;
+    RtlZeroMemory(Section, sizeof(*Section));
+    InitializeListHead(&Section->ViewList);
+    Section->AllocationAttributes = SEC_COMMIT;
+    Section->Protect = PAGE_READWRITE;
+    Section->Physical = TRUE;
+    Section->PageCount = QZ_PHYSICAL_SECTION_PAGES;
+    Section->MaximumSize = (ULONGLONG)QZ_PHYSICAL_SECTION_PAGES * QZ_PAGE_SIZE;
+    Section->Pfns = ExAllocatePoolWithTag(NonPagedPool, QZ_PHYSICAL_SECTION_PAGES * sizeof(ULONG), QZ_SECTION_TAG);
+    if (!Section->Pfns)
+    {
+        ObDereferenceObject(Section);
+        return;
+    }
+    for (i = 0; i < QZ_PHYSICAL_SECTION_PAGES; i++)
+        Section->Pfns[i] = i;
+    if (NT_SUCCESS(ObInsertObject(Section, NULL, SECTION_ALL_ACCESS, 0, NULL, &Handle)))
+        ZwClose(Handle);
 }
 
 /* Make the body of a new section object (already created by the caller) */
@@ -529,7 +570,12 @@ QzMmMapView(PQZ_SECTION Section, PQZ_PROCESS Process, PVOID *BaseAddress, ULONG_
     NTSTATUS Status, Result = STATUS_SUCCESS;
 
     if (Process == QzSystemProcess)
-        return STATUS_NOT_SUPPORTED;   /* views in system space: MmMapViewInSystemSpace, later */
+    {
+        /* The System process has no user space: its views go in system space (kernel LPC views) */
+        if (Offset)
+            return STATUS_NOT_SUPPORTED;
+        return MmMapViewInSystemSpace(Section, BaseAddress, ViewSize);
+    }
     if (ZeroBits > 21)
         return STATUS_INVALID_PARAMETER_4;
     if (ZeroBits)
@@ -669,6 +715,9 @@ QzMmUnmapView(PQZ_PROCESS Process, PVOID BaseAddress)
 {
     PQZ_PROCESS Saved;
     PQZ_VAD Vad;
+
+    if (Process == QzSystemProcess)
+        return MmUnmapViewInSystemSpace(BaseAddress);
 
     ExAcquireFastMutex(&Process->AddressLock);
     Vad = QzMmFindVad(Process, (ULONG_PTR)BaseAddress);

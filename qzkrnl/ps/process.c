@@ -344,14 +344,14 @@ PsGetProcessInheritedFromUniqueProcessId(IN PEPROCESS Process)
     return (HANDLE)(ULONG_PTR)((PQZ_PROCESS)Process)->InheritedFromUniqueId;
 }
 
-PCHAR
+LPSTR
 NTAPI
 PsGetProcessImageFileName(IN PEPROCESS Process)
 {
     return ((PQZ_PROCESS)Process)->ImageFileName;
 }
 
-PVOID
+PPEB
 NTAPI
 PsGetProcessPeb(IN PEPROCESS Process)
 {
@@ -405,15 +405,15 @@ PVOID
 NTAPI
 PsGetProcessWin32Process(IN PEPROCESS Process)
 {
-    UNREFERENCED_PARAMETER(Process);
-    return NULL;   /* no win32k yet */
+    return ((PQZ_PROCESS)Process)->Win32Process;
 }
 
 PVOID
 NTAPI
 PsGetCurrentProcessWin32Process(VOID)
 {
-    return NULL;
+    PQZ_PROCESS Process = QzCurrentThread->Process;
+    return Process ? Process->Win32Process : NULL;
 }
 
 NTSTATUS
@@ -428,7 +428,7 @@ PsLookupProcessByProcessId(IN HANDLE ProcessId,
 
 /* ---- threads ---- */
 
-static BOOLEAN
+BOOLEAN
 QzPsIsObject(PVOID Body)
 {
     /* A scheduler thread is plain pool, not an object */
@@ -514,15 +514,16 @@ PVOID
 NTAPI
 PsGetThreadWin32Thread(IN PETHREAD Thread)
 {
-    UNREFERENCED_PARAMETER(Thread);
-    return NULL;
+    PQZ_PS_THREAD PsThread = QzPsThreadOf(Thread);
+    return PsThread ? PsThread->Win32Thread : NULL;
 }
 
 PVOID
 NTAPI
 PsGetCurrentThreadWin32Thread(VOID)
 {
-    return NULL;
+    PQZ_PS_THREAD PsThread = QzCurrentThread->PsThread;
+    return PsThread ? PsThread->Win32Thread : NULL;
 }
 
 NTSTATUS
@@ -538,4 +539,117 @@ PsLookupThreadByThreadId(IN HANDLE ThreadId,
     }
     *Thread = Object;
     return Object ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Opening processes and threads                                           */
+/* ---------------------------------------------------------------------- */
+
+/*
+ * By client ID (a thread ID, if given, names its process) or by name.
+ * Access is not checked yet: the handle gets what was asked for.
+ */
+static NTSTATUS
+QzPsOpen(PHANDLE Handle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId,
+         BOOLEAN WantThread)
+{
+    KPROCESSOR_MODE Mode = ExGetPreviousMode();
+    POBJECT_TYPE Type = WantThread ? PsThreadType : PsProcessType;
+    OBJECT_ATTRIBUTES Attributes;
+    CLIENT_ID Cid;
+    PVOID Object = NULL;
+    HANDLE Result;
+    NTSTATUS Status;
+
+    if (!QzReadArg(Mode, &Attributes, ObjectAttributes, sizeof(Attributes)))
+        return STATUS_ACCESS_VIOLATION;
+    if (ClientId && !QzReadArg(Mode, &Cid, ClientId, sizeof(Cid)))
+        return STATUS_ACCESS_VIOLATION;
+    if (ClientId && Attributes.ObjectName)
+        return STATUS_INVALID_PARAMETER_MIX;
+
+    if (!ClientId)
+    {
+        if (!Attributes.ObjectName)
+            return STATUS_INVALID_PARAMETER_MIX;
+        Status = ObOpenObjectByName(ObjectAttributes, Type, Mode, NULL, DesiredAccess, NULL, &Result);
+    }
+    else
+    {
+        if (Cid.UniqueThread)
+        {
+            PETHREAD Thread;
+            Status = PsLookupThreadByThreadId(Cid.UniqueThread, &Thread);
+            if (NT_SUCCESS(Status))
+            {
+                if (Cid.UniqueProcess && PsGetThreadProcessId(Thread) != Cid.UniqueProcess)
+                {
+                    ObDereferenceObject(Thread);
+                    return STATUS_INVALID_CID;
+                }
+                if (WantThread)
+                {
+                    Object = Thread;
+                }
+                else
+                {
+                    Object = PsGetThreadProcess(Thread);
+                    ObReferenceObject(Object);
+                    ObDereferenceObject(Thread);
+                }
+            }
+        }
+        else if (!WantThread)
+        {
+            PEPROCESS Process;
+            Status = PsLookupProcessByProcessId(Cid.UniqueProcess, &Process);
+            Object = Process;
+        }
+        else
+        {
+            return STATUS_INVALID_CID;
+        }
+        if (!NT_SUCCESS(Status))
+            return STATUS_INVALID_CID;
+        Status = ObOpenObjectByPointer(Object, Attributes.Attributes, NULL, DesiredAccess, Type, Mode, &Result);
+        ObDereferenceObject(Object);
+    }
+    if (NT_SUCCESS(Status) && !QzWriteArg(Mode, Handle, &Result, sizeof(Result)))
+    {
+        ObCloseHandle(Result, Mode);
+        Status = STATUS_ACCESS_VIOLATION;
+    }
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+NtOpenProcess(OUT PHANDLE ProcessHandle, IN ACCESS_MASK DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes,
+              IN PCLIENT_ID ClientId OPTIONAL)
+{
+    return QzPsOpen(ProcessHandle, DesiredAccess, ObjectAttributes, ClientId, FALSE);
+}
+
+NTSTATUS
+NTAPI
+NtOpenThread(OUT PHANDLE ThreadHandle, IN ACCESS_MASK DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes,
+             IN PCLIENT_ID ClientId OPTIONAL)
+{
+    return QzPsOpen(ThreadHandle, DesiredAccess, ObjectAttributes, ClientId, TRUE);
+}
+
+NTSTATUS
+NTAPI
+ZwOpenProcess(OUT PHANDLE ProcessHandle, IN ACCESS_MASK DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes,
+              IN PCLIENT_ID ClientId OPTIONAL)
+{
+    return QZ_AS_KERNEL(NtOpenProcess(ProcessHandle, DesiredAccess, ObjectAttributes, ClientId));
+}
+
+NTSTATUS
+NTAPI
+ZwOpenThread(OUT PHANDLE ThreadHandle, IN ACCESS_MASK DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes,
+             IN PCLIENT_ID ClientId OPTIONAL)
+{
+    return QZ_AS_KERNEL(NtOpenThread(ThreadHandle, DesiredAccess, ObjectAttributes, ClientId));
 }

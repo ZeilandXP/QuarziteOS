@@ -110,6 +110,27 @@ PsGetProcessWin32WindowStation(
 );
 
 NTKERNELAPI
+PPEB
+NTAPI
+PsGetProcessPeb(
+    _In_ PEPROCESS Process
+);
+
+NTKERNELAPI
+LPSTR
+NTAPI
+PsGetProcessImageFileName(
+    _In_ PEPROCESS Process
+);
+
+NTKERNELAPI
+PVOID
+NTAPI
+PsGetProcessSectionBaseAddress(
+    _In_ PEPROCESS Process
+);
+
+NTKERNELAPI
 VOID
 NTAPI
 PsSetProcessWindowStation(

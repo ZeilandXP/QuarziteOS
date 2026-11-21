@@ -18,6 +18,7 @@
  */
 
 #include "qzio.h"
+#include "qzps.h"
 
 static LIST_ENTRY QzIoDiskFileSystems = { &QzIoDiskFileSystems, &QzIoDiskFileSystems };
 static LIST_ENTRY QzIoCdFileSystems = { &QzIoCdFileSystems, &QzIoCdFileSystems };
@@ -586,6 +587,11 @@ QzIoParseDevice(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
     Stack->Parameters.Create.FileAttributes = (USHORT)Packet->FileAttributes;
     Stack->Parameters.Create.ShareAccess = (USHORT)Packet->ShareAccess;
     Stack->Parameters.Create.EaLength = Packet->EaLength;
+    /* Pipes and mailslots: their creation parameters in place of the EA length */
+    if (Packet->CreateFileType == CreateFileTypeNamedPipe)
+        Stack->Parameters.CreatePipe.Parameters = Packet->ExtraCreateParameters;
+    else if (Packet->CreateFileType == CreateFileTypeMailslot)
+        Stack->Parameters.CreateMailslot.Parameters = Packet->ExtraCreateParameters;
 
     IoStatus.Status = STATUS_SUCCESS;
     IoStatus.Information = 0;
@@ -745,6 +751,56 @@ NtCreateFile(OUT PHANDLE FileHandle,
     return ZwCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize,
                         FileAttributes, ShareAccess, CreateDisposition, CreateOptions, EaBuffer,
                         EaLength);
+}
+
+/* The server end of a named pipe (npfs); the parameters are captured here */
+NTSTATUS
+NTAPI
+NtCreateNamedPipeFile(OUT PHANDLE FileHandle, IN ULONG DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes,
+                      OUT PIO_STATUS_BLOCK IoStatusBlock, IN ULONG ShareAccess, IN ULONG CreateDisposition,
+                      IN ULONG CreateOptions, IN ULONG NamedPipeType, IN ULONG ReadMode, IN ULONG CompletionMode,
+                      IN ULONG MaximumInstances, IN ULONG InboundQuota, IN ULONG OutboundQuota,
+                      IN PLARGE_INTEGER DefaultTimeout OPTIONAL)
+{
+    NAMED_PIPE_CREATE_PARAMETERS Parameters;
+
+    RtlZeroMemory(&Parameters, sizeof(Parameters));
+    if (DefaultTimeout)
+    {
+        if (!QzReadArg(ExGetPreviousMode(), &Parameters.DefaultTimeout, DefaultTimeout, sizeof(LARGE_INTEGER)))
+            return STATUS_ACCESS_VIOLATION;
+        Parameters.TimeoutSpecified = TRUE;
+    }
+    Parameters.NamedPipeType = NamedPipeType;
+    Parameters.ReadMode = ReadMode;
+    Parameters.CompletionMode = CompletionMode;
+    Parameters.MaximumInstances = MaximumInstances;
+    Parameters.InboundQuota = InboundQuota;
+    Parameters.OutboundQuota = OutboundQuota;
+    return IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, NULL, 0, ShareAccess,
+                        CreateDisposition, CreateOptions, NULL, 0, CreateFileTypeNamedPipe, &Parameters, 0);
+}
+
+NTSTATUS
+NTAPI
+NtCreateMailslotFile(OUT PHANDLE FileHandle, IN ULONG DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes,
+                     OUT PIO_STATUS_BLOCK IoStatusBlock, IN ULONG CreateOptions, IN ULONG MailslotQuota,
+                     IN ULONG MaxMessageSize, IN PLARGE_INTEGER TimeOut OPTIONAL)
+{
+    MAILSLOT_CREATE_PARAMETERS Parameters;
+
+    RtlZeroMemory(&Parameters, sizeof(Parameters));
+    if (TimeOut)
+    {
+        if (!QzReadArg(ExGetPreviousMode(), &Parameters.ReadTimeout, TimeOut, sizeof(LARGE_INTEGER)))
+            return STATUS_ACCESS_VIOLATION;
+        Parameters.TimeoutSpecified = TRUE;
+    }
+    Parameters.MailslotQuota = MailslotQuota;
+    Parameters.MaximumMessageSize = MaxMessageSize;
+    return IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, NULL, 0,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_CREATE, CreateOptions, NULL, 0,
+                        CreateFileTypeMailslot, &Parameters, 0);
 }
 
 NTSTATUS

@@ -26,6 +26,13 @@ static PQZ_SECTION QzSystemDllSection;
 static ULONG_PTR QzSystemDllBase;
 static ULONG_PTR QzLdrInitializeThunk, QzKiUserApcDispatcher, QzKiUserExceptionDispatcher;
 static ULONG_PTR QzKiUserCallbackDispatcher, QzKiRaiseUserExceptionDispatcher;
+
+/* ke/callback.c: where KeUserModeCallback enters ring 3 */
+ULONG_PTR
+QzPsUserCallbackDispatcher(VOID)
+{
+    return QzKiUserCallbackDispatcher;
+}
 static PQZ_SECTION QzNlsSection;
 static ULONG QzNlsAnsiOffset, QzNlsOemOffset, QzNlsCaseOffset;
 
@@ -276,8 +283,15 @@ QzPsCreateUserProcess(PQZ_PROCESS Parent, PQZ_SECTION Section, BOOLEAN InheritHa
         Process->SystemDllBase = DllBase;
         if (QzNlsSection)
         {
+            /* High, as on NT: the low megabyte is for RTL to reserve */
             Size = 0;
-            QzMmMapView(QzNlsSection, Process, &NlsBase, 0, NULL, &Size, 0, PAGE_READONLY);
+            NlsBase = (PVOID)0x7F6F0000;
+            if (!NT_SUCCESS(QzMmMapView(QzNlsSection, Process, &NlsBase, 0, NULL, &Size, 0, PAGE_READONLY)))
+            {
+                NlsBase = NULL;
+                Size = 0;
+                QzMmMapView(QzNlsSection, Process, &NlsBase, 0, NULL, &Size, MEM_TOP_DOWN, PAGE_READONLY);
+            }
         }
         Status = QzPsCreatePeb(Process, NlsBase, &Section->ImageInformation);
     }
@@ -349,6 +363,14 @@ QzPsCreateProcessService(PHANDLE UProcessHandle, ACCESS_MASK DesiredAccess, HAND
             RtlCopyMemory(Process->ImagePathName.Buffer, From->Buffer, From->Length);
             Process->ImagePathName.Length = Process->ImagePathName.MaximumLength = From->Length;
         }
+    }
+    /* As ReactOS's kernel does, the creator's TEB gets the new PEB's address:
+       kernel32 reads it from NtTib.ArbitraryUserPointer */
+    if (Mode == UserMode && Process->Peb && QzCurrentThread->PsThread &&
+        ((PQZ_PS_THREAD)QzCurrentThread->PsThread)->Teb)
+    {
+        PTEB Teb = ((PQZ_PS_THREAD)QzCurrentThread->PsThread)->Teb;
+        QzCopyToUser(&Teb->NtTib.ArbitraryUserPointer, &Process->Peb, sizeof(PVOID));
     }
     Status = ObOpenObjectByPointer(Process, 0, NULL, DesiredAccess ? DesiredAccess : PROCESS_ALL_ACCESS,
                                    PsProcessType, Mode, &Handle);

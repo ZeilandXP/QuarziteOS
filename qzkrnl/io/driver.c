@@ -33,8 +33,9 @@ typedef struct _QZ_REINIT
 #define QZ_MAX_DLLS 32
 static PVOID QzIoInitializedDlls[QZ_MAX_DLLS];
 static ULONG QzIoInitializedDllCount;
-
-static const WCHAR QzServicesPath[] = L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\";
+/* As NT spells it (the service key's object name): videoprt searches for \SYSTEM\ and \MACHINE\ */
+/* As NT spells it (the service key's object name): videoprt looks for "\\SYSTEM\\" and "\\MACHINE\\" */
+static const WCHAR QzServicesPath[] = L"\\REGISTRY\\MACHINE\\SYSTEM\\CurrentControlSet\\Services\\";
 
 NTSTATUS
 NTAPI

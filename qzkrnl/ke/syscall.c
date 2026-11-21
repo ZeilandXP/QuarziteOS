@@ -46,6 +46,106 @@ static const QZ_SERVICE QzServiceTable[QZ_SERVICE_COUNT] =
 BOOLEAN QzSyscallTrace;
 static ULONG QzSyscallCount, QzSyscallUnimplemented;
 
+/* Tables 1 to 3: win32k's (KeAddSystemServiceTable); table 0 is ours */
+typedef struct _QZ_SERVICE_TABLE
+{
+    PULONG_PTR Base;
+    PULONG Count;
+    ULONG Limit;
+    PUCHAR ArgumentBytes;
+} QZ_SERVICE_TABLE;
+
+static QZ_SERVICE_TABLE QzServiceTables[4];
+static NTSTATUS QzCallService(PVOID Handler, PULONG Arguments, ULONG Count);
+static ULONG QzWin32Calls;
+
+BOOLEAN
+NTAPI
+KeAddSystemServiceTable(IN PULONG_PTR Base, IN PULONG Count OPTIONAL, IN ULONG Limit, IN PUCHAR Number,
+                        IN ULONG Index)
+{
+    if (Index == 0 || Index >= RTL_NUMBER_OF(QzServiceTables) || QzServiceTables[Index].Base)
+        return FALSE;
+    QzServiceTables[Index].Count = Count;
+    QzServiceTables[Index].Limit = Limit;
+    QzServiceTables[Index].ArgumentBytes = Number;
+    QzServiceTables[Index].Base = Base;
+    DbgPrint(QZ_KERNEL_NAME ": service table %lu: %lu services\n", Index, Limit);
+    return TRUE;
+}
+
+BOOLEAN
+NTAPI
+KeRemoveSystemServiceTable(IN ULONG Index)
+{
+    if (Index == 0 || Index >= RTL_NUMBER_OF(QzServiceTables))
+        return FALSE;
+    QzServiceTables[Index].Base = NULL;
+    return TRUE;
+}
+
+/* A call into win32k's table: the thread becomes a GUI thread on its first */
+static VOID
+QzWin32SystemCall(PKTRAP_FRAME TrapFrame, ULONG Table, ULONG Number)
+{
+    PQZ_THREAD Thread = QzCurrentThread;
+    QZ_SERVICE_TABLE *Services = &QzServiceTables[Table];
+    KPROCESSOR_MODE OldMode = Thread->PreviousMode;
+    PKTRAP_FRAME OldFrame = Thread->TrapFrame;
+    ULONG Arguments[32], Count;
+    NTSTATUS Status;
+
+    if (!Services->Base || Number >= Services->Limit)
+    {
+        if (QzSyscallTrace)
+            DbgPrint("qzkrnl: syscall 0x%lx: no such service\n", TrapFrame->Eax);
+        TrapFrame->Eax = (ULONG)STATUS_INVALID_SYSTEM_SERVICE;
+        return;
+    }
+    if (Thread->PsThread && !((PQZ_PS_THREAD)Thread->PsThread)->GuiThread)
+    {
+        Thread->PreviousMode = UserMode;
+        Thread->TrapFrame = TrapFrame;
+        Status = QzPsConvertToGuiThread();
+        Thread->PreviousMode = OldMode;
+        Thread->TrapFrame = OldFrame ? OldFrame : TrapFrame;
+        if (!NT_SUCCESS(Status))
+        {
+            DbgPrint("qzkrnl: [%s] could not become a GUI thread: 0x%08lx\n", Thread->Name, Status);
+            TrapFrame->Eax = (ULONG)Status;
+            return;
+        }
+    }
+    /* Batched GDI calls go first, as NT's dispatcher does for win32k's tables */
+    QzPsWin32FlushBatch();
+    Count = Services->ArgumentBytes[Number] / sizeof(ULONG);
+    if (Count > RTL_NUMBER_OF(Arguments) ||
+        !QzCopyFromUser(Arguments, (PVOID)TrapFrame->Edx, Count * sizeof(ULONG)))
+    {
+        TrapFrame->Eax = (ULONG)STATUS_ACCESS_VIOLATION;
+        return;
+    }
+    QzWin32Calls++;
+    if (Services->Count)
+        Services->Count[Number]++;
+    Thread->PreviousMode = UserMode;
+    Thread->TrapFrame = TrapFrame;
+    Status = QzCallService((PVOID)Services->Base[Number], Arguments, Count);
+    Thread->PreviousMode = OldMode;
+    Thread->TrapFrame = OldFrame ? OldFrame : TrapFrame;
+    if (QzGetCurrentIrql() != PASSIVE_LEVEL)
+    {
+        DbgPrint("qzkrnl: win32k service 0x%lx returned at IRQL %u\n", Number, QzGetCurrentIrql());
+        QzLowerIrql(PASSIVE_LEVEL);
+    }
+    if (QzSyscallTrace)
+        DbgPrint("qzkrnl: [%s] win32k #0x%lx -> 0x%08lx\n", Thread->Name, Number, Status);
+    if (Thread->TrapFrameReplaced)
+        Thread->TrapFrameReplaced = FALSE;
+    else
+        TrapFrame->Eax = (ULONG)Status;
+}
+
 /*
  * Push the arguments and call the stdcall service. A recovery point lets
  * the #PF handler abandon the service if it faults on a user address: it
@@ -99,9 +199,13 @@ QzSystemCall(PKTRAP_FRAME TrapFrame)
 
     _enable();
     QzSyscallCount++;
-    if ((TrapFrame->Eax & 0x3000) || Number >= QZ_SERVICE_COUNT)
+    if (TrapFrame->Eax & 0x3000)
     {
-        /* Table 1 is win32k's: there is none yet */
+        QzWin32SystemCall(TrapFrame, (TrapFrame->Eax >> 12) & 3, Number);
+        goto Out;
+    }
+    if (Number >= QZ_SERVICE_COUNT)
+    {
         if (QzSyscallTrace)
             DbgPrint("qzkrnl: syscall 0x%lx: no such service\n", TrapFrame->Eax);
         TrapFrame->Eax = (ULONG)STATUS_INVALID_SYSTEM_SERVICE;

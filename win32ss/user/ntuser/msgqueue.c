@@ -2163,9 +2163,9 @@ MsqIsHung(PTHREADINFO pti, DWORD TimeOut)
             "PsGetThreadFreezeCount(pti->pEThread) = %lu\n",
             pti, TimeOut,
             pti->pEThread,
-            pti->pEThread ? pti->pEThread->ThreadsProcess : NULL,
-            (pti->pEThread && pti->pEThread->ThreadsProcess)
-                ? pti->pEThread->ThreadsProcess->ImageFileName : "(None)",
+            pti->pEThread ? PsGetThreadProcess(pti->pEThread) : NULL,
+            (pti->pEThread && PsGetThreadProcess(pti->pEThread))
+                ? PsGetProcessImageFileName(PsGetThreadProcess(pti->pEThread)) : "(None)",
             dwTimeStamp,
             pti->pcti->timeLastRead,
             pti->timeLast,
@@ -2183,7 +2183,8 @@ IsThreadSuspended(PTHREADINFO pti)
    if (pti->pEThread)
    {
       BOOL Ret = TRUE;
-      if (!(pti->pEThread->Tcb.SuspendCount) && !PsGetThreadFreezeCount(pti->pEThread)) Ret = FALSE;
+      /* No exported accessor gives the suspend count: the freeze count stands for it */
+      if (!PsGetThreadFreezeCount(pti->pEThread)) Ret = FALSE;
       return Ret;
    }
    return FALSE;

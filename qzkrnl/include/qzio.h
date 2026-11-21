@@ -71,6 +71,7 @@ VOID QzMmInitSystemImages(VOID);
 NTSTATUS QzMmLoadSystemImage(PCUNICODE_STRING Path, PVOID *Entry);
 VOID QzMmUnloadSystemImage(PVOID Entry);
 BOOLEAN QzMmIsDiskImage(PVOID Entry);
+BOOLEAN QzMmDescribeAddress(ULONG_PTR Address, PCHAR Buffer, ULONG Size);
 ULONG QzMmSystemImagePages(VOID);
 PVOID QzMmFindModuleExport(PVOID Entry, PCSTR Name);
 VOID QzIoDumpDrivers(VOID);

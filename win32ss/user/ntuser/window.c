@@ -1629,7 +1629,7 @@ NtUserBuildHwndList(
          Status = STATUS_INVALID_PARAMETER;
          goto Quit;
       }
-      if (!(W32Thread = (PTHREADINFO)Thread->Tcb.Win32Thread))
+      if (!(W32Thread = (PTHREADINFO)PsGetThreadWin32Thread(Thread)))
       {
          ObDereferenceObject(Thread);
          TRACE("Tried to enumerate windows of a non gui thread\n");
@@ -1733,7 +1733,7 @@ IntFixWindowCoordinates(CREATESTRUCTW* Cs, PWND ParentWindow, DWORD* dwShowMode)
           return;
       }
 
-      ProcessParams = PsGetCurrentProcess()->Peb->ProcessParameters;
+      ProcessParams = (PsGetProcessPeb(PsGetCurrentProcess()))->ProcessParameters;
 
       if (IS_DEFAULT(Cs->x))
       {
@@ -3515,7 +3515,7 @@ NtUserGetComboBoxInfo(
    NotSameppi = ppi != Wnd->head.pti->ppi;
    if (NotSameppi)
    {
-      KeAttachProcess(&Wnd->head.pti->ppi->peProcess->Pcb);
+      KeAttachProcess((PKPROCESS)(Wnd->head.pti->ppi->peProcess));
    }
 
    _SEH2_TRY
@@ -3606,7 +3606,7 @@ NtUserGetListBoxInfo(
    NotSameppi = ppi != Wnd->head.pti->ppi;
    if (NotSameppi)
    {
-      KeAttachProcess(&Wnd->head.pti->ppi->peProcess->Pcb);
+      KeAttachProcess((PKPROCESS)(Wnd->head.pti->ppi->peProcess));
    }
 
    _SEH2_TRY
@@ -3686,7 +3686,7 @@ HWND FASTCALL UserGetShellWindow(VOID)
    PWINSTATION_OBJECT WinStaObject;
    HWND Ret;
 
-   NTSTATUS Status = IntValidateWindowStationHandle(PsGetCurrentProcess()->Win32WindowStation,
+   NTSTATUS Status = IntValidateWindowStationHandle(PsGetProcessWin32WindowStation(PsGetCurrentProcess()),
                      UserMode,
                      0,
                      &WinStaObject,
@@ -3736,7 +3736,7 @@ NtUserSetShellWindowEx(HWND hwndShell, HWND hwndListView)
       goto Exit; // Return FALSE
    }
 
-   Status = IntValidateWindowStationHandle(PsGetCurrentProcess()->Win32WindowStation,
+   Status = IntValidateWindowStationHandle(PsGetProcessWin32WindowStation(PsGetCurrentProcess()),
                      UserMode,
                      0,
                      &WinStaObject,
@@ -4254,7 +4254,7 @@ NtUserQueryWindow(HWND hWnd, DWORD Index)
          break;
 
       case QUERY_WINDOW_REAL_ID:
-         Result = (DWORD_PTR)pWnd->head.pti->pEThread->Cid.UniqueProcess;
+         Result = (DWORD_PTR)PsGetThreadProcessId(pWnd->head.pti->pEThread);
          break;
 
       case QUERY_WINDOW_FOREGROUND:

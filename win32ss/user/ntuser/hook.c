@@ -1060,7 +1060,7 @@ IntRemoveHook(PVOID Object)
             bOtherProcess = (ptiHook->ppi != pti->ppi);
 
             if (bOtherProcess)
-                KeStackAttachProcess(&ptiHook->ppi->peProcess->Pcb, &ApcState);
+                KeStackAttachProcess((PKPROCESS)(ptiHook->ppi->peProcess), &ApcState);
 
             _SEH2_TRY
             {
@@ -1548,7 +1548,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
        }
     }
 
-    Status = IntValidateWindowStationHandle( PsGetCurrentProcess()->Win32WindowStation,
+    Status = IntValidateWindowStationHandle( PsGetProcessWin32WindowStation(PsGetCurrentProcess()),
                                              UserMode,
                                              0,
                                             &WinStaObj,
@@ -1603,7 +1603,7 @@ NtUserSetWindowsHookEx( HINSTANCE Mod,
           {
              KAPC_STATE ApcState;
 
-             KeStackAttachProcess(&ptiHook->ppi->peProcess->Pcb, &ApcState);
+             KeStackAttachProcess((PKPROCESS)(ptiHook->ppi->peProcess), &ApcState);
              _SEH2_TRY
              {
                 ptiHook->pClientInfo->fsHooks = ptiHook->fsHooks;

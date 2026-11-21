@@ -517,7 +517,7 @@ RawInputThreadMain(VOID)
 
     TRACE("Raw Input Thread %p\n", ptiRawInput);
 
-    KeSetPriorityThread(&PsGetCurrentThread()->Tcb,
+    KeSetPriorityThread((PKTHREAD)PsGetCurrentThread(),
                         LOW_REALTIME_PRIORITY + 3);
 
     Status = ObOpenObjectByPointer(InputWindowStation,

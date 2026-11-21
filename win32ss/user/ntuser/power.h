@@ -99,7 +99,7 @@ BOOL
 IntIsThreadWin32Thread(
     _In_ PETHREAD Thread)
 {
-    return (Thread->Tcb.Win32Thread != NULL) ? TRUE : FALSE;
+    return (PsGetThreadWin32Thread(Thread) != NULL) ? TRUE : FALSE;
 }
 
 /* EOF */

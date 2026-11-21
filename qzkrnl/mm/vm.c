@@ -293,7 +293,15 @@ QzMmInsertVad(PQZ_PROCESS Process, ULONG_PTR Start, SIZE_T Size, ULONG Type, ULO
     Size = (Size + QZ_PAGE_SIZE - 1) & ~(QZ_PAGE_SIZE - 1);
     if (!Size)
         return STATUS_INVALID_PARAMETER;
-    if (!Start)
+    if (Start == QZ_VAD_AT_ZERO)
+    {
+        /* An explicit base below 64 KB, rounded down: the region starts at 0
+           (RTL reserves the first megabyte for VDM-style processes so) */
+        if (Size > QZ_USER_HIGHEST + 1 || !QzMmRangeFree(Process, 0, Size))
+            return STATUS_CONFLICTING_ADDRESSES;
+        Start = 0;
+    }
+    else if (!Start)
     {
         Start = QzMmFindFree(Process, Size, TopDown, Limit);
         if (!Start)
@@ -461,6 +469,8 @@ QzMmAllocate(PQZ_PROCESS Process, PVOID *BaseAddress, ULONG_PTR ZeroBits, PSIZE_
         {
             Start = Base & ~(QZ_ALLOCATION_GRANULARITY - 1);
             End = (Base + Size + QZ_PAGE_SIZE - 1) & ~(QZ_PAGE_SIZE - 1);
+            if (!Start)
+                Start = QZ_VAD_AT_ZERO;
         }
         else
         {
@@ -486,7 +496,18 @@ QzMmAllocate(PQZ_PROCESS Process, PVOID *BaseAddress, ULONG_PTR ZeroBits, PSIZE_
         }
         if (Vad->Type != MEM_PRIVATE)
         {
-            Status = STATUS_CONFLICTING_ADDRESSES;   /* committing in views: SEC_RESERVE, later */
+            /* Sections are committed whole when they are made: committing
+               pages of a view (a SEC_RESERVE heap's) is already done */
+            if (Vad->Type == MEM_MAPPED && (AllocationType & MEM_COMMIT))
+            {
+                *BaseAddress = (PVOID)Start;
+                *RegionSize = End - Start;
+                Status = STATUS_SUCCESS;
+            }
+            else
+            {
+                Status = STATUS_CONFLICTING_ADDRESSES;
+            }
             goto Done;
         }
     }

@@ -24,6 +24,30 @@ QzPsReturn(KPROCESSOR_MODE Mode, PVOID Buffer, ULONG Length, PULONG ReturnLength
 /* Processes                                                               */
 /* ---------------------------------------------------------------------- */
 
+/* Which drive letters \?? has (GetLogicalDrives) */
+static VOID
+QzPsQueryDriveMap(PPROCESS_DEVICEMAP_INFORMATION Info)
+{
+    WCHAR Buffer[] = L"\\??\\A:";
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES Attributes;
+    HANDLE Link;
+    ULONG i;
+
+    RtlInitUnicodeString(&Name, Buffer);
+    InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    for (i = 0; i < 26; i++)
+    {
+        Buffer[4] = (WCHAR)(L'A' + i);
+        if (NT_SUCCESS(ZwOpenSymbolicLinkObject(&Link, SYMBOLIC_LINK_QUERY, &Attributes)))
+        {
+            Info->Query.DriveMap |= 1UL << i;
+            Info->Query.DriveType[i] = DOSDEVICE_DRIVE_CALCULATE;
+            ZwClose(Link);
+        }
+    }
+}
+
 NTSTATUS
 NTAPI
 NtQueryInformationProcess(IN HANDLE ProcessHandle,
@@ -62,6 +86,7 @@ NtQueryInformationProcess(IN HANDLE ProcessHandle,
             break;
         case ProcessDebugPort:
         case ProcessWow64Information:
+        case ProcessLUIDDeviceMapsEnabled:    /* no LUID device maps: one global DosDevices */
         {
             ULONG_PTR Zero = 0;
             Status = QzPsReturn(Mode, ProcessInformation, ProcessInformationLength, ReturnLength, &Zero, sizeof(Zero));
@@ -98,6 +123,16 @@ NtQueryInformationProcess(IN HANDLE ProcessHandle,
             RtlZeroMemory(&Counters, sizeof(Counters));
             Status = QzPsReturn(Mode, ProcessInformation, ProcessInformationLength, ReturnLength,
                                 &Counters, sizeof(Counters));
+            break;
+        }
+        case ProcessDeviceMap:
+        {
+            /* One global DosDevices: report the drive letters it has */
+            PROCESS_DEVICEMAP_INFORMATION Info;
+            ULONG Size = sizeof(Info.Query);
+            RtlZeroMemory(&Info, sizeof(Info));
+            QzPsQueryDriveMap(&Info);
+            Status = QzPsReturn(Mode, ProcessInformation, ProcessInformationLength, ReturnLength, &Info, Size);
             break;
         }
         case ProcessSessionInformation:
@@ -283,6 +318,14 @@ NtQueryInformationThread(IN HANDLE ThreadHandle,
             Status = QzPsReturn(Mode, ThreadInformation, ThreadInformationLength, ReturnLength,
                                 &Thread->Win32StartAddress, sizeof(PVOID));
             break;
+        case ThreadIsTerminated:
+        {
+            ULONG Terminated = Thread->ExitedThread || Thread->TerminatePending ||
+                               KeReadStateEvent(&Thread->Terminated) != 0;
+            Status = QzPsReturn(Mode, ThreadInformation, ThreadInformationLength, ReturnLength, &Terminated,
+                                sizeof(Terminated));
+            break;
+        }
         case ThreadIsIoPending:
         {
             ULONG Pending = 0;

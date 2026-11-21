@@ -248,7 +248,7 @@ IntSetTimer( PWND Window,
      if (!pTmr) return 0;
 
      if (Window && (Type & TMRF_TIFROMWND))
-        pTmr->pti = Window->head.pti->pEThread->Tcb.Win32Thread;
+        pTmr->pti = PsGetThreadWin32Thread(Window->head.pti->pEThread);
      else
      {
         if (Type & TMRF_RIT)
@@ -387,7 +387,7 @@ SystemTimerSet( PWND Window,
                 UINT uElapse,
                 TIMERPROC lpTimerFunc)
 {
-  if (Window && Window->head.pti->pEThread->ThreadsProcess != PsGetCurrentProcess())
+  if (Window && PsGetThreadProcess(Window->head.pti->pEThread) != PsGetCurrentProcess())
   {
      EngSetLastError(ERROR_ACCESS_DENIED);
      TRACE("SysemTimerSet: Access Denied!\n");

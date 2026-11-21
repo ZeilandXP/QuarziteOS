@@ -27,6 +27,7 @@ list(APPEND SOURCE
     ex/exmore.c
     ex/exobj.c
     ex/init.c
+    ex/w32misc.c
     ex/keyed.c
     ex/shell.c
     ex/sync.c
@@ -42,6 +43,7 @@ list(APPEND SOURCE
     ke/synctest.c
     ke/timerobj.c
     ke/syscall.c
+    ke/callback.c
     ke/user.c
     ke/usertest.c
     ke/wait.c
@@ -67,6 +69,7 @@ list(APPEND SOURCE
     mm/mm.c
     mm/section.c
     mm/sysload.c
+    mm/sysview.c
     mm/vm.c
     mm/vmtest.c
     mm/pool.c
@@ -79,8 +82,11 @@ list(APPEND SOURCE
     ps/info.c
     ps/process.c
     ps/thread.c
+    ps/win32.c
     se/se.c
     se/token.c
+    se/client.c
+    se/srm.c
     drv/input.c
     drv/kbd.c
     drv/serial.c
@@ -89,11 +95,14 @@ list(APPEND SOURCE
     fsrtl/fsrtl.c
     fsrtl/mcb.c
     fsrtl/name.c
+    rtl/atom.c
     rtl/bitmap.c
     rtl/print.c
     rtl/rtl.c
+    rtl/heap.c
     rtl/oem.c
     rtl/rtl2.c
+    rtl/secdesc.c
     rtl/sid.c
     rtl/splay.c
     rtl/time.c

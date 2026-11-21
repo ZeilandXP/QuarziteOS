@@ -129,6 +129,7 @@ typedef struct _QZ_THREAD
     PVOID FxSaveArea;              /* user threads: FPU/SSE state, 512 bytes, 16-aligned */
     BOOLEAN Alerted;
     BOOLEAN TrapFrameReplaced;     /* NtContinue & co.: the service set the whole user context */
+    PVOID CallbackFrame;           /* ke/callback.c: the innermost KeUserModeCallback */
 
     /* File systems (stage B7) */
     PIRP TopLevelIrp;              /* IoGet/SetTopLevelIrp */
