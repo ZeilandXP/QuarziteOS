@@ -12,6 +12,8 @@
 #include "qzps.h"
 
 unsigned long __cdecl strtoul(const char *s, char **End, int Base);
+VOID QzIoShellDir(PCSTR Path);    /* io/isofs.c */
+VOID QzIoShellType(PCSTR Path);
 #include <ntdddisk.h>
 #include <ntddcdrm.h>
 
@@ -71,7 +73,11 @@ QzCmdHelp(VOID)
             "                    protect, guard pages, isolation, handles)\n"
             "  usertest          self-test: ring 3 (system calls, exceptions, preemption,\n"
             "                    FPU state)\n"
+            "  secttest          self-test: sections (ntdll.dll as an image, copy on write,\n"
+            "                    shared memory); needs \"pnp\" first\n"
             "  syscalls [on|off] system service statistics; trace every call\n"
+            "  dir <path>        list a directory (e.g. \\SystemRoot\\system32)\n"
+            "  type <path>       a file's size, checksum and first line\n"
             "  ps                list the processes\n"
             "  vm [pid]          a process's address space (VADs)\n"
             "  regtest           self-test: registry (keys, values, volatile keys, links,\n"
@@ -247,8 +253,14 @@ QzExecute(PCHAR Line)
         QzRunVmTests();
     else if (!strcmp(Cmd, "ps"))
         QzPsDumpProcesses();
+    else if (!strcmp(Cmd, "dir") && Arg)
+        QzIoShellDir(Arg);
+    else if (!strcmp(Cmd, "type") && Arg)
+        QzIoShellType(Arg);
     else if (!strcmp(Cmd, "usertest"))
         QzRunUserTests();
+    else if (!strcmp(Cmd, "secttest"))
+        QzRunSectionTests();
     else if (!strcmp(Cmd, "syscalls"))
     {
         if (Arg)

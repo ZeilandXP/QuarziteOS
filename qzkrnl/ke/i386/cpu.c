@@ -193,7 +193,9 @@ QzCpuInit(VOID)
         ULONG Regs[4], Cr0, Cr4;
         QzCpuid(1, Regs);
         __asm__ __volatile__("movl %%cr0, %0" : "=r"(Cr0));
-        Cr0 = (Cr0 & ~(0x04 | 0x08)) | 0x02 | 0x20;   /* clear EM, TS; set MP, NE */
+        /* clear EM, TS; set MP, NE, and WP: the kernel's writes honour
+           read-only user pages, which copy-on-write relies on */
+        Cr0 = (Cr0 & ~(0x04 | 0x08)) | 0x02 | 0x20 | 0x10000;
         __asm__ __volatile__("movl %0, %%cr0" : : "r"(Cr0));
         __asm__ __volatile__("fninit");
         if (Regs[3] & (1 << 24))

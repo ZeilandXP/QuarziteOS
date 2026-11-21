@@ -698,3 +698,10 @@
 # Virtual memory services (B6)
 @ stdcall ZwAllocateVirtualMemory(ptr ptr long ptr long long)
 @ stdcall ZwFreeVirtualMemory(ptr ptr ptr long)
+
+# Sections (B6)
+@ stdcall ZwCreateSection(ptr long ptr ptr long long ptr)
+@ stdcall ZwMapViewOfSection(ptr ptr ptr long long ptr ptr long long long)
+@ stdcall ZwUnmapViewOfSection(ptr ptr)
+@ stdcall ZwOpenSection(ptr long ptr)
+@ extern MmSectionObjectType

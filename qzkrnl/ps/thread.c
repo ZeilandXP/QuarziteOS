@@ -398,4 +398,5 @@ QzPsInit(VOID)
     PsThreadType = QzPsCreateType(L"Thread", &QzThreadMapping, THREAD_ALL_ACCESS, QzPsDeleteThread);
     PsProcessType = QzPsCreateType(L"Process", &QzProcessMapping, PROCESS_ALL_ACCESS, QzPsDeleteProcess);
     QzPsInitProcesses();
+    QzMmSectionInit();
 }

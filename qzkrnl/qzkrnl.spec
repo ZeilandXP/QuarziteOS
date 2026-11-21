@@ -611,6 +611,11 @@
 @ extern MmSystemRangeStart
 @ stdcall ZwAllocateVirtualMemory(ptr ptr long ptr long long)
 @ stdcall ZwFreeVirtualMemory(ptr ptr ptr long)
+@ stdcall ZwCreateSection(ptr long ptr ptr long long ptr)
+@ stdcall ZwMapViewOfSection(ptr ptr ptr long long ptr ptr long long long)
+@ stdcall ZwUnmapViewOfSection(ptr ptr)
+@ stdcall ZwOpenSection(ptr long ptr)
+@ extern MmSectionObjectType
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -1094,7 +1099,6 @@
 @ stub MmProtectMdlSystemAddress
 @ stub MmQuerySystemSize
 @ stub MmRemovePhysicalMemory
-@ extern MmSectionObjectType QzUnimplementedData
 @ stub MmSecureVirtualMemory
 @ stub MmSetAddressRangeModified
 @ stub MmSetBankedSection
@@ -1547,7 +1551,6 @@
 @ stub ZwCloseObjectAuditAlarm
 @ stub ZwConnectPort
 @ stub ZwCreateJobObject
-@ stub ZwCreateSection
 @ stub ZwDeleteBootEntry
 @ stub ZwDeleteDriverEntry
 @ stub ZwDeleteFile
@@ -1560,14 +1563,12 @@
 @ stub ZwInitiatePowerAction
 @ stub ZwIsProcessInJob
 @ stub ZwLoadKey
-@ stub ZwMapViewOfSection
 @ stub ZwModifyBootEntry
 @ stub ZwModifyDriverEntry
 @ stub ZwOpenJobObject
 @ stub ZwOpenProcess
 @ stub ZwOpenProcessToken
 @ stub ZwOpenProcessTokenEx
-@ stub ZwOpenSection
 @ stub ZwOpenThread
 @ stub ZwOpenThreadToken
 @ stub ZwOpenThreadTokenEx
@@ -1609,7 +1610,6 @@
 @ stub ZwTerminateProcess
 @ stub ZwTranslateFilePath
 @ stub ZwUnloadKey
-@ stub ZwUnmapViewOfSection
 @ stub ZwYieldExecution
 @ stub -arch=x86_64,arm __C_specific_handler
 @ stub -arch=arm __jump_unwind

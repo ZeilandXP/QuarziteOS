@@ -40,16 +40,16 @@ QzWriteCr3(ULONG Value)
 }
 
 /* Map one physical page at the scratch address (interrupts must be off) */
-static PVOID
-QzMapHyper(ULONG Pfn)
+PVOID
+QzMmMapHyper(ULONG Pfn)
 {
     *QzPteOf(QzHyperVa) = (Pfn << QZ_PAGE_SHIFT) | QZ_PTE_PRESENT | QZ_PTE_WRITE;
     QzInvlpg(QzHyperVa);
     return (PVOID)QzHyperVa;
 }
 
-static VOID
-QzUnmapHyper(VOID)
+VOID
+QzMmUnmapHyper(VOID)
 {
     *QzPteOf(QzHyperVa) = 0;
     QzInvlpg(QzHyperVa);
@@ -78,7 +78,7 @@ QzVmInit(VOID)
     /* The scratch page: any system address with a PTE of its own */
     Va = (ULONG_PTR)MmAllocateMappingAddress(QZ_PAGE_SIZE, 'pyHQ');
     QzHyperVa = Va;
-    QzUnmapHyper();
+    QzMmUnmapHyper();
 
     QzSharedDataPfn = (ULONG)(MmGetPhysicalAddress((PVOID)KI_USER_SHARED_DATA).QuadPart >> QZ_PAGE_SHIFT);
     DbgPrint(QZ_KERNEL_NAME ": vm: %lu system page tables added, shared user data at PFN 0x%lx\n",
@@ -124,12 +124,12 @@ QzMmCreateAddressSpace(PQZ_PROCESS Process)
     /* The system half from the current directory, an empty user half, and
        the self-map entry pointing at the new directory */
     Flags = QzSaveFlagsAndDisable();
-    Directory = QzMapHyper(Pfn);
+    Directory = QzMmMapHyper(Pfn);
     for (Index = 0; Index < 1024; Index++)
         Directory[Index] = (Index >= (QZ_SYSTEM_RANGE_START >> 22))
                                ? *(volatile ULONG *)(QZ_PDE_BASE + Index * 4) : 0;
     Directory[QZ_PTE_BASE >> 22] = (Pfn << QZ_PAGE_SHIFT) | QZ_PTE_PRESENT | QZ_PTE_WRITE;
-    QzUnmapHyper();
+    QzMmUnmapHyper();
     QzRestoreFlags(Flags);
 
     Process->DirectoryTableBase = Pfn << QZ_PAGE_SHIFT;
@@ -381,6 +381,8 @@ QzMmPteToProtect(PQZ_VAD Vad, ULONG Pte)
             return PAGE_NOACCESS;
         if (Pte & QZ_PTE_WRITE)
             return Execute ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE;
+        if (Pte & QZ_PTE_COPY_ON_WRITE)
+            return Execute ? PAGE_EXECUTE_WRITECOPY : PAGE_WRITECOPY;
         return Execute ? PAGE_EXECUTE_READ : PAGE_READONLY;
     }
     if (Pte & QZ_PTE_COMMITTED)
@@ -396,18 +398,23 @@ QzMmReadPte(ULONG_PTR Va)
     return *QzPteOf(Va);
 }
 
-/* Set the protection of a committed (or committing) page */
+/* Set the protection of a committed (or committing) page. A section's
+   page that becomes writable is copy-on-write unless the view shares writes */
 static VOID
-QzMmSetPageProtect(ULONG_PTR Va, ULONG Protect)
+QzMmSetPageProtect(PQZ_VAD Vad, ULONG_PTR Va, ULONG Protect)
 {
     volatile ULONG *Pte;
-    ULONG Value;
+    ULONG Value, Bits;
 
     QzMmEnsurePageTable(Va);
     Pte = QzPteOf(Va);
     Value = *Pte;
-    if ((Value & QZ_PTE_PRESENT) && !(Protect & PAGE_GUARD) && QzMmProtectToPte(Protect))
-        *Pte = (Value & ~0xFFFUL) | QzMmProtectToPte(Protect) | (Value & QZ_PTE_PRIVATE);
+    Bits = QzMmProtectToPte(Protect);
+    if ((Value & QZ_PTE_PRESENT) && !(Value & QZ_PTE_PRIVATE) && (Bits & QZ_PTE_WRITE) && Vad &&
+        (Vad->Type == MEM_IMAGE || (Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY))))
+        Bits = (Bits & ~QZ_PTE_WRITE) | QZ_PTE_COPY_ON_WRITE;
+    if ((Value & QZ_PTE_PRESENT) && !(Protect & PAGE_GUARD) && Bits)
+        *Pte = (Value & ~0xFFFUL) | Bits | (Value & QZ_PTE_PRIVATE);
     else if (Value & QZ_PTE_PRESENT)
         *Pte = (Value & ~0xFFFUL) | QZ_PTE_PRESENT | (Value & QZ_PTE_PRIVATE);  /* the frame stays, no user access */
     else
@@ -484,7 +491,7 @@ QzMmAllocate(PQZ_PROCESS Process, PVOID *BaseAddress, ULONG_PTR ZeroBits, PSIZE_
 
     if (AllocationType & MEM_COMMIT)
         for (Va = Start; Va < End; Va += QZ_PAGE_SIZE)
-            QzMmSetPageProtect(Va, Protect);
+            QzMmSetPageProtect(Vad, Va, Protect);
 
     *BaseAddress = (PVOID)Start;
     *RegionSize = End - Start;
@@ -614,7 +621,7 @@ QzMmProtect(PQZ_PROCESS Process, PVOID *BaseAddress, PSIZE_T RegionSize, ULONG N
     }
     *OldProtect = QzMmPteToProtect(Vad, QzMmReadPte(Start));
     for (Va = Start; Va < End; Va += QZ_PAGE_SIZE)
-        QzMmSetPageProtect(Va, NewProtect);
+        QzMmSetPageProtect(Vad, Va, NewProtect);
     *BaseAddress = (PVOID)Start;
     *RegionSize = End - Start;
 Done:
@@ -700,6 +707,22 @@ QzMmAccessFault(ULONG_PTR Address, ULONG ErrorCode, KPROCESSOR_MODE Mode)
     {
         if (!(Value & QZ_PTE_USER))
             return STATUS_ACCESS_VIOLATION;
+        if ((ErrorCode & 2) && !(Value & QZ_PTE_WRITE) && (Value & QZ_PTE_COPY_ON_WRITE))
+        {
+            /* Copy on write: a private page with the shared page's contents */
+            ULONG_PTR Page = Address & ~(QZ_PAGE_SIZE - 1);
+            PVOID Copy;
+            Pfn = QzAllocPhysicalPage();
+            Copy = QzMmMapHyper(Pfn);
+            RtlCopyMemory(Copy, (PVOID)Page, QZ_PAGE_SIZE);
+            QzMmUnmapHyper();
+            *Pte = (Pfn << QZ_PAGE_SHIFT) | (Value & (QZ_PTE_PCD | QZ_PTE_PWT)) | QZ_PTE_PRESENT | QZ_PTE_USER |
+                   QZ_PTE_WRITE | QZ_PTE_PRIVATE;
+            QzInvlpg(Address);
+            if (Process)
+                Process->PrivatePages++;
+            return STATUS_SUCCESS;
+        }
         if ((ErrorCode & 2) && !(Value & QZ_PTE_WRITE))
             return STATUS_ACCESS_VIOLATION;
         QzInvlpg(Address);   /* a stale translation */

@@ -49,6 +49,7 @@ list(APPEND SOURCE
     io/driver.c
     io/file.c
     io/iotest.c
+    io/isofs.c
     io/irp.c
     io/misc.c
     io/pnp.c

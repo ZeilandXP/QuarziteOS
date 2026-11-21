@@ -23,6 +23,10 @@
 #include <wdmguid.h>
 #include <mountmgr.h>
 
+VOID QzIsoInit(VOID);   /* io/isofs.c */
+unsigned long __cdecl strtoul(const char *s, char **End, int Base);
+char * __cdecl strstr(const char *Haystack, const char *Needle);
+
 #define QZ_DN_REPORTED     0x0001
 #define QZ_DN_IDS          0x0002
 #define QZ_DN_ADDED        0x0004
@@ -1838,6 +1842,48 @@ QzPnpAssignDriveLetters(VOID)
     ObDereferenceObject(FileObject);
 }
 
+/*
+ * \ArcName\<boot device> -> the NT device, so that \SystemRoot (which the
+ * object manager made point at the ARC name) reaches the boot volume.
+ * NT matches ARC disks by signature; one CD-ROM and BIOS disk order are
+ * enough here.
+ */
+static VOID
+QzPnpCreateArcNames(VOID)
+{
+    PCSTR Arc = QzLoaderBlock ? QzLoaderBlock->ArcBootDeviceName : NULL;
+    WCHAR LinkBuffer[128], TargetBuffer[64];
+    UNICODE_STRING Link, Target;
+    PCSTR p;
+    ULONG i, Disk = 0, Partition = 0;
+    NTSTATUS Status;
+
+    if (!Arc)
+        return;
+    for (i = 0; Arc[i] && i < 100; i++)
+        LinkBuffer[9 + i] = (UCHAR)Arc[i];
+    RtlCopyMemory(LinkBuffer, L"\\ArcName\\", 9 * sizeof(WCHAR));
+    LinkBuffer[9 + i] = UNICODE_NULL;
+    RtlInitUnicodeString(&Link, LinkBuffer);
+
+    if (strstr(Arc, "cdrom("))
+    {
+        RtlCopyMemory(TargetBuffer, L"\\Device\\CdRom0", sizeof(L"\\Device\\CdRom0"));
+    }
+    else
+    {
+        if ((p = strstr(Arc, "rdisk(")))
+            Disk = strtoul(p + 6, NULL, 10);
+        if ((p = strstr(Arc, "partition(")))
+            Partition = strtoul(p + 10, NULL, 10);
+        _snwprintf(TargetBuffer, RTL_NUMBER_OF(TargetBuffer), L"\\Device\\Harddisk%lu\\Partition%lu", Disk,
+                   Partition);
+    }
+    RtlInitUnicodeString(&Target, TargetBuffer);
+    Status = IoCreateSymbolicLink(&Link, &Target);
+    DbgPrint(QZ_KERNEL_NAME ": PnP: %wZ -> %wZ (0x%08lx)\n", &Link, &Target, Status);
+}
+
 NTSTATUS
 QzPnpStart(VOID)
 {
@@ -1869,6 +1915,10 @@ QzPnpStart(VOID)
         if (NT_SUCCESS(QzIoStartBootDriver(&MountMgr, &Driver)))
             QzPnpAssignDriveLetters();
     }
+
+    /* The boot volume: an ARC name for \SystemRoot, and a file system for the media */
+    QzIsoInit();
+    QzPnpCreateArcNames();
 
     QzIoCallReinitRoutines(TRUE);
     QzIoCallReinitRoutines(FALSE);

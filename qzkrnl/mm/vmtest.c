@@ -214,3 +214,142 @@ QzRunVmTests(VOID)
     QzvTests();
     QzPrint("  vmtest: %lu passed, %lu failed\n", QzPassed, QzFailed);
 }
+
+/* ---------------------------------------------------------------------- */
+/* Sections ("secttest": needs the boot CD, so after "pnp")                */
+/* ---------------------------------------------------------------------- */
+
+NTSTATUS NTAPI NtQuerySection(HANDLE SectionHandle, SECTION_INFORMATION_CLASS SectionInformationClass,
+                              PVOID SectionInformation, SIZE_T SectionInformationLength, PSIZE_T ResultLength);
+
+static NTSTATUS
+QzvOpenFile(PCWSTR Path, PHANDLE Handle)
+{
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES Attributes;
+    IO_STATUS_BLOCK IoStatus;
+
+    RtlInitUnicodeString(&Name, Path);
+    InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    return ZwOpenFile(Handle, FILE_READ_DATA | FILE_EXECUTE | SYNCHRONIZE, &Attributes, &IoStatus, FILE_SHARE_READ,
+                      FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE);
+}
+
+static VOID
+QzvSectionTests(VOID)
+{
+    PQZ_PROCESS A = NULL, B = NULL, Saved;
+    HANDLE File = NULL, Image = NULL, Data = NULL;
+    PVOID ViewA = NULL, ViewB = NULL, Second = NULL, DataA = NULL, DataB = NULL;
+    SIZE_T Size = 0;
+    SECTION_IMAGE_INFORMATION Info;
+    PQZ_SECTION Section = NULL;
+    LARGE_INTEGER Max;
+    USHORT Magic = 0;
+    ULONG Value = 0, Total, FreeBefore, FreeAfter, DataRva = 0, i;
+    NTSTATUS Status;
+
+    Status = QzvOpenFile(L"\\SystemRoot\\system32\\ntdll.dll", &File);
+    QzCheck("open ntdll.dll on the boot CD", NT_SUCCESS(Status));
+    if (!NT_SUCCESS(Status))
+        return;
+    QzMmGetStats(&Total, &FreeBefore);   /* after the volume's first mount */
+    Status = ZwCreateSection(&Image, SECTION_ALL_ACCESS, NULL, NULL, PAGE_EXECUTE, SEC_IMAGE, File);
+    QzCheck("an image section from it", NT_SUCCESS(Status));
+    if (!NT_SUCCESS(Status))
+        goto Out;
+    Status = NtQuerySection(Image, SectionImageInformation, &Info, sizeof(Info), NULL);
+    QzCheck("SectionImageInformation: a native-subsystem DLL", NT_SUCCESS(Status) &&
+            (Info.ImageCharacteristics & IMAGE_FILE_DLL) && Info.TransferAddress != NULL);
+    ObReferenceObjectByHandle(Image, 0, MmSectionObjectType, KernelMode, (PVOID *)&Section, NULL);
+
+    QzPsCreateProcess("secttest-a", QzSystemProcess, &A);
+    QzPsCreateProcess("secttest-b", QzSystemProcess, &B);
+    if (!A || !B || !Section)
+        goto Out;
+
+    Status = QzMmMapView(Section, A, &ViewA, 0, NULL, &Size, 0, PAGE_EXECUTE_WRITECOPY);
+    QzCheck("map it at its preferred base", Status == STATUS_SUCCESS && (ULONG_PTR)ViewA == Section->ImageBase &&
+            Size == Section->PageCount * PAGE_SIZE);
+    Size = 0;
+    Status = QzMmMapView(Section, B, &ViewB, 0, NULL, &Size, 0, PAGE_EXECUTE_WRITECOPY);
+    Size = 0;
+    QzCheck("a second view elsewhere is STATUS_IMAGE_NOT_AT_BASE",
+            QzMmMapView(Section, A, &Second, 0, NULL, &Size, 0, PAGE_EXECUTE_WRITECOPY) == STATUS_IMAGE_NOT_AT_BASE &&
+            Second != ViewA);
+
+    /* A writable page of the image: the first page whose protection is write-copy */
+    for (i = 0; i < Section->PageCount; i++)
+        if (Section->PageProtect[i] & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY))
+        {
+            DataRva = i * PAGE_SIZE;
+            break;
+        }
+    QzPsAttach(A, &Saved);
+    QzCheck("the view reads as the image (MZ)", QzCopyFromUser(&Magic, ViewA, sizeof(Magic)) && Magic == 0x5A4D);
+    Value = 0x5EC7;
+    QzCheck("writing to the headers is refused", !QzCopyToUser(ViewA, &Value, sizeof(Value)));
+    QzCheck("writing to .data copies the page", DataRva && QzCopyToUser((PUCHAR)ViewA + DataRva, &Value, sizeof(Value)));
+    QzPsDetach(Saved);
+    QzPsAttach(B, &Saved);
+    Value = 0;
+    QzCopyFromUser(&Value, (PUCHAR)ViewB + DataRva, sizeof(Value));
+    QzPsDetach(Saved);
+    QzCheck("... which the other process does not see", Value != 0x5EC7);
+    {
+        MEMORY_BASIC_INFORMATION Mbi;
+        QzCheck("the view is MEM_IMAGE", NT_SUCCESS(QzMmQuery(A, ViewA, &Mbi)) && Mbi.Type == MEM_IMAGE &&
+                Mbi.AllocationBase == ViewA);
+    }
+    QzCheck("unmap the second view", NT_SUCCESS(QzMmUnmapView(A, Second)));
+
+    /* A page-file section shared by two processes */
+    Max.QuadPart = 3 * PAGE_SIZE;
+    Status = ZwCreateSection(&Data, SECTION_ALL_ACCESS, NULL, &Max, PAGE_READWRITE, SEC_COMMIT, NULL);
+    QzCheck("a page-file-backed section", NT_SUCCESS(Status));
+    if (NT_SUCCESS(Status))
+    {
+        PQZ_SECTION Shared;
+        ObReferenceObjectByHandle(Data, 0, MmSectionObjectType, KernelMode, (PVOID *)&Shared, NULL);
+        Size = 0;
+        QzMmMapView(Shared, A, &DataA, 0, NULL, &Size, 0, PAGE_READWRITE);
+        Size = 0;
+        QzMmMapView(Shared, B, &DataB, 0, NULL, &Size, 0, PAGE_READWRITE);
+        QzPsAttach(A, &Saved);
+        Value = 0x5AED;
+        QzCopyToUser((PUCHAR)DataA + PAGE_SIZE, &Value, sizeof(Value));
+        QzPsDetach(Saved);
+        QzPsAttach(B, &Saved);
+        Value = 0;
+        QzCopyFromUser(&Value, (PUCHAR)DataB + PAGE_SIZE, sizeof(Value));
+        QzPsDetach(Saved);
+        QzCheck("its views share writes", DataA && DataB && Value == 0x5AED);
+        ObDereferenceObject(Shared);
+    }
+
+Out:
+    if (Section)
+        ObDereferenceObject(Section);
+    if (Data)
+        ZwClose(Data);
+    if (Image)
+        ZwClose(Image);
+    if (File)
+        ZwClose(File);
+    if (A)
+        ObDereferenceObject(A);
+    if (B)
+        ObDereferenceObject(B);
+    QzMmGetStats(&Total, &FreeAfter);
+    QzCheck("the sections' pages are freed with their last view", FreeAfter + 32 >= FreeBefore);
+    if (FreeAfter + 32 < FreeBefore)
+        QzPrint("    (%lu page(s) before, %lu after)\n", FreeBefore, FreeAfter);
+}
+
+VOID
+QzRunSectionTests(VOID)
+{
+    QzPassed = QzFailed = 0;
+    QzvSectionTests();
+    QzPrint("  secttest: %lu passed, %lu failed\n", QzPassed, QzFailed);
+}

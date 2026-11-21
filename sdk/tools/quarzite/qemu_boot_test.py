@@ -297,6 +297,11 @@ def run_qzkrnl(iso, out):
                 ("reg \\Registry\\Machine\\System\\CurrentControlSet\\Enum\\PCI",
                  [r"\[VEN_8086&DEV_7010\S*\]"]),
                 ("regtest", [r"regtest: \d+ passed, 0 failed"]),
+                # Stage B6: the boot volume through \SystemRoot, and sections
+                ("dir \\SystemRoot\\system32\\config", [r"\d+ system\r?\n", r"5 file\(s\)"]),
+                ("type \\SystemRoot\\system32\\smss.exe", [r"smss\.exe: (\d+) bytes \(size \1\)",
+                                                             r"first line: MZ"]),
+                ("secttest", [r"secttest: \d+ passed, 0 failed"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
                          r"[1-9]\d* interrupt objects connected"]),
@@ -304,7 +309,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "pnp") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)

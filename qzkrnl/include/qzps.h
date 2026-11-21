@@ -25,6 +25,7 @@
 #define QZ_PTE_DIRTY            0x040
 #define QZ_PTE_PRIVATE          0x200          /* present: a page this process owns */
 #define QZ_PTE_COMMITTED        0x400          /* not present: committed, Win32 protection << 12 */
+#define QZ_PTE_COPY_ON_WRITE    0x800          /* present, read-only: a write gets a private copy */
 #define QZ_SWPTE(Protect)       (QZ_PTE_COMMITTED | ((ULONG)(Protect) << 12))
 #define QZ_SWPTE_PROTECT(Pte)   (((Pte) >> 12) & 0x7FF)
 
@@ -48,6 +49,35 @@ typedef struct _QZ_VAD
     struct _QZ_SECTION *Section;    /* mapped views: referenced */
     ULONG_PTR SectionOffset;        /* bytes into the section */
 } QZ_VAD, *PQZ_VAD;
+
+/* ---------------------------------------------------------------------- */
+/* Sections (mm/section.c)                                                 */
+/* ---------------------------------------------------------------------- */
+
+typedef struct _QZ_SECTION
+{
+    ULONG AllocationAttributes;     /* SEC_IMAGE, SEC_COMMIT, SEC_RESERVE, ... */
+    ULONG Protect;                  /* the section's page protection (data) */
+    ULONGLONG MaximumSize;
+    ULONG PageCount;
+    PULONG Pfns;                    /* the section's pages, shared by every view */
+    PUSHORT PageProtect;            /* images: each page's Win32 protection */
+    PFILE_OBJECT FileObject;        /* referenced, if file-backed */
+    BOOLEAN Image;
+    ULONG_PTR ImageBase;            /* images: the preferred base */
+    SECTION_IMAGE_INFORMATION ImageInformation;
+    volatile LONG Views;
+} QZ_SECTION, *PQZ_SECTION;
+
+extern POBJECT_TYPE MmSectionObjectType;
+VOID QzMmSectionInit(VOID);
+NTSTATUS QzMmCreateSection(PQZ_SECTION *Result, PLARGE_INTEGER MaximumSize, ULONG Protect, ULONG Attributes,
+                           PFILE_OBJECT FileObject);
+NTSTATUS QzMmMapView(PQZ_SECTION Section, struct _QZ_PROCESS *Process, PVOID *BaseAddress, ULONG_PTR ZeroBits,
+                     PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, ULONG AllocationType, ULONG Protect);
+NTSTATUS QzMmUnmapView(struct _QZ_PROCESS *Process, PVOID BaseAddress);
+PVOID QzMmMapHyper(ULONG Pfn);       /* interrupts off around the use */
+VOID QzMmUnmapHyper(VOID);
 
 /* ---------------------------------------------------------------------- */
 /* Processes                                                               */
@@ -188,3 +218,4 @@ ULONG QzServiceNumber(PCSTR Name);
 /* mm/vmtest.c, ke/usertest.c */
 VOID QzRunVmTests(VOID);
 VOID QzRunUserTests(VOID);
+VOID QzRunSectionTests(VOID);
