@@ -7,6 +7,8 @@
 
 #include "qz.h"
 
+BOOLEAN NTAPI RtlDispatchException(PEXCEPTION_RECORD ExceptionRecord, PCONTEXT Context);   /* ke/except.c */
+
 #define EXCEPTION_WINE_STUB 0x80000100
 
 static volatile LONG QzInBugCheck;
@@ -92,10 +94,11 @@ KeBugCheck(IN ULONG BugCheckCode)
 }
 
 /*
- * Exception dispatching does not exist yet, so any raised exception is
- * fatal. The common case is a call into an unimplemented export: the
- * stubs generated from qzkrnl.spec raise EXCEPTION_WINE_STUB with the
- * module and function name, which we put on the stop screen.
+ * A raised exception goes to the handlers on the stack (ke/except.c); if
+ * none takes it, it is fatal. A call into an unimplemented export is
+ * always fatal: the stubs generated from qzkrnl.spec raise
+ * EXCEPTION_WINE_STUB with the module and function name, which we put on
+ * the stop screen rather than let a driver's handler swallow it.
  */
 VOID
 NTAPI
@@ -103,6 +106,17 @@ RtlRaiseException(IN PEXCEPTION_RECORD ExceptionRecord)
 {
     CHAR Text[128];
     PVOID Caller = __builtin_return_address(0);
+
+    if (ExceptionRecord->ExceptionCode != EXCEPTION_WINE_STUB)
+    {
+        CONTEXT Context;
+        RtlCaptureContext(&Context);
+        Context.Eip = (ULONG_PTR)Caller;
+        if (!ExceptionRecord->ExceptionAddress)
+            ExceptionRecord->ExceptionAddress = Caller;
+        if (RtlDispatchException(ExceptionRecord, &Context))
+            return;                       /* a handler continued it */
+    }
 
     if (ExceptionRecord->ExceptionCode == EXCEPTION_WINE_STUB &&
         ExceptionRecord->NumberParameters >= 2)
@@ -134,6 +148,7 @@ RtlRaiseStatus(IN NTSTATUS Status)
 
     RtlZeroMemory(&Record, sizeof(Record));
     Record.ExceptionCode = Status;
+    Record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
     Record.ExceptionAddress = __builtin_return_address(0);
     RtlRaiseException(&Record);
     for (;;);

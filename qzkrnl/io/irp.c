@@ -169,6 +169,18 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
     PFILE_OBJECT FileObject = Irp->Tail.Overlay.OriginalFileObject;
     NTSTATUS Status = Irp->IoStatus.Status;
 
+    /* Paging I/O: the MDL is the caller's (the cache's or Mm's pages) */
+    if (Irp->Flags & IRP_PAGING_IO)
+    {
+        if (Irp->UserIosb)
+            *Irp->UserIosb = Irp->IoStatus;
+        if (Irp->UserEvent)
+            KeSetEvent(Irp->UserEvent, PriorityBoost, FALSE);
+        Irp->MdlAddress = NULL;
+        IoFreeIrp(Irp);
+        return;
+    }
+
     if (Irp->Flags & IRP_ASSOCIATED_IRP)
     {
         PIRP Master = Irp->AssociatedIrp.MasterIrp;
@@ -592,4 +604,58 @@ IoReleaseRemoveLockAndWaitEx(IN PIO_REMOVE_LOCK RemoveLock,
     InterlockedDecrement(&RemoveLock->Common.IoCount);   /* the initial count */
     if (InterlockedDecrement(&RemoveLock->Common.IoCount) > 0)
         KeWaitForSingleObject(&RemoveLock->Common.RemoveEvent, Executive, KernelMode, FALSE, NULL);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Paging I/O: the cache manager's and Mm's reads and writes of file pages */
+/* ---------------------------------------------------------------------- */
+
+static NTSTATUS
+QzIoPagingRequest(UCHAR Major, PFILE_OBJECT FileObject, PMDL Mdl, PLARGE_INTEGER Offset, PKEVENT Event,
+                  PIO_STATUS_BLOCK StatusBlock, ULONG ExtraFlags)
+{
+    PDEVICE_OBJECT Device = IoGetRelatedDeviceObject(FileObject);
+    PIO_STACK_LOCATION Stack;
+    PIRP Irp = IoAllocateIrp(Device->StackSize, FALSE);
+
+    if (!Irp)
+        return STATUS_INSUFFICIENT_RESOURCES;
+    Irp->MdlAddress = Mdl;
+    Irp->UserBuffer = (PUCHAR)Mdl->StartVa + Mdl->ByteOffset;
+    Irp->UserEvent = Event;
+    Irp->UserIosb = StatusBlock;
+    Irp->Flags = IRP_PAGING_IO | IRP_NOCACHE | IRP_SYNCHRONOUS_PAGING_IO | ExtraFlags;
+    Irp->RequestorMode = KernelMode;
+    Irp->Tail.Overlay.Thread = PsGetCurrentThread();
+    Irp->Tail.Overlay.OriginalFileObject = FileObject;
+    Stack = IoGetNextIrpStackLocation(Irp);
+    Stack->MajorFunction = Major;
+    Stack->FileObject = FileObject;
+    if (Major == IRP_MJ_READ)
+    {
+        Stack->Parameters.Read.Length = Mdl->ByteCount;
+        Stack->Parameters.Read.ByteOffset = *Offset;
+    }
+    else
+    {
+        Stack->Parameters.Write.Length = Mdl->ByteCount;
+        Stack->Parameters.Write.ByteOffset = *Offset;
+    }
+    return IoCallDriver(Device, Irp);
+}
+
+NTSTATUS
+NTAPI
+IoPageRead(IN PFILE_OBJECT FileObject, IN PMDL Mdl, IN PLARGE_INTEGER Offset, IN PKEVENT Event,
+           IN PIO_STATUS_BLOCK StatusBlock)
+{
+    return QzIoPagingRequest(IRP_MJ_READ, FileObject, Mdl, Offset, Event, StatusBlock, IRP_INPUT_OPERATION);
+}
+
+NTSTATUS
+NTAPI
+IoSynchronousPageWrite(IN PFILE_OBJECT FileObject, IN PMDL Mdl, IN PLARGE_INTEGER Offset, IN PKEVENT Event,
+                       IN PIO_STATUS_BLOCK StatusBlock)
+{
+    return QzIoPagingRequest(IRP_MJ_WRITE, FileObject, Mdl, Offset, Event, StatusBlock, 0);
 }

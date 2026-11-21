@@ -25,6 +25,27 @@
 
 POBJECT_TYPE MmSectionObjectType;
 
+/*
+ * Mapped files: a data section of a file maps the cache manager's pages
+ * of it (cc/cache.c), so a mapped view, cached reads and writes, and the
+ * file on disk all see one copy. Each view holds a cache reference on
+ * every page of its range from mapping to unmapping; writes through it
+ * show in the user PTEs' dirty bits, which go to the cache when the view
+ * goes, and whenever the cache flushes the file (QzMmCollectFileDirty).
+ */
+typedef struct _QZ_SECTION_VIEW
+{
+    LIST_ENTRY Link;                /* the section's ViewList */
+    PQZ_PROCESS Process;
+    PQZ_VAD Vad;
+    ULONGLONG Offset;               /* into the file */
+    ULONG Pages;
+} QZ_SECTION_VIEW, *PQZ_SECTION_VIEW;
+
+static LIST_ENTRY QzMmFileSections;     /* sections with a CacheMap */
+static FAST_MUTEX QzMmFileLock;
+VOID QzMmCollectDirty(PSECTION_OBJECT_POINTERS Sop);
+
 static GENERIC_MAPPING QzSectionMapping =
 {
     STANDARD_RIGHTS_READ | SECTION_MAP_READ | SECTION_QUERY,
@@ -90,8 +111,10 @@ QzMmFillSection(PQZ_SECTION Section, ULONG Offset, const UCHAR *Source, ULONG Le
 /* Reading the backing file                                                */
 /* ---------------------------------------------------------------------- */
 
+static NTSTATUS QzMmFileSize(PFILE_OBJECT FileObject, PULONGLONG Size);
+
 static NTSTATUS
-QzMmReadFile(PFILE_OBJECT FileObject, ULONG Offset, PVOID Buffer, ULONG Length, PULONG Read)
+QzMmReadFileNoCache(PFILE_OBJECT FileObject, ULONG Offset, PVOID Buffer, ULONG Length, PULONG Read)
 {
     PDEVICE_OBJECT Device = IoGetRelatedDeviceObject(FileObject);
     IO_STATUS_BLOCK IoStatus;
@@ -118,6 +141,39 @@ QzMmReadFile(PFILE_OBJECT FileObject, ULONG Offset, PVOID Buffer, ULONG Length, 
     if (Status == STATUS_END_OF_FILE)
         Status = STATUS_SUCCESS;
     *Read = NT_SUCCESS(Status) ? (ULONG)IoStatus.Information : 0;
+    return Status;
+}
+
+/*
+ * Through the cache when the file system gives the file section object
+ * pointers: the reads become paging reads, which a file system takes at
+ * any offset and also after the file's handle is closed. Otherwise a
+ * non-cached read.
+ */
+static NTSTATUS
+QzMmReadFile(PFILE_OBJECT FileObject, ULONG Offset, PVOID Buffer, ULONG Length, PULONG Read)
+{
+    ULONGLONG Size;
+    PVOID Map;
+    NTSTATUS Status;
+
+    if (!FileObject->SectionObjectPointer)
+        return QzMmReadFileNoCache(FileObject, Offset, Buffer, Length, Read);
+    Status = QzMmFileSize(FileObject, &Size);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    if (Offset >= Size)
+    {
+        *Read = 0;
+        return STATUS_SUCCESS;
+    }
+    Length = (ULONG)min(Length, Size - Offset);
+    Map = QzCcMmAcquire(FileObject, (LONGLONG)Size);
+    if (!Map)
+        return QzMmReadFileNoCache(FileObject, Offset, Buffer, Length, Read);
+    Status = QzCcMmRead(Map, Offset, Buffer, Length);
+    QzCcMmRelease(Map);
+    *Read = NT_SUCCESS(Status) ? Length : 0;
     return Status;
 }
 
@@ -329,6 +385,13 @@ QzMmDeleteSection(PVOID Object)
     }
     if (Section->PageProtect)
         ExFreePoolWithTag(Section->PageProtect, QZ_SECTION_TAG);
+    if (Section->CacheMap)
+    {
+        ExAcquireFastMutex(&QzMmFileLock);
+        RemoveEntryList(&Section->FileLink);
+        ExReleaseFastMutex(&QzMmFileLock);
+        QzCcMmRelease(Section->CacheMap);
+    }
     if (Section->FileObject)
         ObDereferenceObject(Section->FileObject);
 }
@@ -348,6 +411,9 @@ QzMmSectionInit(VOID)
     Init.DeleteProcedure = QzMmDeleteSection;
     if (!NT_SUCCESS(ObCreateObjectType(&Name, &Init, NULL, &MmSectionObjectType)))
         KeBugCheckEx(PROCESS_INITIALIZATION_FAILED, 3, 0, 0, 0);
+    InitializeListHead(&QzMmFileSections);
+    ExInitializeFastMutex(&QzMmFileLock);
+    QzMmCollectFileDirty = QzMmCollectDirty;
 }
 
 /* Make the body of a new section object (already created by the caller) */
@@ -382,6 +448,21 @@ QzMmInitializeSection(PQZ_SECTION Section, PLARGE_INTEGER MaximumSize, ULONG Pro
         return FileObject ? STATUS_MAPPED_FILE_SIZE_ZERO : STATUS_INVALID_PARAMETER_4;
     if (Section->MaximumSize > (ULONGLONG)QZ_SECTION_MAX_PAGES * QZ_PAGE_SIZE)
         return STATUS_SECTION_TOO_BIG;
+    InitializeListHead(&Section->ViewList);
+    if (FileObject && FileObject->SectionObjectPointer)
+    {
+        ULONGLONG FileSize = 0;
+        QzMmFileSize(FileObject, &FileSize);
+        Section->CacheMap = QzCcMmAcquire(FileObject, (LONGLONG)FileSize);
+        if (Section->CacheMap)
+        {
+            ExAcquireFastMutex(&QzMmFileLock);
+            InsertTailList(&QzMmFileSections, &Section->FileLink);
+            ExReleaseFastMutex(&QzMmFileLock);
+            Section->PageCount = (ULONG)((Section->MaximumSize + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT);
+            return STATUS_SUCCESS;
+        }
+    }
     Status = QzMmAllocateSectionPages(Section, (ULONG)((Section->MaximumSize + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT));
     if (NT_SUCCESS(Status) && FileObject)
     {
@@ -497,6 +578,61 @@ QzMmMapView(PQZ_SECTION Section, PQZ_PROCESS Process, PVOID *BaseAddress, ULONG_
     Vad->SectionOffset = (ULONG_PTR)Offset;
     ObReferenceObject(Section);
     InterlockedIncrement(&Section->Views);
+
+    /* A mapped file: the cache's pages of the range, held while mapped */
+    if (Section->CacheMap)
+    {
+        PQZ_SECTION_VIEW View = ExAllocatePoolWithTag(NonPagedPool, sizeof(*View), QZ_SECTION_TAG);
+        ULONG Count = (ULONG)((Vad->End - Vad->Start) >> QZ_PAGE_SHIFT), i;
+        PULONG Pfns = ExAllocatePoolWithTag(NonPagedPool, max(Count, 1) * sizeof(ULONG), QZ_SECTION_TAG);
+
+        Status = (View && Pfns) ? STATUS_SUCCESS : STATUS_INSUFFICIENT_RESOURCES;
+        for (i = 0; NT_SUCCESS(Status) && i < Count; i++)
+            Status = QzCcMmGetPage(Section->CacheMap, (LONGLONG)Offset + (LONGLONG)i * QZ_PAGE_SIZE, &Pfns[i]);
+        if (!NT_SUCCESS(Status))
+        {
+            while (Pfns && i--)
+                QzCcMmPutPage(Section->CacheMap, (LONGLONG)Offset + (LONGLONG)i * QZ_PAGE_SIZE, FALSE);
+            if (View)
+                ExFreePoolWithTag(View, QZ_SECTION_TAG);
+            if (Pfns)
+                ExFreePoolWithTag(Pfns, QZ_SECTION_TAG);
+            QzMmRemoveVad(Process, Vad);
+            ExReleaseFastMutex(&Process->AddressLock);
+            return Status;
+        }
+        View->Process = Process;
+        View->Vad = Vad;
+        View->Offset = Offset;
+        View->Pages = Count;
+        ExAcquireFastMutex(&QzMmFileLock);
+        InsertTailList(&Section->ViewList, &View->Link);
+        ExReleaseFastMutex(&QzMmFileLock);
+
+        QzPsAttach(Process, &Saved);
+        for (i = 0, Va = Vad->Start; i < Count; i++, Va += QZ_PAGE_SIZE)
+        {
+            Bits = QzMmProtectToPte(Protect);
+            QzMmEnsurePageTable(Va);
+            if (!Bits)
+            {
+                *QzPteOf(Va) = QZ_SWPTE(PAGE_NOACCESS);
+                continue;
+            }
+            if ((Bits & QZ_PTE_WRITE) && (Protect & (PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY)))
+                Bits = (Bits & ~QZ_PTE_WRITE) | QZ_PTE_COPY_ON_WRITE;
+            *QzPteOf(Va) = (Pfns[i] << QZ_PAGE_SHIFT) | Bits;
+            QzInvlpg(Va);
+        }
+        QzPsDetach(Saved);
+        ExFreePoolWithTag(Pfns, QZ_SECTION_TAG);
+        ExReleaseFastMutex(&Process->AddressLock);
+        *BaseAddress = (PVOID)Vad->Start;
+        *ViewSize = Vad->End - Vad->Start;
+        if (SectionOffset)
+            SectionOffset->QuadPart = Offset;
+        return STATUS_SUCCESS;
+    }
     if (Section->Image && Vad->Start != Section->ImageBase)
         Result = STATUS_IMAGE_NOT_AT_BASE;
 
@@ -533,7 +669,6 @@ QzMmUnmapView(PQZ_PROCESS Process, PVOID BaseAddress)
 {
     PQZ_PROCESS Saved;
     PQZ_VAD Vad;
-    ULONG_PTR Va;
 
     ExAcquireFastMutex(&Process->AddressLock);
     Vad = QzMmFindVad(Process, (ULONG_PTR)BaseAddress);
@@ -543,22 +678,7 @@ QzMmUnmapView(PQZ_PROCESS Process, PVOID BaseAddress)
         return STATUS_NOT_MAPPED_VIEW;
     }
     QzPsAttach(Process, &Saved);
-    for (Va = Vad->Start; Va < Vad->End; Va += QZ_PAGE_SIZE)
-    {
-        volatile ULONG *Pte;
-        ULONG Value;
-        if (!(*QzPdeOf(Va) & QZ_PTE_PRESENT))
-            continue;
-        Pte = QzPteOf(Va);
-        Value = *Pte;
-        *Pte = 0;
-        QzInvlpg(Va);
-        if ((Value & QZ_PTE_PRESENT) && (Value & QZ_PTE_PRIVATE))
-        {
-            QzFreePhysicalPage(Value >> QZ_PAGE_SHIFT);
-            Process->PrivatePages--;
-        }
-    }
+    QzMmReleaseViewPages(Process, Vad);
     QzPsDetach(Saved);
     QzMmRemoveVad(Process, Vad);
     ExReleaseFastMutex(&Process->AddressLock);
@@ -847,4 +967,206 @@ NtAreMappedFilesTheSame(IN PVOID File1MappedAsAnImage,
         Status = STATUS_SUCCESS;
     ExReleaseFastMutex(&Process->AddressLock);
     return Status;
+}
+
+/* ---------------------------------------------------------------------- */
+/* What file systems ask before deleting or truncating a file              */
+/* ---------------------------------------------------------------------- */
+
+/* Image sections are laid out in memory of their own: the file is free */
+BOOLEAN
+QzMmIsImageInUse(PSECTION_OBJECT_POINTERS Sop)
+{
+    UNREFERENCED_PARAMETER(Sop);
+    return FALSE;
+}
+
+/* Is some view of a mapped file's section beyond Size? */
+BOOLEAN
+QzMmIsDataMappedBeyond(PSECTION_OBJECT_POINTERS Sop, LONGLONG Size)
+{
+    PLIST_ENTRY Entry, ViewEntry;
+    BOOLEAN Beyond = FALSE;
+
+    if (!QzMmFileSections.Flink)
+        return FALSE;
+    ExAcquireFastMutex(&QzMmFileLock);
+    for (Entry = QzMmFileSections.Flink; Entry != &QzMmFileSections && !Beyond; Entry = Entry->Flink)
+    {
+        PQZ_SECTION Section = CONTAINING_RECORD(Entry, QZ_SECTION, FileLink);
+        if (QzCcMmSop(Section->CacheMap) != Sop)
+            continue;
+        for (ViewEntry = Section->ViewList.Flink; ViewEntry != &Section->ViewList; ViewEntry = ViewEntry->Flink)
+        {
+            PQZ_SECTION_VIEW View = CONTAINING_RECORD(ViewEntry, QZ_SECTION_VIEW, Link);
+            if ((LONGLONG)(View->Offset + ((ULONGLONG)View->Pages << QZ_PAGE_SHIFT)) > Size)
+                Beyond = TRUE;
+        }
+    }
+    ExReleaseFastMutex(&QzMmFileLock);
+    return Beyond;
+}
+
+/* Find (and unlink) the record of a mapped file's view (file lock held) */
+static PQZ_SECTION_VIEW
+QzMmTakeView(PQZ_SECTION Section, PQZ_VAD Vad)
+{
+    PLIST_ENTRY Entry;
+    for (Entry = Section->ViewList.Flink; Entry != &Section->ViewList; Entry = Entry->Flink)
+    {
+        PQZ_SECTION_VIEW View = CONTAINING_RECORD(Entry, QZ_SECTION_VIEW, Link);
+        if (View->Vad == Vad)
+        {
+            RemoveEntryList(Entry);
+            return View;
+        }
+    }
+    return NULL;
+}
+
+/*
+ * A view's pages leave the address space (Process attached): private
+ * copies are freed; a mapped file's pages go back to the cache, dirty if
+ * they were written.
+ */
+VOID
+QzMmReleaseViewPages(PQZ_PROCESS Process, PQZ_VAD Vad)
+{
+    PQZ_SECTION Section = Vad->Section;
+    PQZ_SECTION_VIEW View = NULL;
+    ULONG_PTR Va;
+
+    if (Section && Section->CacheMap)
+    {
+        ExAcquireFastMutex(&QzMmFileLock);
+        View = QzMmTakeView(Section, Vad);
+        ExReleaseFastMutex(&QzMmFileLock);
+    }
+    for (Va = Vad->Start; Va < Vad->End; Va += QZ_PAGE_SIZE)
+    {
+        volatile ULONG *Pte;
+        ULONG Value = 0;
+        if (*QzPdeOf(Va) & QZ_PTE_PRESENT)
+        {
+            Pte = QzPteOf(Va);
+            Value = *Pte;
+            *Pte = 0;
+            QzInvlpg(Va);
+        }
+        if ((Value & QZ_PTE_PRESENT) && (Value & QZ_PTE_PRIVATE))
+        {
+            QzFreePhysicalPage(Value >> QZ_PAGE_SHIFT);
+            Process->PrivatePages--;
+            Value = 0;
+        }
+        if (View)
+            QzCcMmPutPage(Section->CacheMap, (LONGLONG)View->Offset + (LONGLONG)(Va - Vad->Start),
+                          (Value & QZ_PTE_PRESENT) && (Value & QZ_PTE_DIRTY));
+    }
+    if (View)
+        ExFreePoolWithTag(View, QZ_SECTION_TAG);
+}
+
+/* The cache flushes a file: what views wrote becomes the cache's dirty data */
+VOID
+QzMmCollectDirty(PSECTION_OBJECT_POINTERS Sop)
+{
+    PLIST_ENTRY Entry, ViewEntry;
+
+    if (IsListEmpty(&QzMmFileSections))
+        return;
+    ExAcquireFastMutex(&QzMmFileLock);
+    for (Entry = QzMmFileSections.Flink; Entry != &QzMmFileSections; Entry = Entry->Flink)
+    {
+        PQZ_SECTION Section = CONTAINING_RECORD(Entry, QZ_SECTION, FileLink);
+        if (Sop && QzCcMmSop(Section->CacheMap) != Sop)
+            continue;
+        for (ViewEntry = Section->ViewList.Flink; ViewEntry != &Section->ViewList; ViewEntry = ViewEntry->Flink)
+        {
+            PQZ_SECTION_VIEW View = CONTAINING_RECORD(ViewEntry, QZ_SECTION_VIEW, Link);
+            PQZ_PROCESS Saved;
+            ULONG i;
+            QzPsAttach(View->Process, &Saved);
+            for (i = 0; i < View->Pages; i++)
+            {
+                ULONG_PTR Va = View->Vad->Start + ((ULONG_PTR)i << QZ_PAGE_SHIFT);
+                volatile ULONG *Pte;
+                if (!(*QzPdeOf(Va) & QZ_PTE_PRESENT))
+                    continue;
+                Pte = QzPteOf(Va);
+                if ((*Pte & (QZ_PTE_PRESENT | QZ_PTE_PRIVATE | QZ_PTE_DIRTY)) == (QZ_PTE_PRESENT | QZ_PTE_DIRTY))
+                {
+                    *Pte &= ~QZ_PTE_DIRTY;
+                    QzInvlpg(Va);
+                    QzCcMmSetDirty(Section->CacheMap, (LONGLONG)View->Offset + ((LONGLONG)i << QZ_PAGE_SHIFT));
+                }
+            }
+            QzPsDetach(Saved);
+        }
+    }
+    ExReleaseFastMutex(&QzMmFileLock);
+}
+
+/* Write a mapped file's view back (the part of it asked for) */
+NTSTATUS
+NTAPI
+NtFlushVirtualMemory(IN HANDLE ProcessHandle, IN OUT PVOID *BaseAddress, IN OUT PSIZE_T NumberOfBytesToFlush,
+                     OUT PIO_STATUS_BLOCK IoStatusBlock)
+{
+    KPROCESSOR_MODE Mode = ExGetPreviousMode();
+    PQZ_PROCESS Process;
+    PVOID Base;
+    SIZE_T Size;
+    PQZ_VAD Vad;
+    IO_STATUS_BLOCK Io;
+    PSECTION_OBJECT_POINTERS Sop = NULL;
+    LARGE_INTEGER Offset;
+    ULONG Length = 0;
+    NTSTATUS Status;
+
+    if (!QzReadArg(Mode, &Base, BaseAddress, sizeof(Base)) || !QzReadArg(Mode, &Size, NumberOfBytesToFlush, sizeof(Size)))
+        return STATUS_ACCESS_VIOLATION;
+    Status = ObReferenceObjectByHandle(ProcessHandle, PROCESS_VM_OPERATION, PsProcessType, Mode, (PVOID *)&Process,
+                                       NULL);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    ExAcquireFastMutex(&Process->AddressLock);
+    Vad = QzMmFindVad(Process, (ULONG_PTR)Base);
+    if (!Vad || !Vad->Section)
+        Status = STATUS_NOT_MAPPED_VIEW;
+    else if (Vad->Section->CacheMap)
+    {
+        ULONG_PTR Start = (ULONG_PTR)Base & ~(QZ_PAGE_SIZE - 1);
+        ULONG_PTR End = Size ? min(Vad->End, ((ULONG_PTR)Base + Size + QZ_PAGE_SIZE - 1) & ~(QZ_PAGE_SIZE - 1)) : Vad->End;
+        Sop = QzCcMmSop(Vad->Section->CacheMap);
+        Offset.QuadPart = (LONGLONG)Vad->SectionOffset + (Start - Vad->Start);
+        Length = (ULONG)(End - Start);
+        Base = (PVOID)Start;
+        Size = Length;
+    }
+    ExReleaseFastMutex(&Process->AddressLock);
+    ObDereferenceObject(Process);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Io.Status = STATUS_SUCCESS;
+    Io.Information = 0;
+    if (Sop)
+    {
+        QzMmCollectDirty(Sop);
+        CcFlushCache(Sop, &Offset, Length, &Io);
+    }
+    if (!QzWriteArg(Mode, BaseAddress, &Base, sizeof(Base)) ||
+        !QzWriteArg(Mode, NumberOfBytesToFlush, &Size, sizeof(Size)) ||
+        !QzWriteArg(Mode, IoStatusBlock, &Io, sizeof(Io)))
+        return STATUS_ACCESS_VIOLATION;
+    return Io.Status;
+}
+
+NTSTATUS
+NTAPI
+ZwFlushVirtualMemory(IN HANDLE ProcessHandle, IN OUT PVOID *BaseAddress, IN OUT PSIZE_T NumberOfBytesToFlush,
+                     OUT PIO_STATUS_BLOCK IoStatusBlock)
+{
+    return QZ_AS_KERNEL(NtFlushVirtualMemory(ProcessHandle, BaseAddress, NumberOfBytesToFlush, IoStatusBlock));
 }

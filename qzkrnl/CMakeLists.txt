@@ -21,6 +21,7 @@ endif()
 spec2def(qzkrnl.exe qzkrnl.spec)
 
 list(APPEND SOURCE
+    cc/cache.c
     cm/registry.c
     cm/regtest.c
     ex/exmore.c
@@ -44,6 +45,7 @@ list(APPEND SOURCE
     ke/user.c
     ke/usertest.c
     ke/wait.c
+    ke/except.c
     ke/i386/cpu.c
     ke/i386/trap.c
     io/csq.c
@@ -51,6 +53,8 @@ list(APPEND SOURCE
     io/driver.c
     io/file.c
     io/iotest.c
+    io/fsmisc.c
+    io/fstest.c
     io/isofs.c
     io/ldrtest.c
     io/irp.c
@@ -81,11 +85,17 @@ list(APPEND SOURCE
     drv/kbd.c
     drv/serial.c
     drv/vga.c
+    fsrtl/filelock.c
+    fsrtl/fsrtl.c
+    fsrtl/mcb.c
+    fsrtl/name.c
     rtl/bitmap.c
     rtl/print.c
     rtl/rtl.c
+    rtl/oem.c
     rtl/rtl2.c
     rtl/sid.c
+    rtl/splay.c
     rtl/time.c
     rtl/ustr.c)
 

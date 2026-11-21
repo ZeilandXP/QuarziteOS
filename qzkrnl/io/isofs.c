@@ -476,7 +476,12 @@ QzIsoRead(PQZ_ISO_VOLUME Volume, PIRP Irp)
         Length = (ULONG)(Fcb->Size - Offset);
     Status = QzIsoReadExtent(Volume, Fcb->Extent, (ULONG)Offset, Length, Buffer);
     if (NT_SUCCESS(Status))
-        Irp->IoStatus.Information = Length;   /* the I/O manager moves the file position */
+    {
+        Irp->IoStatus.Information = Length;
+        /* A file system moves the position of a synchronous file, as on NT */
+        if ((FileObject->Flags & FO_SYNCHRONOUS_IO) && !(Irp->Flags & IRP_PAGING_IO))
+            FileObject->CurrentByteOffset.QuadPart = Offset + Length;
+    }
     return Status;
 }
 

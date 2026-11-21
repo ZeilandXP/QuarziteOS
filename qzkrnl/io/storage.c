@@ -560,16 +560,13 @@ ZwQueryDirectoryFile(IN HANDLE FileHandle, IN HANDLE Event OPTIONAL,
     Irp->Flags = IRP_SYNCHRONOUS_API;
     Irp->Tail.Overlay.OriginalFileObject = FileObject;
     Irp->Tail.Overlay.Thread = PsGetCurrentThread();
-    if (Length)
+    /* The volume device's method, as for reads: file systems mostly take
+       the caller's buffer as it is (UserBuffer) */
+    if (!QzIoAttachBuffer(Irp, Device, FileInformation, Length, TRUE))
     {
-        Irp->AssociatedIrp.SystemBuffer = ExAllocatePoolWithTag(NonPagedPool, Length, QZ_IRP_TAG);
-        if (!Irp->AssociatedIrp.SystemBuffer)
-        {
-            IoFreeIrp(Irp);
-            ObDereferenceObject(FileObject);
-            return STATUS_INSUFFICIENT_RESOURCES;
-        }
-        Irp->Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_INPUT_OPERATION;
+        IoFreeIrp(Irp);
+        ObDereferenceObject(FileObject);
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     Irp->UserBuffer = FileInformation;
     Stack = IoGetNextIrpStackLocation(Irp);

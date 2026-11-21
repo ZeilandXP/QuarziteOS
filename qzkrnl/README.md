@@ -44,7 +44,7 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | Entry | `KiSystemStartup` switches to its own stack and takes over from the loader. |
 | CPU | Own GDT (NT selector layout), TSS, IDT with 256 vectors, PCR on `FS`. |
 | HAL | Runs on the regular `hal.dll`: `HalInitializeProcessor`, `HalInitSystem` phases 0 and 1, and the HAL's IRQL (`KfRaiseIrql`/`KfLowerIrql`), PIC, PIT clock, CMOS clock, stall and reboot. qzkrnl provides the kernel side of the contract: `KeSetTimeIncrement`, `KeUpdateSystemTime`, `KiEoiHelper`, `KiDispatchInterrupt`, `KiDeliverApc`, `HalDispatchTable`/`HalPrivateDispatchTable`, and a PCR at `KIP0PCRADDRESS` (`0xFFDFF000`) with a genuine `KIPCR`/`KPRCB`. |
-| Traps | Every vector builds an NT `KTRAP_FRAME` (the HAL's layout) and leaves through `KiEoiHelper`. Exceptions produce NT-style stop screens (`0x1E`, `0x50`, `0x7F`). |
+| Traps | Every vector builds an NT `KTRAP_FRAME` (the HAL's layout) and leaves through `KiEoiHelper`. Exceptions produce NT-style stop screens (`0x1E`, `0x50`, `0x7F`). Raised exceptions (`ExRaiseStatus`, `RtlRaiseException`) are dispatched to the frame-based handlers on the stack and unwound properly (`ke/except.c`: `RtlDispatchException`, `RtlUnwind` running finally blocks), which is how file systems handle errors; a call to an unimplemented export stays fatal. |
 | Interrupts | `KeInitializeInterrupt`, `KeConnectInterrupt`, `KeDisconnectInterrupt`, `KeSynchronizeExecution`. Device interrupts use `HalBeginSystemInterrupt`/`HalEndSystemInterrupt`, including the HAL's lazy-IRQL replays. The keyboard and COM1 are connected this way; vectors come from `HalGetInterruptVector`. |
 | Time | HAL real-time clock at boot plus the HAL clock interrupt (about 15 ms): `KeQuerySystemTime`, `KeQueryInterruptTime`, `KeTickCount`/`KeQueryTickCount`, `RtlTimeToTimeFields`/`RtlTimeFieldsToTime`. Interrupt time, system time, tick count and NT version are published in `KUSER_SHARED_DATA` (`0xFFDF0000`), where x86 drivers read them. |
 | IRQL | Owned by the HAL and kept in the PCR at `FS:0x24`. The kernel requests the DISPATCH software interrupt (`HalRequestSoftwareInterrupt`). The HAL calls `KiDispatchInterrupt`, which runs expired timers, queued DPCs and a pending reschedule. |
@@ -58,8 +58,11 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | Address spaces | One page directory per process, the system half shared (every system PDE has a page table before the first process exists). User memory is described by VADs: reserve, commit, protect, decommit and release (`Nt{Allocate,Free,Protect,Query}VirtualMemory`, `Nt{Read,Write}VirtualMemory`), bottom-up or top-down, 64 KB granularity. Pages are demand-zero; guard pages fault once, and a thread's stack grows through its guard page as on NT. `KUSER_SHARED_DATA` is mapped read-only at `0x7FFE0000`. No paging file yet: committed memory is RAM when touched. |
 | Sections | Image sections lay a PE file out as it runs (headers and sections at their RVAs, per-page protections); data sections are page-file backed or a copy of a file. Views map the section's own pages; writable image pages and `PAGE_WRITECOPY` views are copy-on-write. `Nt{Create,Open,MapViewOf,UnmapViewOf,Query}Section`; an image away from its base is `STATUS_IMAGE_NOT_AT_BASE`, and ntdll relocates it. |
 | Processes | `Process` objects (waitable, signaled at exit) with their own handle tables and client IDs; the System process is PID 4. `NtCreateProcess[Ex]` maps the image, `ntdll.dll` and the NLS tables and builds the PEB; `NtCreateThread` builds the TEB. A new thread first runs ntdll's `LdrInitializeThunk` as a user APC, as on NT. `NtTerminateThread`/`NtTerminateProcess`, `NtSuspend/ResumeThread`, `Nt{Query,Set}Information{Process,Thread}`, `KeStackAttachProcess`, the `Ps*` queries. |
-| User mode | Ring 3 through `int 2Eh` and `sysenter` (`SharedUserData->SystemCall` points at ntdll's stub). The service table follows ntdll's numbering (generated from `sysfuncs.h` by `tools/gensys.py`); 126 of its 296 services are implemented. User pointers are copied with fault recovery, and a service that faults on a bad user address is aborted with `STATUS_ACCESS_VIOLATION`. Ring-3 exceptions go to ntdll's `KiUserExceptionDispatcher`; `NtContinue`, `NtRaiseException`, `int 2Dh` debug output and prompts. |
-| Boot volume | A small read-only ISO 9660 file system (`\FileSystem\QzIso`) mounts the boot CD until the real CDFS arrives with the cache manager (B7); `\ArcName\<boot device>` links to it, so `\SystemRoot\...` works: opens, reads, information and directory listings. |
+| User mode | Ring 3 through `int 2Eh` and `sysenter` (`SharedUserData->SystemCall` points at ntdll's stub). The service table follows ntdll's numbering (generated from `sysfuncs.h` by `tools/gensys.py`); 127 of its 296 services are implemented. User pointers are copied with fault recovery, and a service that faults on a bad user address is aborted with `STATUS_ACCESS_VIOLATION`. Ring-3 exceptions go to ntdll's `KiUserExceptionDispatcher`; `NtContinue`, `NtRaiseException`, `int 2Dh` debug output and prompts. |
+| Boot volume | `cdfs.sys`, the boot driver FreeLoader loads, is started before the boot volume is mounted and mounts the CD; `\ArcName\<boot device>` links to it, so `\SystemRoot\...` works. qzkrnl's own small ISO 9660 reader (`\FileSystem\QzIso`) stays registered behind it as a fallback. |
+| Cache manager | `cc/cache.c`: each cached stream has views of 256 KB in a 192 MB arena, filled page by page with paging reads (`IoPageRead`) and written back with paging writes (`IoSynchronousPageWrite`); the copy, pin/map (BCBs across views get a contiguous alias mapping), MDL and zeroing interfaces, file sizes and truncation, purges and flushes. A lazy writer thread writes dirty data back about once a second through the file systems' `AcquireForLazyWrite` callbacks, deletes cache maps unused for a couple of passes (releasing the stream file objects), and gives clean pages back when free memory runs low. `cache` shows what is cached. |
+| File systems | FsRtl (`fsrtl/`): byte-range locks, large MCBs, NT wildcard matching (with the DOS forms), FAT/HPFS name legality, change notification (completes waiting requests with `STATUS_NOTIFY_ENUM_DIR`), fast I/O copy routines, stack overflow posting; oplocks are never granted and the tunnel cache keeps nothing. Rtl splay trees, generic and prefix tables, OEM code page conversion from the loader's `c_437.nls`, 8.3 name generation. File systems run as NT starts them: cdfs as a boot driver, `fs_rec`, `msfs` (and `npfs` once its exports are there) as system-start drivers once the boot volume is up, and `fastfat` loaded from the CD when `fs_rec` recognizes a FAT volume (`STATUS_FS_DRIVER_REQUIRED`, `IRP_MN_LOAD_FILE_SYSTEM`). `fstest` reads, creates, writes, renames and deletes on a FAT volume, and the boot test checks the disk image afterwards from the host with mtools. |
+| Mapped files | A data section of a file maps the cache's own pages, so a view, cached reads and writes, and the file see one copy; writes through a view reach the file when the view goes, when the cache flushes the file, or with `NtFlushVirtualMemory`. Image sections are read through the cache with paging reads. There is no page file yet: anonymous memory stays resident. |
 | smss | `smss` starts `\SystemRoot\System32\smss.exe` the way NT starts it (process parameters, environment, stack, PEB argument). ntdll's loader initializes the process and hands over to smss, which runs its whole initialization: its API port and worker threads (LPC), `\KnownDlls` (every known DLL mapped as an image section and verified), the DOS devices, environment and privileges, `NtInitializeRegistry`, and the `Kmode` subsystem's session. It stops where it asks to load `win32k.sys`, which needs drivers loaded from disk (B7, next milestone); its failure goes to `NtRaiseHardError`, which logs it. |
 | LPC | Classic NT ports (`lpc/port.c`): named connection ports, a server and client communication port per connection, connection data, optional shared-memory views on both sides, `NtListenPort`/`NtAcceptConnectPort`/`NtCompleteConnectPort`, requests with and without replies, `NtReplyWaitReceivePort[Ex]` with the accepted port context, waitable ports, `LPC_PORT_CLOSED` to the server when a client goes away; `Zw[Secure]ConnectPort`, `ZwRequestWaitReplyPort` and `LpcRequest[WaitReply]Port` for drivers. |
 | Keyed events | `KeyedEvent` objects (`ex/keyed.c`): a release and a wait on the same key meet, in either order, with timeouts; a NULL handle uses `\KernelObjects\CritSecOutOfMemoryEvent`, as ntdll's critical sections expect. |
@@ -90,7 +93,8 @@ qzkrnl/
   ke/        bug checks, HAL clock interface, HAL data/dispatch tables,
              interrupt objects, IRQL/DPCs/spinlocks, dispatcher objects and
              waits, timers, scheduler, user threads, system services,
-             self-tests (synctest, usertest); ke/i386: CPU tables, traps
+             exception dispatch and unwinding, self-tests (synctest,
+             usertest); ke/i386: CPU tables, traps
   mm/        physical pages, page tables, contiguous memory, MDLs, pool,
              process address spaces and page faults, sections, kernel image
              loader (sysload.c), self-test (vmtest, secttest)
@@ -99,14 +103,18 @@ qzkrnl/
   se/        the system token, access check stubs, SeExports
   lpc/       LPC ports, self-test (lpctest: ports, keyed events, tokens)
   io/        I/O manager: drivers (boot drivers and from disk), devices,
-             IRPs, files and mounting, storage helpers, PnP manager, the ISO
-             9660 boot file system, self-tests (iotest, ldrtest)
+             IRPs and paging I/O, files and mounting (with recognizers),
+             storage helpers, PnP manager, the ISO 9660 fallback file
+             system, self-tests (iotest, ldrtest, fstest)
+  cc/        the cache manager and its lazy writer
+  fsrtl/     file system runtime: locks, MCBs, names, notification, fast I/O
   cm/        registry: the writable SYSTEM hive (cmlib), volatile keys, notification, self-test (regtest)
   ps/        processes and threads, process creation (PEB, TEB, ntdll,
              the first process), information services
   drv/       serial, VGA text, PS/2 keyboard, input queue
   rtl/       formatted output, string/memory runtime, bitmaps, time conversion,
-             export lookup
+             export lookup, splay trees and generic/prefix tables, OEM
+             strings and 8.3 names
   include/   qz.h, qzio.h, qzps.h (private headers); exportstats.h,
              exportnames.h, systable.h (generated)
   tests/     ldrtest/: qzldrtst.sys and the export driver qzldrdll.sys,
@@ -134,5 +142,6 @@ See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
 7. LPC ports, tokens and keyed events, so smss initializes (stage B7
    milestone 1, done; see `lpc/`, `se/token.c`, `ex/keyed.c`); drivers
    loaded from disk (milestone 2, done; see `mm/sysload.c`, `io/driver.c`,
-   `io/ldrtest.c`); then paging, the cache manager and real file systems,
-   and win32k.sys and csrss (the rest of B7).
+   `io/ldrtest.c`); the cache manager, cdfs and fastfat, mapped files
+   (milestone 3, done; see `cc/`, `fsrtl/`, `ke/except.c`, `io/fstest.c`);
+   then win32k.sys and csrss (milestone 4, the rest of B7).

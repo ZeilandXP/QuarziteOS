@@ -129,6 +129,10 @@ typedef struct _QZ_THREAD
     PVOID FxSaveArea;              /* user threads: FPU/SSE state, 512 bytes, 16-aligned */
     BOOLEAN Alerted;
     BOOLEAN TrapFrameReplaced;     /* NtContinue & co.: the service set the whole user context */
+
+    /* File systems (stage B7) */
+    PIRP TopLevelIrp;              /* IoGet/SetTopLevelIrp */
+    PDEVICE_OBJECT DeviceToVerify; /* IoGet/SetDeviceToVerify */
 } QZ_THREAD, *PQZ_THREAD;
 
 /* ---------------------------------------------------------------------- */
@@ -366,6 +370,7 @@ VOID QzMmGetStats(PULONG TotalPages, PULONG FreePages);
 
 /* mm/mdl.c */
 PVOID QzMapPages(PPFN_NUMBER Pages, ULONG Count, BOOLEAN Uncached);
+VOID QzIoSpaceFree(PVOID Address, ULONG Pages);
 
 /* mm/pool.c */
 VOID QzPoolInit(VOID);

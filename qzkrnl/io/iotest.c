@@ -534,7 +534,12 @@ QztFsDispatch(PDEVICE_OBJECT Device, PIRP Irp)
             /* A nested IRP from the file system to the disk below it */
             Status = QztFsReadDisk(Volume->Target, Entry->Sector + Offset / 512, Bounce, Sectors * 512);
             if (NT_SUCCESS(Status))
+            {
                 RtlCopyMemory(Irp->AssociatedIrp.SystemBuffer, Bounce + Offset % 512, Length);
+                /* A file system moves a synchronous file's position */
+                if (FileObject->Flags & FO_SYNCHRONOUS_IO)
+                    FileObject->CurrentByteOffset.QuadPart = Offset + Length;
+            }
             ExFreePoolWithTag(Bounce, QZT_TAG);
             return QztComplete(Irp, Status, NT_SUCCESS(Status) ? Length : 0);
         }

@@ -284,6 +284,42 @@ ExConvertExclusiveToSharedLite(IN OUT PERESOURCE Resource)
     QzReleaseSpinLock(&Private->Lock, OldIrql);
 }
 
+/*
+ * The current thread's hold on the resource now belongs to OwnerPointer
+ * (an address with its low bits set): another thread, or the completion
+ * of an asynchronous request, releases it with ExReleaseResourceForThreadLite.
+ */
+VOID
+NTAPI
+ExSetResourceOwnerPointer(IN OUT PERESOURCE Resource, IN PVOID OwnerPointer)
+{
+    PQZ_RESOURCE Private = QzResource(Resource);
+    PVOID Me = KeGetCurrentThread();
+    KIRQL OldIrql = QzAcquireSpinLock(&Private->Lock);
+    LONG Slot;
+
+    if (Private->ExclusiveOwner == Me)
+    {
+        Private->ExclusiveOwner = OwnerPointer;
+    }
+    else if ((Slot = QzResourceFindShared(Private, Me)) >= 0)
+    {
+        /* Move one acquisition over */
+        LONG Target = QzResourceFindShared(Private, OwnerPointer);
+        if (Target < 0)
+            Target = QzResourceFindShared(Private, NULL);
+        if (Target >= 0)
+        {
+            Private->Shared[Target].Thread = OwnerPointer;
+            Private->Shared[Target].Count++;
+            if (!--Private->Shared[Slot].Count)
+                Private->Shared[Slot].Thread = NULL;
+        }
+    }
+    QzResourceSync(Resource, Private);
+    QzReleaseSpinLock(&Private->Lock, OldIrql);
+}
+
 BOOLEAN
 NTAPI
 ExIsResourceAcquiredExclusiveLite(IN PERESOURCE Resource)

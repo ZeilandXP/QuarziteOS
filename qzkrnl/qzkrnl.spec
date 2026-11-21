@@ -665,51 +665,210 @@
 @ stdcall RtlSubAuthorityCountSid(ptr)
 @ stdcall RtlConvertSidToUnicodeString(ptr ptr long)
 @ stdcall ZwSetSystemInformation(long ptr long)
+@ stdcall FsRtlAddLargeMcbEntry(ptr long long long long long long)
+@ stdcall FsRtlAddToTunnelCache(ptr long long ptr ptr long long ptr)
+@ stdcall FsRtlAllocateFileLock(ptr ptr)
+@ stdcall FsRtlAllocatePoolWithQuotaTag(long long long)
+@ stdcall FsRtlAllocatePoolWithTag(long long long)
+@ stdcall FsRtlAllocatePool(long long)
+@ stdcall FsRtlAreNamesEqual(ptr ptr long wstr)
+@ stdcall FsRtlBalanceReads(ptr)
+@ stdcall FsRtlCheckLockForReadAccess(ptr ptr)
+@ stdcall FsRtlCheckLockForWriteAccess(ptr ptr)
+@ stdcall FsRtlCheckOplock(ptr ptr ptr ptr ptr)
+@ stdcall FsRtlCopyRead(ptr ptr long long long ptr ptr ptr)
+@ stdcall FsRtlCopyWrite(ptr ptr long long long ptr ptr ptr)
+@ stdcall FsRtlCurrentBatchOplock(ptr)
+@ stdcall FsRtlDeleteKeyFromTunnelCache(ptr long long)
+@ stdcall FsRtlDeleteTunnelCache(ptr)
+@ stdcall FsRtlDissectName(long ptr ptr ptr)
+@ stdcall FsRtlDissectDbcs(long ptr ptr ptr)
+@ stdcall FsRtlDoesNameContainWildCards(ptr)
+@ stdcall FsRtlDoesDbcsContainWildCards(ptr)
+@ stdcall FsRtlFastCheckLockForRead(ptr ptr ptr long ptr ptr)
+@ stdcall FsRtlFastCheckLockForWrite(ptr ptr ptr long ptr ptr)
+@ stdcall FsRtlFastUnlockAll(ptr ptr ptr ptr)
+@ stdcall FsRtlFastUnlockAllByKey(ptr ptr ptr long ptr)
+@ stdcall FsRtlFastUnlockSingle(ptr ptr ptr ptr ptr long ptr long)
+@ stdcall FsRtlFindInTunnelCache(ptr long long ptr ptr ptr ptr ptr)
+@ stdcall FsRtlFreeFileLock(ptr)
+@ stdcall FsRtlGetNextLargeMcbEntry(ptr long ptr ptr ptr)
+@ stdcall FsRtlGetNextBaseMcbEntry(ptr long ptr ptr ptr)
+@ stdcall FsRtlInitializeFileLock(ptr ptr ptr)
+@ stdcall FsRtlInitializeLargeMcb(ptr long)
+@ stdcall FsRtlInitializeBaseMcb(ptr ptr)
+@ stdcall FsRtlInitializeOplock(ptr)
+@ stdcall FsRtlInitializeTunnelCache(ptr)
+@ stdcall FsRtlIsDbcsInExpression(ptr ptr)
+@ stdcall FsRtlIsFatDbcsLegal(long ptr long long long)
+@ stdcall FsRtlIsHpfsDbcsLegal(long ptr long long long)
+@ stdcall FsRtlIsNameInExpression(ptr ptr long wstr) RtlIsNameInExpression
+@ stdcall FsRtlIsNtstatusExpected(long)
+@ stdcall FsRtlIsTotalDeviceFailure(ptr)
+@ extern FsRtlLegalAnsiCharacterArray
+@ stdcall FsRtlLookupLargeMcbEntry(ptr long long ptr ptr ptr ptr ptr)
+@ stdcall FsRtlLookupBaseMcbEntry(ptr long long ptr ptr ptr ptr ptr)
+@ stdcall FsRtlLookupLastLargeMcbEntry(ptr ptr ptr)
+@ stdcall FsRtlLookupLastLargeMcbEntryAndIndex(ptr ptr ptr ptr)
+@ stdcall FsRtlLookupLastBaseMcbEntryAndIndex(ptr ptr ptr ptr)
+@ stdcall FsRtlMdlReadCompleteDev(ptr ptr ptr)
+@ stdcall FsRtlMdlReadDev(ptr ptr long long ptr ptr ptr)
+@ stdcall FsRtlMdlWriteCompleteDev(ptr ptr ptr ptr)
+@ stdcall FsRtlMdlReadComplete(ptr ptr)
+@ stdcall FsRtlMdlWriteComplete(ptr ptr ptr)
+@ stdcall FsRtlNormalizeNtstatus(long long)
+@ stdcall FsRtlNotifyCleanup(ptr ptr ptr)
+@ stdcall FsRtlNotifyFullChangeDirectory(ptr ptr ptr ptr long long long ptr ptr ptr)
+@ stdcall FsRtlNotifyFilterChangeDirectory(ptr ptr ptr ptr long long long ptr ptr ptr ptr)
+@ stdcall FsRtlNotifyFullReportChange(ptr ptr ptr long ptr ptr long long ptr)
+@ stdcall FsRtlNotifyFilterReportChange(ptr ptr ptr long ptr ptr long long ptr ptr)
+@ stdcall FsRtlNotifyInitializeSync(ptr)
+@ stdcall FsRtlNotifyUninitializeSync(ptr)
+@ stdcall FsRtlNotifyVolumeEvent(ptr long)
+@ stdcall FsRtlNumberOfRunsInLargeMcb(ptr)
+@ stdcall FsRtlNumberOfRunsInBaseMcb(ptr)
+@ stdcall FsRtlOplockFsctrl(ptr ptr long)
+@ stdcall FsRtlOplockIsFastIoPossible(ptr)
+@ stdcall FsRtlPostPagingFileStackOverflow(ptr ptr ptr)
+@ stdcall FsRtlPostStackOverflow(ptr ptr ptr)
+@ stdcall FsRtlPrepareMdlWriteDev(ptr ptr long long ptr ptr ptr)
+@ stdcall FsRtlPrivateLock(ptr ptr ptr ptr ptr long long long ptr ptr ptr long)
+@ stdcall FsRtlProcessFileLock(ptr ptr ptr)
+@ stdcall FsRtlRegisterFileSystemFilterCallbacks(ptr ptr)
+@ stdcall FsRtlRemoveLargeMcbEntry(ptr long long long long)
+@ stdcall FsRtlRemoveBaseMcbEntry(ptr long long long long)
+@ stdcall FsRtlResetLargeMcb(ptr long)
+@ stdcall FsRtlSplitLargeMcb(ptr long long long long)
+@ stdcall FsRtlTeardownPerStreamContexts(ptr)
+@ stdcall FsRtlTruncateLargeMcb(ptr long long)
+@ stdcall FsRtlTruncateBaseMcb(ptr long long)
+@ stdcall FsRtlUninitializeFileLock(ptr)
+@ stdcall FsRtlUninitializeLargeMcb(ptr)
+@ stdcall FsRtlUninitializeBaseMcb(ptr)
+@ stdcall FsRtlUninitializeOplock(ptr)
+@ stdcall FsRtlGetFileSize(ptr ptr)
+@ stdcall FsRtlGetNextFileLock(ptr long)
+@ stdcall FsRtlAddBaseMcbEntry(ptr long long long long long long)
+@ stdcall IoAcquireVpbSpinLock(ptr)
+@ stdcall IoReleaseVpbSpinLock(long)
+@ stdcall IoGetTopLevelIrp()
+@ stdcall IoSetTopLevelIrp(ptr)
+@ stdcall IoGetDeviceToVerify(ptr)
+@ stdcall IoSetDeviceToVerify(ptr ptr)
+@ stdcall IoIsSystemThread(ptr)
+@ stdcall IoRaiseHardError(ptr ptr ptr)
+@ stdcall IoRaiseInformationalHardError(long ptr ptr)
+@ stdcall IoQueryFileInformation(ptr long long ptr ptr)
+@ stdcall IoPageRead(ptr ptr ptr ptr ptr)
+@ stdcall IoSynchronousPageWrite(ptr ptr ptr ptr ptr)
+@ stdcall ExLocalTimeToSystemTime(ptr ptr)
+@ stdcall ExSystemTimeToLocalTime(ptr ptr)
+@ stdcall ExSetResourceOwnerPointer(ptr ptr)
+@ stdcall MmFlushImageSection(ptr long)
+@ stdcall MmCanFileBeTruncated(ptr ptr)
+@ stdcall MmQuerySystemSize()
+@ stdcall SePrivilegeCheck(ptr ptr long)
+@ stdcall SeFilterToken(ptr long ptr ptr ptr ptr)
+@ stdcall -arch=win32 RtlExtendedLargeIntegerDivide(long long long ptr)
+@ stdcall RtlAreBitsClear(ptr long long)
+@ stdcall RtlAreBitsSet(ptr long long)
+@ stdcall RtlFindLongestRunClear(ptr ptr)
+@ stdcall RtlSplay(ptr)
+@ stdcall RtlDelete(ptr)
+@ stdcall RtlDeleteNoSplay(ptr ptr)
+@ stdcall RtlSubtreeSuccessor(ptr)
+@ stdcall RtlSubtreePredecessor(ptr)
+@ stdcall RtlRealSuccessor(ptr)
+@ stdcall RtlRealPredecessor(ptr)
+@ stdcall RtlInitializeGenericTable(ptr ptr ptr ptr ptr)
+@ stdcall RtlInsertElementGenericTable(ptr ptr long ptr)
+@ stdcall RtlInsertElementGenericTableFull(ptr ptr long ptr ptr long)
+@ stdcall RtlLookupElementGenericTable(ptr ptr)
+@ stdcall RtlLookupElementGenericTableFull(ptr ptr ptr ptr)
+@ stdcall RtlDeleteElementGenericTable(ptr ptr)
+@ stdcall RtlEnumerateGenericTableWithoutSplaying(ptr ptr)
+@ stdcall RtlEnumerateGenericTable(ptr long)
+@ stdcall RtlNumberGenericTableElements(ptr)
+@ stdcall RtlIsGenericTableEmpty(ptr)
+@ stdcall RtlGetElementGenericTable(ptr long)
+@ stdcall RtlInitializeUnicodePrefix(ptr)
+@ stdcall RtlInsertUnicodePrefix(ptr ptr ptr)
+@ stdcall RtlRemoveUnicodePrefix(ptr ptr)
+@ stdcall RtlFindUnicodePrefix(ptr ptr long)
+@ stdcall RtlNextUnicodePrefix(ptr long)
+@ stdcall RtlOemToUnicodeN(wstr long ptr ptr long)
+@ stdcall RtlUnicodeToOemN(ptr long ptr wstr long)
+@ stdcall RtlUpcaseUnicodeToOemN(ptr long ptr wstr long)
+@ stdcall RtlxOemStringToUnicodeSize(ptr)
+@ stdcall RtlxUnicodeStringToOemSize(ptr)
+@ stdcall RtlxAnsiStringToUnicodeSize(ptr)
+@ stdcall RtlxUnicodeStringToAnsiSize(ptr)
+@ stdcall RtlOemStringToUnicodeString(ptr ptr long)
+@ stdcall RtlOemStringToCountedUnicodeString(ptr ptr long)
+@ stdcall RtlUnicodeStringToOemString(ptr ptr long)
+@ stdcall RtlUnicodeStringToCountedOemString(ptr ptr long)
+@ stdcall RtlUpcaseUnicodeStringToOemString(ptr ptr long)
+@ stdcall RtlUpcaseUnicodeStringToCountedOemString(ptr ptr long)
+@ stdcall RtlFreeOemString(ptr)
+@ stdcall RtlCompareString(ptr ptr long)
+@ stdcall RtlUpperString(ptr ptr)
+@ stdcall RtlUpperChar(long)
+@ stdcall RtlDowncaseUnicodeString(ptr ptr long)
+@ stdcall RtlIsNameLegalDOS8Dot3(ptr ptr ptr)
+@ stdcall RtlGenerate8dot3Name(ptr ptr long ptr)
+@ extern NlsMbCodePageTag
+@ extern NlsMbOemCodePageTag
+@ extern NlsOemLeadByteInfo
+@ extern NlsLeadByteInfo
+@ extern NlsAnsiCodePage
+@ extern NlsOemCodePage
+@ stdcall RtlCaptureContext(ptr)
+@ stdcall CcCanIWrite(ptr long long long)
+@ stdcall CcCopyRead(ptr ptr long long ptr ptr)
+@ stdcall CcCopyWrite(ptr ptr long long ptr)
+@ stdcall CcDeferWrite(ptr ptr ptr ptr long long)
+@ stdcall CcFastCopyRead(ptr long long long ptr ptr)
+@ stdcall CcFastCopyWrite(ptr long long ptr)
+@ stdcall CcFlushCache(ptr ptr long ptr)
+@ stdcall CcGetFileObjectFromBcb(ptr)
+@ stdcall CcGetFileObjectFromSectionPtrs(ptr)
+@ stdcall CcInitializeCacheMap(ptr ptr long ptr ptr)
+@ stdcall CcIsThereDirtyData(ptr)
+@ stdcall CcMapData(ptr ptr long long ptr ptr)
+@ stdcall CcMdlRead(ptr ptr long ptr ptr)
+@ stdcall CcMdlReadComplete(ptr ptr)
+@ stdcall CcMdlWriteAbort(ptr ptr)
+@ stdcall CcMdlWriteComplete(ptr ptr ptr)
+@ stdcall CcPinMappedData(ptr ptr long long ptr)
+@ stdcall CcPinRead(ptr ptr long long ptr ptr)
+@ stdcall CcPrepareMdlWrite(ptr ptr long ptr ptr)
+@ stdcall CcPreparePinWrite(ptr ptr long long long ptr ptr)
+@ stdcall CcPurgeCacheSection(ptr ptr long long)
+@ stdcall CcRepinBcb(ptr)
+@ stdcall CcSetAdditionalCacheAttributes(ptr long long)
+@ stdcall CcSetDirtyPinnedData(ptr ptr)
+@ stdcall CcSetFileSizes(ptr ptr)
+@ stdcall CcSetReadAheadGranularity(ptr long)
+@ stdcall CcSetLogHandleForFile(ptr ptr ptr)
+@ stdcall CcGetDirtyPages(ptr ptr ptr ptr)
+@ stdcall CcUninitializeCacheMap(ptr ptr ptr)
+@ stdcall CcUnpinData(ptr)
+@ stdcall CcUnpinDataForThread(ptr ptr)
+@ stdcall CcUnpinRepinnedBcb(ptr long ptr)
+@ stdcall CcWaitForCurrentLazyWriterActivity()
+@ stdcall CcZeroData(ptr ptr ptr long)
+@ extern CcFastReadNotPossible
+@ extern CcFastReadWait
+@ stdcall ZwFlushVirtualMemory(ptr ptr ptr ptr)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
-@ stub CcCanIWrite
-@ stub CcCopyRead
-@ stub CcCopyWrite
-@ stub CcDeferWrite
-@ stub CcFastCopyRead
-@ stub CcFastCopyWrite
 @ extern CcFastMdlReadWait QzUnimplementedData
-@ extern CcFastReadNotPossible QzUnimplementedData
-@ extern CcFastReadWait QzUnimplementedData
-@ stub CcFlushCache
-@ stub CcGetDirtyPages
-@ stub CcGetFileObjectFromBcb
-@ stub CcGetFileObjectFromSectionPtrs
 @ stub CcGetFlushedValidData
 @ stub CcGetLsnForFileObject
-@ stub CcInitializeCacheMap
-@ stub CcIsThereDirtyData
-@ stub CcMapData
-@ stub CcMdlRead
-@ stub CcMdlReadComplete
-@ stub CcMdlWriteAbort
-@ stub CcMdlWriteComplete
-@ stub CcPinMappedData
-@ stub CcPinRead
-@ stub CcPrepareMdlWrite
-@ stub CcPreparePinWrite
-@ stub CcPurgeCacheSection
 @ stub CcRemapBcb
-@ stub CcRepinBcb
 @ stub CcScheduleReadAhead
-@ stub CcSetAdditionalCacheAttributes
 @ stub CcSetBcbOwnerPointer
 @ stub CcSetDirtyPageThreshold
-@ stub CcSetDirtyPinnedData
-@ stub CcSetFileSizes
-@ stub CcSetLogHandleForFile
-@ stub CcSetReadAheadGranularity
-@ stub CcUninitializeCacheMap
-@ stub CcUnpinData
-@ stub CcUnpinDataForThread
-@ stub CcUnpinRepinnedBcb
-@ stub CcWaitForCurrentLazyWriterActivity
-@ stub CcZeroData
 @ stub CmRegisterCallback
 @ stub CmUnRegisterCallback
 @ stub DbgCommandString
@@ -735,7 +894,6 @@
 @ stub -arch=i386 ExInterlockedExchangeUlong
 @ stub ExInterlockedExtendZone
 @ stub -arch=i386 ExInterlockedIncrementLong
-@ stub ExLocalTimeToSystemTime
 @ stub -arch=x86_64,arm ExQueryDepthSList
 @ stub ExQueryPoolBlockSize
 @ stub ExRaiseAccessViolation
@@ -745,10 +903,8 @@
 @ stub ExReleaseFastMutexUnsafeAndLeaveCriticalRegion
 @ stub ExRundownCompleted
 @ stub ExRundownCompletedCacheAware
-@ stub ExSetResourceOwnerPointer
 @ stub ExSetTimerResolution
 @ stub ExSystemExceptionFilter
-@ stub ExSystemTimeToLocalTime
 @ stub -arch=x86_64 ExTryToAcquireFastMutex
 @ stub ExVerifySuite
 @ extern ExWindowStationObjectType QzUnimplementedData
@@ -770,124 +926,40 @@
 @ stub -arch=i386 Exi386InterlockedExchangeUlong
 @ stub -arch=i386 Exi386InterlockedIncrementLong
 @ stub FsRtlAcquireFileExclusive
-@ stub FsRtlAddBaseMcbEntry
-@ stub FsRtlAddLargeMcbEntry
 @ stub FsRtlAddMcbEntry
-@ stub FsRtlAddToTunnelCache
-@ stub FsRtlAllocateFileLock
-@ stub FsRtlAllocatePool
 @ stub FsRtlAllocatePoolWithQuota
-@ stub FsRtlAllocatePoolWithQuotaTag
-@ stub FsRtlAllocatePoolWithTag
 @ stub FsRtlAllocateResource
-@ stub FsRtlAreNamesEqual
-@ stub FsRtlBalanceReads
-@ stub FsRtlCheckLockForReadAccess
-@ stub FsRtlCheckLockForWriteAccess
-@ stub FsRtlCheckOplock
-@ stub FsRtlCopyRead
-@ stub FsRtlCopyWrite
 @ stub FsRtlCreateSectionForDataScan
-@ stub FsRtlCurrentBatchOplock
-@ stub FsRtlDeleteKeyFromTunnelCache
-@ stub FsRtlDeleteTunnelCache
 @ stub FsRtlDeregisterUncProvider
-@ stub FsRtlDissectDbcs
-@ stub FsRtlDissectName
-@ stub FsRtlDoesDbcsContainWildCards
-@ stub FsRtlDoesNameContainWildCards
-@ stub FsRtlFastCheckLockForRead
-@ stub FsRtlFastCheckLockForWrite
-@ stub FsRtlFastUnlockAll
-@ stub FsRtlFastUnlockAllByKey
-@ stub FsRtlFastUnlockSingle
-@ stub FsRtlFindInTunnelCache
-@ stub FsRtlFreeFileLock
-@ stub FsRtlGetFileSize
-@ stub FsRtlGetNextBaseMcbEntry
-@ stub FsRtlGetNextFileLock
-@ stub FsRtlGetNextLargeMcbEntry
 @ stub FsRtlGetNextMcbEntry
 @ stub FsRtlIncrementCcFastReadNoWait
 @ stub FsRtlIncrementCcFastReadNotPossible
 @ stub FsRtlIncrementCcFastReadResourceMiss
 @ stub FsRtlIncrementCcFastReadWait
-@ stub FsRtlInitializeBaseMcb
-@ stub FsRtlInitializeFileLock
-@ stub FsRtlInitializeLargeMcb
 @ stub FsRtlInitializeMcb
-@ stub FsRtlInitializeOplock
-@ stub FsRtlInitializeTunnelCache
 @ stub FsRtlInsertPerFileObjectContext
 @ stub FsRtlInsertPerStreamContext
-@ stub FsRtlIsDbcsInExpression
-@ stub FsRtlIsFatDbcsLegal
-@ stub FsRtlIsHpfsDbcsLegal
-@ stub FsRtlIsNameInExpression
-@ stub FsRtlIsNtstatusExpected
 @ stub FsRtlIsPagingFile
-@ stub FsRtlIsTotalDeviceFailure
-@ extern FsRtlLegalAnsiCharacterArray QzUnimplementedData
-@ stub FsRtlLookupBaseMcbEntry
-@ stub FsRtlLookupLargeMcbEntry
 @ stub FsRtlLookupLastBaseMcbEntry
-@ stub FsRtlLookupLastBaseMcbEntryAndIndex
-@ stub FsRtlLookupLastLargeMcbEntry
-@ stub FsRtlLookupLastLargeMcbEntryAndIndex
 @ stub FsRtlLookupLastMcbEntry
 @ stub FsRtlLookupMcbEntry
 @ stub FsRtlLookupPerFileObjectContext
 @ stub FsRtlLookupPerStreamContextInternal
 @ stub FsRtlMdlRead
-@ stub FsRtlMdlReadComplete
-@ stub FsRtlMdlReadCompleteDev
-@ stub FsRtlMdlReadDev
-@ stub FsRtlMdlWriteComplete
-@ stub FsRtlMdlWriteCompleteDev
-@ stub FsRtlNormalizeNtstatus
 @ stub FsRtlNotifyChangeDirectory
-@ stub FsRtlNotifyCleanup
-@ stub FsRtlNotifyFilterChangeDirectory
-@ stub FsRtlNotifyFilterReportChange
-@ stub FsRtlNotifyFullChangeDirectory
-@ stub FsRtlNotifyFullReportChange
-@ stub FsRtlNotifyInitializeSync
 @ stub FsRtlNotifyReportChange
-@ stub FsRtlNotifyUninitializeSync
-@ stub FsRtlNotifyVolumeEvent
-@ stub FsRtlNumberOfRunsInBaseMcb
-@ stub FsRtlNumberOfRunsInLargeMcb
 @ stub FsRtlNumberOfRunsInMcb
-@ stub FsRtlOplockFsctrl
-@ stub FsRtlOplockIsFastIoPossible
-@ stub FsRtlPostPagingFileStackOverflow
-@ stub FsRtlPostStackOverflow
 @ stub FsRtlPrepareMdlWrite
-@ stub FsRtlPrepareMdlWriteDev
-@ stub FsRtlPrivateLock
-@ stub FsRtlProcessFileLock
-@ stub FsRtlRegisterFileSystemFilterCallbacks
 @ stub FsRtlRegisterUncProvider
 @ stub FsRtlReleaseFile
-@ stub FsRtlRemoveBaseMcbEntry
-@ stub FsRtlRemoveLargeMcbEntry
 @ stub FsRtlRemoveMcbEntry
 @ stub FsRtlRemovePerFileObjectContext
 @ stub FsRtlRemovePerStreamContext
 @ stub FsRtlResetBaseMcb
-@ stub FsRtlResetLargeMcb
 @ stub FsRtlSplitBaseMcb
-@ stub FsRtlSplitLargeMcb
 @ stub FsRtlSyncVolumes
-@ stub FsRtlTeardownPerStreamContexts
-@ stub FsRtlTruncateBaseMcb
-@ stub FsRtlTruncateLargeMcb
 @ stub FsRtlTruncateMcb
-@ stub FsRtlUninitializeBaseMcb
-@ stub FsRtlUninitializeFileLock
-@ stub FsRtlUninitializeLargeMcb
 @ stub FsRtlUninitializeMcb
-@ stub FsRtlUninitializeOplock
 @ stub HeadlessDispatch
 @ stub InbvAcquireDisplayOwnership
 @ stub InbvCheckDisplayOwnership
@@ -907,7 +979,6 @@
 @ stub -arch=i386,arm InterlockedExchangeAdd
 @ stub -arch=i386,arm InterlockedIncrement
 @ stub -arch=x86_64 InitializeSListHead
-@ stub IoAcquireVpbSpinLock
 @ stub IoAssignDriveLetters
 @ stub IoAssignResources
 @ stub IoCancelFileOpen
@@ -928,36 +999,25 @@
 @ stub IoGetBootDiskInformation
 @ stub IoGetDeviceInterfaceAlias
 @ stub -version=0x602+ IoGetDeviceInterfacePropertyData
-@ stub IoGetDeviceToVerify
 @ stub IoGetDiskDeviceObject
 @ stub IoGetInitialStack
 @ stub IoGetRequestorSessionId
-@ stub IoGetTopLevelIrp
 @ stub -arch=x86_64 IoIs32bitProcess
 @ stub IoIsFileOriginRemote
-@ stub IoIsSystemThread
 @ stub IoIsValidNameGraftingBuffer
-@ stub IoPageRead
 @ stub IoPnPDeliverServicePowerNotification
 @ stub IoQueryFileDosDeviceName
-@ stub IoQueryFileInformation
 @ stub IoQueryVolumeInformation
 @ stub IoQueueThreadIrp
-@ stub IoRaiseHardError
-@ stub IoRaiseInformationalHardError
 @ extern IoReadOperationCount QzUnimplementedData
 @ stub IoReadPartitionTable
 @ extern IoReadTransferCount QzUnimplementedData
-@ stub IoReleaseVpbSpinLock
 @ stub IoReportTargetDeviceChange
 @ stub -version=0x602+ IoSetDeviceInterfacePropertyData
-@ stub IoSetDeviceToVerify
 @ stub IoSetFileOrigin
 @ stub IoSetInformation
 @ stub IoSetIoCompletion
-@ stub IoSetTopLevelIrp
 @ extern IoStatisticsLock QzUnimplementedData
-@ stub IoSynchronousPageWrite
 @ stub IoThreadToProcess
 @ stub IoTranslateBusAddress
 @ stub IoValidateDeviceIoControlAccess
@@ -1094,14 +1154,12 @@
 @ stub MmAdvanceMdl
 @ stub MmAllocatePagesForMdl
 @ stub MmAllocatePagesForMdlEx
-@ stub MmCanFileBeTruncated
 @ stub MmCommitSessionMappedView
 @ stub MmCreateMdl
 @ stub MmCreateMirror
 @ stub MmCreateSection
 @ stub MmDisableModifiedWriteOfSection
 @ stub MmDoesFileHaveUserWritableReferences
-@ stub MmFlushImageSection
 @ stub MmForceSectionClosed
 @ stub MmFreePagesFromMdl
 @ stub MmGetPhysicalMemoryRanges
@@ -1125,7 +1183,6 @@
 @ stub MmProbeAndLockProcessPages
 @ stub MmProbeAndLockSelectedPages
 @ stub MmProtectMdlSystemAddress
-@ stub MmQuerySystemSize
 @ stub MmRemovePhysicalMemory
 @ stub MmSecureVirtualMemory
 @ stub MmSetAddressRangeModified
@@ -1136,12 +1193,6 @@
 @ stub MmUnmapViewInSystemSpace
 @ stub MmUnmapViewOfSection
 @ stub MmUnsecureVirtualMemory
-@ extern NlsAnsiCodePage QzUnimplementedData
-@ extern NlsLeadByteInfo QzUnimplementedData
-@ extern NlsMbCodePageTag QzUnimplementedData
-@ extern NlsMbOemCodePageTag QzUnimplementedData
-@ extern NlsOemCodePage QzUnimplementedData
-@ extern NlsOemLeadByteInfo QzUnimplementedData
 @ stub NtAddAtom
 @ stub NtAllocateLocallyUniqueId
 @ stub NtAllocateUuids
@@ -1286,14 +1337,10 @@
 @ stub RtlAppendStringToString
 @ stub RtlAreAllAccessesGranted
 @ stub RtlAreAnyAccessesGranted
-@ stub RtlAreBitsClear
-@ stub RtlAreBitsSet
-@ stub RtlCaptureContext
 @ stub RtlCharToInteger
 @ stub RtlCmDecodeMemIoResource
 @ stub RtlCmEncodeMemIoResource
 @ stub RtlCompareMemoryUlong
-@ stub RtlCompareString
 @ stub RtlCompressBuffer
 @ stub RtlCompressChunks
 @ stub RtlConvertLongToLargeInteger
@@ -1310,48 +1357,36 @@
 @ stub RtlDecompressBuffer
 @ stub RtlDecompressChunks
 @ stub RtlDecompressFragment
-@ stub RtlDelete
 @ stub RtlDeleteAce
 @ stub RtlDeleteAtomFromAtomTable
-@ stub RtlDeleteElementGenericTable
-@ stub RtlDeleteNoSplay
 @ stub RtlDeleteOwnersRanges
 @ stub RtlDeleteRange
 @ stub RtlDescribeChunk
 @ stub RtlDestroyAtomTable
 @ stub RtlDestroyHeap
-@ stub RtlDowncaseUnicodeString
 @ stub RtlEmptyAtomTable
 @ stub -arch=win32 RtlEnlargedIntegerMultiply
 @ stub -arch=win32 RtlEnlargedUnsignedDivide
 @ stub -arch=win32 RtlEnlargedUnsignedMultiply
-@ stub RtlEnumerateGenericTable
 @ stub RtlEnumerateGenericTableLikeADirectory
-@ stub RtlEnumerateGenericTableWithoutSplaying
 @ stub RtlEqualLuid
 @ stub -arch=win32 RtlExtendedIntegerMultiply
-@ stub -arch=win32 RtlExtendedLargeIntegerDivide
 @ stub -arch=win32 RtlExtendedMagicDivide
 @ stub -arch=i386,arm RtlFillMemoryUlong
 @ stub RtlFindClearRuns
 @ stub RtlFindFirstRunClear
 @ stub RtlFindLastBackwardRunClear
-@ stub RtlFindLongestRunClear
 @ stub RtlFindMessage
 @ stub RtlFindNextForwardRunClear
 @ stub RtlFindRange
-@ stub RtlFindUnicodePrefix
 @ stub RtlFormatCurrentUserKeyPath
 @ stub RtlFreeHeap
-@ stub RtlFreeOemString
 @ stub RtlFreeRangeList
-@ stub RtlGenerate8dot3Name
 @ stub RtlGetAce
 @ stub RtlGetCallersAddress
 @ stub RtlGetCompressionWorkSpaceSize
 @ stub RtlGetDaclSecurityDescriptor
 @ stub RtlGetDefaultCodePage
-@ stub RtlGetElementGenericTable
 @ stub RtlGetFirstRange
 @ stub RtlGetGroupSecurityDescriptor
 @ stub RtlGetLastRange
@@ -1364,13 +1399,8 @@
 @ stub RtlInitAnsiStringEx
 @ stub RtlInitCodePageTable
 @ stub RtlInitUnicodeStringEx
-@ stub RtlInitializeGenericTable
 @ stub RtlInitializeRangeList
-@ stub RtlInitializeUnicodePrefix
-@ stub RtlInsertElementGenericTable
-@ stub RtlInsertElementGenericTableFull
 @ stub RtlInsertElementGenericTableFullAvl
-@ stub RtlInsertUnicodePrefix
 @ stub RtlInt64ToUnicodeString
 @ stub RtlIntegerToChar
 @ stub RtlIntegerToUnicode
@@ -1394,8 +1424,6 @@
 @ stub RtlIpv6StringToAddressExA
 @ stub RtlIpv6StringToAddressExW
 @ stub RtlIpv6StringToAddressW
-@ stub RtlIsGenericTableEmpty
-@ stub RtlIsNameLegalDOS8Dot3
 @ stub RtlIsRangeAvailable
 @ stub RtlIsValidOemCharacter
 @ stub -arch=win32 RtlLargeIntegerAdd
@@ -1408,20 +1436,13 @@
 @ stub RtlLengthSecurityDescriptor
 @ stub RtlLockBootStatusData
 @ stub RtlLookupAtomInAtomTable
-@ stub RtlLookupElementGenericTable
-@ stub RtlLookupElementGenericTableFull
 @ stub RtlLookupElementGenericTableFullAvl
 @ stub -arch=x86_64 RtlLookupFunctionEntry
 @ stub RtlMapSecurityErrorToNtStatus
 @ stub RtlMergeRangeLists
-@ stub RtlNextUnicodePrefix
 @ stub RtlNtStatusToDosError
 @ stub RtlNtStatusToDosErrorNoTeb
-@ stub RtlNumberGenericTableElements
-@ stub RtlOemStringToCountedUnicodeString
 @ stub RtlOemStringToUnicodeSize
-@ stub RtlOemStringToUnicodeString
-@ stub RtlOemToUnicodeN
 @ stub -arch=x86_64 RtlPcToFileHeader
 @ stub RtlPinAtomInAtomTable
 @ stub RtlPrefetchMemoryNonTemporal
@@ -1430,9 +1451,6 @@
 @ stub RtlQueryTimeZoneInformation
 @ stub RtlRandom
 @ stub RtlRandomEx
-@ stub RtlRealPredecessor
-@ stub RtlRealSuccessor
-@ stub RtlRemoveUnicodePrefix
 @ stub RtlReserveChunk
 @ stub -arch=x86_64 RtlRestoreContext
 @ stub RtlSecondsSince1970ToTime
@@ -1445,9 +1463,6 @@
 @ stub RtlSetSaclSecurityDescriptor
 @ stub RtlSetTimeZoneInformation
 @ stub RtlSizeHeap
-@ stub RtlSplay
-@ stub RtlSubtreePredecessor
-@ stub RtlSubtreeSuccessor
 @ stub RtlTimeToElapsedTimeFields
 @ stub RtlTimeToSecondsSince1970
 @ stub RtlTimeToSecondsSince1980
@@ -1463,22 +1478,14 @@
 @ stub -arch=i386,arm RtlUlongByteSwap
 @ stub -arch=i386,arm RtlUlonglongByteSwap
 @ stub RtlUnicodeStringToAnsiSize
-@ stub RtlUnicodeStringToCountedOemString
 @ stub RtlUnicodeStringToOemSize
-@ stub RtlUnicodeStringToOemString
 @ stub RtlUnicodeToCustomCPN
-@ stub RtlUnicodeToOemN
 @ stub -version=0x601+ RtlUnicodeToUTF8N
 @ stub RtlUnlockBootStatusData
 @ stub -arch=x86_64,arm RtlUnwindEx
 @ stub RtlUpcaseUnicodeStringToAnsiString
-@ stub RtlUpcaseUnicodeStringToCountedOemString
-@ stub RtlUpcaseUnicodeStringToOemString
 @ stub RtlUpcaseUnicodeToCustomCPN
 @ stub RtlUpcaseUnicodeToMultiByteN
-@ stub RtlUpcaseUnicodeToOemN
-@ stub RtlUpperChar
-@ stub RtlUpperString
 @ stub -arch=i386,arm RtlUshortByteSwap
 @ stub RtlValidRelativeSecurityDescriptor
 @ stub RtlValidSecurityDescriptor
@@ -1487,10 +1494,6 @@
 @ stub RtlVolumeDeviceToDosName
 @ stub RtlWalkFrameChain
 @ stub RtlZeroHeap
-@ stub RtlxAnsiStringToUnicodeSize
-@ stub RtlxOemStringToUnicodeSize
-@ stub RtlxUnicodeStringToAnsiSize
-@ stub RtlxUnicodeStringToOemSize
 @ stub SeAppendPrivileges
 @ stub SeAssignSecurity
 @ stub SeAssignSecurityEx
@@ -1508,14 +1511,12 @@
 @ stub SeDeassignSecurity
 @ stub SeDeleteAccessState
 @ stub SeDeleteObjectAuditAlarm
-@ stub SeFilterToken
 @ stub SeFreePrivileges
 @ stub SeImpersonateClient
 @ stub SeImpersonateClientEx
 @ stub SeMarkLogonSessionForTerminationNotification
 @ stub SeOpenObjectAuditAlarm
 @ stub SeOpenObjectForDeleteAuditAlarm
-@ stub SePrivilegeCheck
 @ stub SePrivilegeObjectAuditAlarm
 @ extern SePublicDefaultDacl QzUnimplementedData
 @ stub SeQueryAuthenticationIdToken
@@ -1566,7 +1567,6 @@
 @ stub ZwEnumerateBootEntries
 @ stub ZwEnumerateDriverEntries
 @ stub ZwFlushInstructionCache
-@ stub ZwFlushVirtualMemory
 @ stub ZwInitiatePowerAction
 @ stub ZwIsProcessInJob
 @ stub ZwLoadKey

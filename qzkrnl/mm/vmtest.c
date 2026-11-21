@@ -340,6 +340,10 @@ Out:
         ObDereferenceObject(A);
     if (B)
         ObDereferenceObject(B);
+    /* The file's pages stay in the cache until the lazy writer lets an
+       unused cache map go (a couple of passes) */
+    CcWaitForCurrentLazyWriterActivity();
+    CcWaitForCurrentLazyWriterActivity();
     QzMmGetStats(&Total, &FreeAfter);
     QzCheck("the sections' pages are freed with their last view", FreeAfter + 64 >= FreeBefore);
     if (FreeAfter + 64 < FreeBefore)

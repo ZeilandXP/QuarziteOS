@@ -384,29 +384,8 @@ RtlGUIDFromString(IN PUNICODE_STRING GuidString, OUT GUID *Guid)
 }
 
 /* ---------------------------------------------------------------------- */
-/* Unwinding and stack traces                                              */
+/* Stack traces (RtlUnwind is in ke/except.c)                              */
 /* ---------------------------------------------------------------------- */
-
-/*
- * Exceptions are never dispatched yet, so nobody unwinds through a
- * handler. RtlUnwind still does its basic job: drop the FS:[0]
- * registrations above TargetFrame.
- */
-VOID
-NTAPI
-RtlUnwind(IN PVOID TargetFrame OPTIONAL, IN PVOID TargetIp OPTIONAL,
-          IN PEXCEPTION_RECORD ExceptionRecord OPTIONAL, IN PVOID ReturnValue)
-{
-    PEXCEPTION_REGISTRATION_RECORD Frame = (PEXCEPTION_REGISTRATION_RECORD)__readfsdword(0);
-
-    UNREFERENCED_PARAMETER(TargetIp);
-    UNREFERENCED_PARAMETER(ExceptionRecord);
-    UNREFERENCED_PARAMETER(ReturnValue);
-
-    while (Frame != EXCEPTION_CHAIN_END && Frame != TargetFrame)
-        Frame = Frame->Next;
-    __writefsdword(0, (ULONG)(ULONG_PTR)Frame);
-}
 
 USHORT
 NTAPI

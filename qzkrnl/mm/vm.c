@@ -184,6 +184,8 @@ QzMmDeleteAddressSpace(PQZ_PROCESS Process)
     {
         PQZ_VAD Vad = CONTAINING_RECORD(Process->VadList.Flink, QZ_VAD, Link);
         ULONG_PTR Va;
+        if (Vad->Section)
+            QzMmReleaseViewPages(Process, Vad);     /* mapped files give their pages back */
         for (Va = Vad->Start; Va < Vad->End; Va += QZ_PAGE_SIZE)
             QzMmReleasePte(Process, Va);
         QzMmRemoveVad(Process, Vad);

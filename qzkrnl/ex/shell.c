@@ -78,6 +78,9 @@ QzCmdHelp(VOID)
             "                    shared memory; starts PnP if needed)\n"
             "  lpctest           self-test: LPC ports, keyed events, the system token\n"
             "  input mouse|kbd [ms] read one event from the mouse or keyboard class driver\n"
+            "  cache             the cache manager: cached files, views, dirty data\n"
+            "  fstest [volume]   self-test: a FAT volume through fastfat and the cache\n"
+            "                    (default \\Device\\HarddiskVolume2)\n"
             "  ldrtest           self-test: drivers loaded from disk (load, imports,\n"
             "                    relocation, unload)\n"
             "  smss              start \\SystemRoot\\System32\\smss.exe\n"
@@ -299,6 +302,13 @@ QzExecute(PCHAR Line)
     }
     else if (!strcmp(Cmd, "lpctest"))
         QzRunLpcTests();
+    else if (!strcmp(Cmd, "fstest"))
+    {
+        QzNeedDevices();
+        QzRunFsTests(Arg);
+    }
+    else if (!strcmp(Cmd, "cache"))
+        QzCcDump();
     else if (!strcmp(Cmd, "input"))
     {
         PCHAR Count = QzNextToken(&Cursor);

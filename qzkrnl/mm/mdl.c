@@ -56,13 +56,10 @@ NTAPI
 MmUnmapLockedPages(IN PVOID BaseAddress,
                    IN PMDL Mdl)
 {
-    ULONG_PTR Va = (ULONG_PTR)PAGE_ALIGN(BaseAddress);
     ULONG Pages = ADDRESS_AND_SIZE_TO_SPAN_PAGES((PUCHAR)Mdl->StartVa + Mdl->ByteOffset,
                                                  Mdl->ByteCount);
-    ULONG i;
 
-    for (i = 0; i < Pages; i++)
-        QzUnmapPage(Va + i * PAGE_SIZE);
+    QzIoSpaceFree(BaseAddress, Pages);
     Mdl->MdlFlags &= ~MDL_MAPPED_TO_SYSTEM_VA;
     Mdl->MappedSystemVa = NULL;
 }

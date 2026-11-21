@@ -645,6 +645,96 @@ QzIoStartDriver(PCUNICODE_STRING ServiceName, PQZ_LDR_ENTRY Module, PUNICODE_STR
     return Status;
 }
 
+/*
+ * The file system drivers FreeLoader loaded (cdfs for a CD boot): NT
+ * starts every boot driver before it mounts the boot volume; these are
+ * the ones that must be there by then, to register and get the first try
+ * at it.
+ */
+VOID
+QzIoStartBootFileSystems(VOID)
+{
+    PLIST_ENTRY Entry;
+
+    for (Entry = QzLoaderBlock->BootDriverListHead.Flink; Entry != &QzLoaderBlock->BootDriverListHead;
+         Entry = Entry->Flink)
+    {
+        PBOOT_DRIVER_LIST_ENTRY Boot = CONTAINING_RECORD(Entry, BOOT_DRIVER_LIST_ENTRY, Link);
+        UCHAR Buffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG)];
+        PKEY_VALUE_PARTIAL_INFORMATION Value = (PVOID)Buffer;
+        UNICODE_STRING ValueName = RTL_CONSTANT_STRING(L"Type"), Service;
+        OBJECT_ATTRIBUTES Attributes;
+        PDRIVER_OBJECT Driver;
+        HANDLE Key;
+        ULONG Length;
+        USHORT i;
+        NTSTATUS Status;
+
+        if (!Boot->LdrEntry)
+            continue;
+        InitializeObjectAttributes(&Attributes, &Boot->RegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                   NULL, NULL);
+        if (!NT_SUCCESS(ZwOpenKey(&Key, KEY_READ, &Attributes)))
+            continue;
+        Status = ZwQueryValueKey(Key, &ValueName, KeyValuePartialInformation, Value, sizeof(Buffer), &Length);
+        ZwClose(Key);
+        if (!NT_SUCCESS(Status) || Value->Type != REG_DWORD ||
+            !(*(PULONG)Value->Data & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)))
+            continue;
+
+        Service = Boot->RegistryPath;
+        for (i = Service.Length / sizeof(WCHAR); i && Service.Buffer[i - 1] != L'\\'; i--)
+            ;
+        Service.Buffer += i;
+        Service.Length -= i * sizeof(WCHAR);
+        Service.MaximumLength = Service.Length;
+        Status = QzIoLoadDriver(&Service, &Driver);
+        DbgPrint(QZ_KERNEL_NAME ": boot file system %wZ: 0x%08lx\n", &Service, Status);
+    }
+}
+
+/*
+ * System-start file systems (fs_rec, npfs, msfs): NT starts every
+ * system-start driver once the boot volume is up. For now only file
+ * systems and recognizers are started: the rest (i8042prt, beep, ...)
+ * would compete with qzkrnl's own console drivers.
+ */
+VOID
+QzIoStartSystemFileSystems(VOID)
+{
+    UNICODE_STRING Root = RTL_CONSTANT_STRING(L"\\Registry\\Machine\\System\\CurrentControlSet\\Services");
+    OBJECT_ATTRIBUTES Attributes;
+    HANDLE Services;
+    ULONG Index;
+
+    InitializeObjectAttributes(&Attributes, &Root, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    if (!NT_SUCCESS(ZwOpenKey(&Services, KEY_READ, &Attributes)))
+        return;
+    for (Index = 0;; Index++)
+    {
+        UCHAR Buffer[sizeof(KEY_BASIC_INFORMATION) + 64 * sizeof(WCHAR)];
+        PKEY_BASIC_INFORMATION Info = (PVOID)Buffer;
+        UNICODE_STRING Name;
+        QZ_SERVICE_INFO Service;
+        PDRIVER_OBJECT Driver;
+        ULONG Length;
+        NTSTATUS Status = ZwEnumerateKey(Services, Index, KeyBasicInformation, Info, sizeof(Buffer), &Length);
+
+        if (Status == STATUS_NO_MORE_ENTRIES)
+            break;
+        if (!NT_SUCCESS(Status))
+            continue;
+        Name.Buffer = Info->Name;
+        Name.Length = Name.MaximumLength = (USHORT)Info->NameLength;
+        if (!NT_SUCCESS(QzIoQueryService(&Name, &Service)) || Service.Start != SERVICE_SYSTEM_START ||
+            !(Service.Type & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)) || QzIoFindDriver(&Name))
+            continue;
+        Status = QzIoLoadDriver(&Name, &Driver);
+        DbgPrint(QZ_KERNEL_NAME ": system file system %wZ: 0x%08lx\n", &Name, Status);
+    }
+    ZwClose(Services);
+}
+
 /* A service whose driver needs no file system: FreeLoader loaded it, or it runs */
 BOOLEAN
 QzIoIsBootService(PCUNICODE_STRING ServiceName)
@@ -679,8 +769,12 @@ QzIoLoadDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject)
 
     Boot = QzIoFindBootDriver(ServiceName);
     if (Boot && Boot->LdrEntry)
-        return QzIoStartDriver(ServiceName, (PQZ_LDR_ENTRY)Boot->LdrEntry, &Boot->RegistryPath, FALSE,
+    {
+        BOOLEAN FileSystem = NT_SUCCESS(QzIoQueryService(ServiceName, &Info)) &&
+                             (Info.Type & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER));
+        return QzIoStartDriver(ServiceName, (PQZ_LDR_ENTRY)Boot->LdrEntry, &Boot->RegistryPath, FileSystem,
                                DriverObject);
+    }
 
     Status = QzIoQueryService(ServiceName, &Info);
     if (!NT_SUCCESS(Status))
@@ -880,6 +974,7 @@ QzIoInit(VOID)
 {
     InitializeListHead(&QzIoDriverList);
     QzMmInitSystemImages();
+    QzCcInit();
 
     /* Give the I/O object types (created by the object manager) their
        procedures */

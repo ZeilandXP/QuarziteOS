@@ -172,6 +172,32 @@ IoUnregisterFsRegistrationChange(IN PDRIVER_OBJECT DriverObject,
     QzIoUnlockMount();
 }
 
+/* IRP_MN_LOAD_FILE_SYSTEM to a recognizer */
+static VOID
+QzIoLoadFileSystem(PDEVICE_OBJECT Recognizer)
+{
+    PDEVICE_OBJECT Target = QzIoGetAttachedDevice(Recognizer);
+    IO_STATUS_BLOCK IoStatus;
+    PIO_STACK_LOCATION Stack;
+    KEVENT Event;
+    PIRP Irp = IoAllocateIrp(Target->StackSize, FALSE);
+    NTSTATUS Status;
+
+    if (!Irp)
+        return;
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    Irp->UserEvent = &Event;
+    Irp->UserIosb = &IoStatus;
+    Irp->Flags = IRP_SYNCHRONOUS_API;
+    Irp->Tail.Overlay.Thread = PsGetCurrentThread();
+    Stack = IoGetNextIrpStackLocation(Irp);
+    Stack->MajorFunction = IRP_MJ_FILE_SYSTEM_CONTROL;
+    Stack->MinorFunction = IRP_MN_LOAD_FILE_SYSTEM;
+    Status = QzIoSynchronousCall(Target, Irp, &Event, &IoStatus);
+    DbgPrint(QZ_KERNEL_NAME ": a file system recognizer loaded its driver: 0x%08lx\n",
+             Status == STATUS_PENDING ? IoStatus.Status : Status);
+}
+
 /* Offer the volume on Device to each file system until one mounts it */
 static NTSTATUS
 QzIoMountVolume(PDEVICE_OBJECT Device)
@@ -193,6 +219,7 @@ QzIoMountVolume(PDEVICE_OBJECT Device)
     for (Entry = List->Flink; Entry != List; Entry = Entry->Flink)
     {
         PDEVICE_OBJECT FileSystem = CONTAINING_RECORD(Entry, DEVICE_OBJECT, Queue.ListEntry);
+        ULONG Loads = 0;
         PDEVICE_OBJECT Target = QzIoGetAttachedDevice(FileSystem);
         IO_STATUS_BLOCK IoStatus;
         PIO_STACK_LOCATION Stack;
@@ -226,6 +253,15 @@ QzIoMountVolume(PDEVICE_OBJECT Device)
             Vpb->Flags |= VPB_MOUNTED;
             Vpb->DeviceObject->Vpb = Vpb;
             break;
+        }
+        if (Status == STATUS_FS_DRIVER_REQUIRED && Loads++ < 4)
+        {
+            /* A recognizer (fs_rec) knows the format: it loads the real
+               file system (which registers, newest first) and leaves the
+               list; the volume is offered to everyone again */
+            QzIoLoadFileSystem(FileSystem);
+            Entry = List;
+            continue;
         }
         if (Status != STATUS_UNRECOGNIZED_VOLUME && Status != STATUS_FS_DRIVER_REQUIRED &&
             Status != STATUS_WRONG_VOLUME)
@@ -839,7 +875,9 @@ QzIoCallRequest(PQZ_FILE_REQUEST Request, PIO_STATUS_BLOCK IoStatusBlock, BOOLEA
             KeWaitForSingleObject(&Request->LocalEvent, Executive, KernelMode, FALSE, NULL);
         Status = Request->LocalIosb.Status;
         *IoStatusBlock = Request->LocalIosb;
-        if (UpdateOffset && NT_SUCCESS(Status))
+        /* A file system moves a synchronous file's position itself; a
+           device opened directly (no mounted volume) has us do it */
+        if (UpdateOffset && NT_SUCCESS(Status) && !(FileObject->Vpb && (FileObject->Vpb->Flags & VPB_MOUNTED)))
             FileObject->CurrentByteOffset.QuadPart += Request->LocalIosb.Information;
         if (Request->UserEvent)
         {
@@ -1140,6 +1178,24 @@ QzIoInformation(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
     /* QueryFile/SetFile/QueryVolume/SetVolume share {Length, Class} */
     Stack->Parameters.QueryFile.Length = Length;
     Stack->Parameters.QueryFile.FileInformationClass = (FILE_INFORMATION_CLASS)Class;
+
+    /* A rename (or link) within the file's directory: no target directory
+       object, the file system takes the new name from the buffer */
+    if (MajorFunction == IRP_MJ_SET_INFORMATION && (Class == FileRenameInformation || Class == FileLinkInformation))
+    {
+        PFILE_RENAME_INFORMATION Rename = Buffer;
+        ULONG i;
+        if (Length < FIELD_OFFSET(FILE_RENAME_INFORMATION, FileName) ||
+            Length < FIELD_OFFSET(FILE_RENAME_INFORMATION, FileName) + Rename->FileNameLength)
+            return QzIoAbortRequest(&Request, STATUS_INFO_LENGTH_MISMATCH);
+        for (i = 0; i < Rename->FileNameLength / sizeof(WCHAR); i++)
+            if (Rename->FileName[i] == L'\\')
+                return QzIoAbortRequest(&Request, STATUS_NOT_SUPPORTED);   /* across directories: later */
+        if (Rename->RootDirectory)
+            return QzIoAbortRequest(&Request, STATUS_NOT_SUPPORTED);
+        Stack->Parameters.SetFile.FileObject = NULL;
+        Stack->Parameters.SetFile.ReplaceIfExists = Rename->ReplaceIfExists;
+    }
 
     return QzIoCallRequest(&Request, IoStatusBlock, FALSE);
 }

@@ -14,7 +14,6 @@
 
 static ULONG QzFreeBitmap[QZ_MAX_PAGES / 32];      /* 1 = free */
 static ULONG QzTotalPages, QzFreePages, QzHighestPfn, QzSearchHint;
-static ULONG_PTR QzIoSpaceNext = QZ_IOSPACE_BASE;
 static ULONG QzTypePages[LoaderMaximum];
 
 static PCSTR
@@ -193,24 +192,55 @@ QzUnmapPage(ULONG_PTR Va)
     }
 }
 
+/*
+ * The MmMapIoSpace/MmMapLockedPages window: a page bitmap, so that what
+ * is unmapped can be mapped again (paging I/O maps and unmaps MDLs all
+ * the time).
+ */
+#define QZ_IOSPACE_PAGES (QZ_IOSPACE_SIZE / QZ_PAGE_SIZE)
+static ULONG QzIoSpaceBits[QZ_IOSPACE_PAGES / 32];
+static RTL_BITMAP QzIoSpaceMap;
+static ULONG QzIoSpaceHint;
+
+static ULONG_PTR
+QzIoSpaceAlloc(ULONG Pages)
+{
+    ULONG IrqFlags = QzSaveFlagsAndDisable(), First;
+
+    if (!QzIoSpaceMap.Buffer)
+        RtlInitializeBitMap(&QzIoSpaceMap, QzIoSpaceBits, QZ_IOSPACE_PAGES);
+    First = RtlFindClearBitsAndSet(&QzIoSpaceMap, Pages, QzIoSpaceHint);
+    if (First != 0xFFFFFFFF)
+        QzIoSpaceHint = First + Pages;
+    QzRestoreFlags(IrqFlags);
+    return First == 0xFFFFFFFF ? 0 : QZ_IOSPACE_BASE + First * QZ_PAGE_SIZE;
+}
+
+VOID
+QzIoSpaceFree(PVOID Address, ULONG Pages)
+{
+    ULONG_PTR Va = (ULONG_PTR)Address & ~(QZ_PAGE_SIZE - 1);
+    ULONG IrqFlags, i;
+
+    if (Va < QZ_IOSPACE_BASE || Va >= QZ_IOSPACE_BASE + QZ_IOSPACE_SIZE || !QzIoSpaceMap.Buffer)
+        return;
+    for (i = 0; i < Pages; i++)
+        QzUnmapPage(Va + i * QZ_PAGE_SIZE);
+    IrqFlags = QzSaveFlagsAndDisable();
+    RtlClearBits(&QzIoSpaceMap, (ULONG)((Va - QZ_IOSPACE_BASE) / QZ_PAGE_SIZE), Pages);
+    QzRestoreFlags(IrqFlags);
+}
+
 /* Map an arbitrary list of physical pages contiguously in system space */
 PVOID
 QzMapPages(PPFN_NUMBER Pages, ULONG Count, BOOLEAN Uncached)
 {
     ULONG Flags = QZ_PTE_WRITE | (Uncached ? (QZ_PTE_PCD | QZ_PTE_PWT) : 0);
-    ULONG_PTR Va;
-    ULONG i, IrqFlags;
+    ULONG_PTR Va = QzIoSpaceAlloc(Count);
+    ULONG i;
 
-    IrqFlags = QzSaveFlagsAndDisable();
-    if (QzIoSpaceNext + Count * QZ_PAGE_SIZE > QZ_IOSPACE_BASE + QZ_IOSPACE_SIZE)
-    {
-        QzRestoreFlags(IrqFlags);
+    if (!Va)
         return NULL;
-    }
-    Va = QzIoSpaceNext;
-    QzIoSpaceNext += Count * QZ_PAGE_SIZE;
-    QzRestoreFlags(IrqFlags);
-
     for (i = 0; i < Count; i++)
         QzMapPage(Va + i * QZ_PAGE_SIZE, Pages[i], Flags);
     return (PVOID)Va;
@@ -222,22 +252,13 @@ QzMapPhysical(ULONG PhysicalAddress, ULONG Size, BOOLEAN Uncached)
     ULONG Offset = PhysicalAddress & (QZ_PAGE_SIZE - 1);
     ULONG Pages = (Offset + Size + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT;
     ULONG Flags = QZ_PTE_WRITE | (Uncached ? (QZ_PTE_PCD | QZ_PTE_PWT) : 0);
-    ULONG_PTR Va;
-    ULONG i, IrqFlags;
+    ULONG_PTR Va = QzIoSpaceAlloc(Pages);
+    ULONG i;
 
-    IrqFlags = QzSaveFlagsAndDisable();
-    if (QzIoSpaceNext + Pages * QZ_PAGE_SIZE > QZ_IOSPACE_BASE + QZ_IOSPACE_SIZE)
-    {
-        QzRestoreFlags(IrqFlags);
+    if (!Va)
         return NULL;
-    }
-    Va = QzIoSpaceNext;
-    QzIoSpaceNext += Pages * QZ_PAGE_SIZE;
-    QzRestoreFlags(IrqFlags);
-
     for (i = 0; i < Pages; i++)
         QzMapPage(Va + i * QZ_PAGE_SIZE, (PhysicalAddress >> QZ_PAGE_SHIFT) + i, Flags);
-
     return (PVOID)(Va + Offset);
 }
 
@@ -288,12 +309,7 @@ NTAPI
 MmUnmapIoSpace(IN PVOID BaseAddress,
                IN SIZE_T NumberOfBytes)
 {
-    ULONG_PTR Va = (ULONG_PTR)BaseAddress & ~(QZ_PAGE_SIZE - 1);
-    ULONG_PTR End = (ULONG_PTR)BaseAddress + NumberOfBytes;
-
-    /* Virtual space is not recycled yet; just drop the translations */
-    for (; Va < End; Va += QZ_PAGE_SIZE)
-        QzUnmapPage(Va);
+    QzIoSpaceFree(BaseAddress, ADDRESS_AND_SIZE_TO_SPAN_PAGES(BaseAddress, NumberOfBytes));
 }
 
 PHYSICAL_ADDRESS
@@ -428,17 +444,10 @@ NTAPI
 MmAllocateMappingAddress(IN SIZE_T NumberOfBytes, IN ULONG PoolTag)
 {
     ULONG Pages = (ULONG)((NumberOfBytes + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT) + 1;
-    ULONG_PTR Va;
-    ULONG IrqFlags = QzSaveFlagsAndDisable();
+    ULONG_PTR Va = QzIoSpaceAlloc(Pages);
 
-    if (QzIoSpaceNext + Pages * QZ_PAGE_SIZE > QZ_IOSPACE_BASE + QZ_IOSPACE_SIZE)
-    {
-        QzRestoreFlags(IrqFlags);
+    if (!Va)
         return NULL;
-    }
-    Va = QzIoSpaceNext;
-    QzIoSpaceNext += Pages * QZ_PAGE_SIZE;
-    QzRestoreFlags(IrqFlags);
 
     /* The first page records the reservation; callers get the rest */
     QzMapPage(Va, QzAllocPhysicalPage(), QZ_PTE_WRITE);
@@ -451,9 +460,14 @@ VOID
 NTAPI
 MmFreeMappingAddress(IN PVOID BaseAddress, IN ULONG PoolTag)
 {
-    /* The address range itself is not recycled yet */
-    UNREFERENCED_PARAMETER(BaseAddress);
+    QZ_RESERVED_MAPPING *Reservation = (QZ_RESERVED_MAPPING *)((ULONG_PTR)BaseAddress - QZ_PAGE_SIZE);
+    ULONG Pages = Reservation->Pages + 1, Pte;
+
     UNREFERENCED_PARAMETER(PoolTag);
+    Pte = *(volatile ULONG *)(QZ_PTE_BASE + (((ULONG_PTR)Reservation) >> 12) * 4);
+    QzIoSpaceFree(Reservation, Pages);
+    if (Pte & QZ_PTE_PRESENT)
+        QzFreePhysicalPage(Pte >> QZ_PAGE_SHIFT);
 }
 
 PVOID

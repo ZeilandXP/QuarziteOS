@@ -48,8 +48,23 @@ PDRIVER_OBJECT QzIoFindDriver(PCUNICODE_STRING ServiceName);
 NTSTATUS QzIoLoadDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject);
 NTSTATUS QzIoUnloadDriver(PCUNICODE_STRING ServiceName);
 BOOLEAN QzIoIsBootService(PCUNICODE_STRING ServiceName);
+VOID QzIoStartBootFileSystems(VOID);
+VOID QzIoStartSystemFileSystems(VOID);
 NTSTATUS QzIoInitializeImports(PVOID ImageBase, ULONG Depth);
 VOID QzIoForgetDll(PVOID ImageBase);
+
+/* cc/cache.c */
+VOID QzCcInit(VOID);
+VOID QzCcDump(VOID);
+PVOID QzCcMmAcquire(PFILE_OBJECT FileObject, LONGLONG FileSize);
+VOID QzCcMmRelease(PVOID Map);
+LONGLONG QzCcMmFileSize(PVOID Map);
+NTSTATUS QzCcMmRead(PVOID Map, LONGLONG Offset, PVOID Buffer, ULONG Length);
+NTSTATUS QzCcMmGetPage(PVOID Map, LONGLONG Offset, PULONG Pfn);
+VOID QzCcMmPutPage(PVOID Map, LONGLONG Offset, BOOLEAN Dirty);
+VOID QzCcMmSetDirty(PVOID Map, LONGLONG Offset);
+PSECTION_OBJECT_POINTERS QzCcMmSop(PVOID Map);
+extern VOID (*QzMmCollectFileDirty)(PSECTION_OBJECT_POINTERS Sop);
 
 /* mm/sysload.c: kernel images loaded from disk */
 VOID QzMmInitSystemImages(VOID);

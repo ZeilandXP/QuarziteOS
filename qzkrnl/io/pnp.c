@@ -2087,6 +2087,7 @@ QzPnpStart(VOID)
 
     /* The boot volume: an ARC name for \SystemRoot, and a file system for the media */
     QzIsoInit();
+    QzIoStartBootFileSystems();       /* registered after QzIso: tried before it */
     QzPnpCreateArcNames();
 
     /* Now drivers can come from \SystemRoot\System32\drivers */
@@ -2094,6 +2095,7 @@ QzPnpStart(VOID)
     QzPnpBootPhase = FALSE;
     QzPnpRetryDeferred(QzPnpRoot);
     QzPnpUnlockTree();
+    QzIoStartSystemFileSystems();
 
     QzIoCallReinitRoutines(TRUE);
     QzIoCallReinitRoutines(FALSE);

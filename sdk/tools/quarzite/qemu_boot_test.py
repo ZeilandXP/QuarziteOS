@@ -21,6 +21,7 @@
 import argparse
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -197,12 +198,65 @@ def make_test_disk(path):
                                start, count)
 
         mbr[0x1BE:0x1CE] = entry(0x80, 0x06, 2048, 8192)
-        mbr[0x1CE:0x1DE] = entry(0x00, 0x0B, 10240, 20480)
+        mbr[0x1CE:0x1DE] = entry(0x00, 0x06, 10240, 20480)
         mbr[510:512] = b"\x55\xaa"
         f.seek(0)
         f.write(mbr)
         f.seek(2048 * 512)
         f.write(b"QZPART1-SECTOR-0")
+    make_fat_partition(path)
+
+
+FAT_OFFSET = 10240 * 512        # partition 2 of the test disk
+HELLO = b"Hello from the host, read by fastfat on qzkrnl.\r\n"
+
+
+def mtools(*args, check=True):
+    env = dict(os.environ, MTOOLS_SKIP_CHECK="1")
+    return subprocess.run(list(args), env=env, capture_output=True, check=check)
+
+
+def make_fat_partition(path):
+    """Partition 2: a FAT16 volume with files for fstest (needs mtools)."""
+    if not shutil.which("mformat"):
+        return False
+    image = f"{path}@@{FAT_OFFSET}"
+    mtools("mformat", "-i", image, "-T", "20480", "-h", "64", "-s", "32", "-H", "10240", "-c", "1",
+           "-v", "QZFAT", "::")
+    with tempfile.TemporaryDirectory() as tmp:
+        hello, big = os.path.join(tmp, "hello.txt"), os.path.join(tmp, "big.bin")
+        open(hello, "wb").write(HELLO)
+        open(big, "wb").write(bytes((i * 7) % 251 for i in range(200000)))
+        mtools("mcopy", "-i", image, hello, "::HELLO.TXT")
+        mtools("mmd", "-i", image, "::SUBDIR")
+        mtools("mcopy", "-i", image, hello, "::SUBDIR/NESTED.TXT")
+        mtools("mcopy", "-i", image, big, "::BIG.BIN")
+    return True
+
+
+def check_fat_partition(path, chk):
+    """What fstest changed, read back on the host after the VM is gone."""
+    if not shutil.which("mtype"):
+        return
+    image = f"{path}@@{FAT_OFFSET}"
+
+    def read(name):
+        r = mtools("mtype", "-i", image, name, check=False)
+        return r.stdout if r.returncode == 0 else None
+
+    new = read("::NEWFILE.TXT")
+    expected = bytearray((i * 13) % 253 for i in range(300000))
+    expected[150000:150004] = b"QZQZ"
+    expected[200000:200008] = b"MAPPED!!"       # written through a mapped view
+    expected[250000:250008] = b"WRITTEN!"
+    chk.check("host: NEWFILE.TXT on disk, 300 000 bytes as written (also through a view)", new == bytes(expected),
+              f"{len(new) if new is not None else 'missing'}")
+    chk.check("host: long file name on disk", read("::A long file name.txt") == b"lfn\r\n")
+    chk.check("host: NEWDIR\\INNER.TXT on disk", read("::NEWDIR/INNER.TXT") == b"inner\r\n")
+    chk.check("host: the rename reached the disk", read("::SUBDIR/MOVED.TXT") == HELLO and
+              read("::SUBDIR/NESTED.TXT") is None)
+    chk.check("host: the delete reached the disk", read("::HELLO.TXT") is None)
+    chk.check("host: BIG.BIN untouched", read("::BIG.BIN") == bytes((i * 7) % 251 for i in range(200000)))
 
 
 def run_qzkrnl(iso, out):
@@ -314,6 +368,7 @@ def run_qzkrnl(iso, out):
                 ("secttest", [r"secttest: \d+ passed, 0 failed"]),
                 ("lpctest", [r"lpctest: \d+ passed, 0 failed"]),
                 ("ldrtest", [r"ldrtest: \d+ passed, 0 failed"]),
+                ("fstest", [r"fstest: \d+ passed, 0 failed"]),
                 # The exit criterion of stage B6: smss.exe starts
                 ("smss", [r"ps: started \\SystemRoot\\System32\\smss\.exe",
                           r"smss\.exe \(pid \d+\): ntdll's loader is done; running the image",
@@ -334,7 +389,7 @@ def run_qzkrnl(iso, out):
                     vm.monitor("mouse_button 1")
                     time.sleep(0.3)
                     vm.monitor("mouse_button 0")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "ldrtest", "smss", "pnp") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "ldrtest", "fstest", "smss", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)
@@ -365,6 +420,8 @@ def run_qzkrnl(iso, out):
         finally:
             open(os.path.join(out, "qzkrnl-serial.log"), "w").write(vm.serial_text())
             vm.quit()
+        # Stage B7: what fstest wrote through fastfat, read on the host
+        check_fat_partition(disk, chk)
     return chk
 
 

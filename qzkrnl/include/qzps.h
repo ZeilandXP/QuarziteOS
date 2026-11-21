@@ -67,6 +67,10 @@ typedef struct _QZ_SECTION
     ULONG_PTR ImageBase;            /* images: the preferred base */
     SECTION_IMAGE_INFORMATION ImageInformation;
     volatile LONG Views;
+    /* Mapped files (stage B7): the views map the cache's pages */
+    PVOID CacheMap;                 /* cc/cache.c's map of the file, held */
+    LIST_ENTRY FileLink;            /* QzMmFileSections */
+    LIST_ENTRY ViewList;            /* QZ_SECTION_VIEW */
 } QZ_SECTION, *PQZ_SECTION;
 
 extern POBJECT_TYPE MmSectionObjectType;
@@ -76,6 +80,7 @@ NTSTATUS QzMmCreateSection(PQZ_SECTION *Result, PLARGE_INTEGER MaximumSize, ULON
 NTSTATUS QzMmMapView(PQZ_SECTION Section, struct _QZ_PROCESS *Process, PVOID *BaseAddress, ULONG_PTR ZeroBits,
                      PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, ULONG AllocationType, ULONG Protect);
 NTSTATUS QzMmUnmapView(struct _QZ_PROCESS *Process, PVOID BaseAddress);
+VOID QzMmReleaseViewPages(struct _QZ_PROCESS *Process, PQZ_VAD Vad);   /* attached */
 PVOID QzMmMapHyper(ULONG Pfn);       /* interrupts off around the use */
 VOID QzMmUnmapHyper(VOID);
 NTSTATUS QzMmCreateSectionFromMemory(PVOID Data, ULONG Size, PQZ_SECTION *Result);
@@ -230,4 +235,5 @@ VOID QzRunUserTests(VOID);
 VOID QzRunSectionTests(VOID);
 VOID QzRunLpcTests(VOID);
 VOID QzRunLoaderTests(VOID);
+VOID QzRunFsTests(PCSTR Volume);
 VOID QzIoShellInput(PCSTR Which, ULONG Milliseconds);
