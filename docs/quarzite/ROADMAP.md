@@ -22,11 +22,11 @@ QuarziteOS has two tracks that eventually meet:
 - [x] qzkrnl stage B2: runs on the unmodified `hal.dll` (clock, IRQL,
       interrupt objects through the HAL).
 
-## 0.1.1 (next release, after 0.1.0 is done)
+## 0.2.0 (next release, after 0.1.0 is done)
 
-> These are large features for a patch number. Under semantic versioning
-> this would be 0.2.0. Reaching B8 alone, qzkrnl replacing ntoskrnl, is a
-> major milestone. The number is kept as planned; revisit before tagging.
+> A minor-version bump, not a patch: this release is a very large
+> milestone (amd64, qzkrnl replacing ntoskrnl at B8, USB 3, WDDM 2,
+> Vulkan).
 
 ### 1. amd64 (x86_64)
 
