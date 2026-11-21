@@ -187,8 +187,11 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
        running scheduler */
     QzObInit(LoaderBlock);
     QzObInitPhase1();
+    QzPsInit();
     QzExWorkerInit();
+    QzCmInit(LoaderBlock);
     QzIoInit();
+    QzPnpInit();
     DbgPrint(QZ_KERNEL_NAME ": object manager up, %lu objects\n", QzObObjectCount());
 
     DbgPrint(QZ_KERNEL_NAME ": interrupts on, scheduler running\n");

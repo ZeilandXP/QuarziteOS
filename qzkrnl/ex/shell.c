@@ -9,6 +9,8 @@
  */
 
 #include "qzio.h"
+#include <ntdddisk.h>
+#include <ntddcdrm.h>
 
 VOID QzPrintModules(VOID);
 ULONG QzCountBootDrivers(VOID);
@@ -44,7 +46,7 @@ QzCmdHelp(VOID)
             "  pool              pool statistics\n"
             "  pooltest          allocate/free stress test of the pool\n"
             "  mods              modules loaded by FreeLoader\n"
-            "  drivers           boot drivers listed by FreeLoader\n"
+            "  drivers           boot drivers: started, ready or waiting for exports\n"
             "  threads           kernel threads\n"
             "  spawn [n]         start n demo threads that count and exit\n"
             "  sleep <ms>        KeDelayExecutionThread for <ms> milliseconds\n"
@@ -58,6 +60,14 @@ QzCmdHelp(VOID)
             "  obj [path]        list an object directory (default \\)\n"
             "  iotest            self-test: I/O manager (drivers, devices, IRPs, files,\n"
             "                    filters, mounting a test file system)\n"
+            "  pnp               start the device tree (HAL, then PCI and below)\n"
+            "  devtree           the device tree with resources\n"
+            "  start <service>   start a boot driver (DriverEntry)\n"
+            "  reg [path]        list a registry key (default \\Registry\\Machine\\System)\n"
+            "  pcicfg            PCI bus 0 configuration space through the HAL\n"
+            "  read <dev> <sec>  read a sector through a device stack (hex dump)\n"
+            "  irptrace [off]    log every IRP dispatch to the debug output\n"
+            "  verbose [off]     show every DbgPrintEx level, not just errors\n"
             "  drvobj            driver objects\n"
             "  devices           device objects\n"
             "  irql              current IRQL, DPC and timer statistics\n"
@@ -136,28 +146,12 @@ QzDemoThread(PVOID Context)
 }
 
 static VOID
-QzCmdDrivers(VOID)
-{
-    PLIST_ENTRY Entry;
-    PBOOT_DRIVER_LIST_ENTRY Driver;
-
-    for (Entry = QzLoaderBlock->BootDriverListHead.Flink;
-         Entry != &QzLoaderBlock->BootDriverListHead;
-         Entry = Entry->Flink)
-    {
-        Driver = CONTAINING_RECORD(Entry, BOOT_DRIVER_LIST_ENTRY, Link);
-        QzPrint("  %wZ\n", &Driver->FilePath);
-    }
-    QzPrint("  %lu boot drivers (loaded and bound to qzkrnl's exports, not started)\n",
-            QzCountBootDrivers());
-}
-
-static VOID
 QzExecute(PCHAR Line)
 {
     PCHAR Cursor = Line;
     PCHAR Cmd = QzNextToken(&Cursor);
     PCHAR Arg = QzNextToken(&Cursor);
+    PCHAR Rest = Cursor;                 /* everything after the first argument */
 
     if (!Cmd)
         return;
@@ -175,7 +169,7 @@ QzExecute(PCHAR Line)
     else if (!strcmp(Cmd, "mods"))
         QzPrintModules();
     else if (!strcmp(Cmd, "drivers"))
-        QzCmdDrivers();
+        QzIoDumpBootDrivers();
     else if (!strcmp(Cmd, "threads"))
         QzDumpThreads();
     else if (!strcmp(Cmd, "spawn"))
@@ -235,6 +229,175 @@ QzExecute(PCHAR Line)
         QzRunObjectTests();
     else if (!strcmp(Cmd, "iotest"))
         QzRunIoTests();
+    else if (!strcmp(Cmd, "pnp"))
+    {
+        NTSTATUS Status = QzPnpStart();
+        ULONG Started, Nodes = QzPnpDeviceCount(&Started);
+        QzPrint("  PnP: 0x%08lx, %lu device node(s), %lu started\n", Status, Nodes, Started);
+    }
+    else if (!strcmp(Cmd, "devtree"))
+        QzPnpDumpTree(TRUE);
+    else if (!strcmp(Cmd, "start") || !strcmp(Cmd, "reg"))
+    {
+        WCHAR Wide[128];
+        UNICODE_STRING Name;
+        PDRIVER_OBJECT Driver;
+        ULONG i = 0;
+        PCSTR Source = Arg ? Arg : (Cmd[0] == 'r' ? "\\Registry\\Machine\\System" : "");
+        while (Source[i] && i < RTL_NUMBER_OF(Wide) - 1)
+        {
+            Wide[i] = (UCHAR)Source[i];
+            i++;
+        }
+        Wide[i] = UNICODE_NULL;
+        if (Cmd[0] == 'r')
+        {
+            QzCmDumpKey(Wide);
+        }
+        else
+        {
+            RtlInitUnicodeString(&Name, Wide);
+            QzPrint("  %S: 0x%08lx\n", Wide, QzIoStartBootDriver(&Name, &Driver));
+        }
+    }
+    else if (!strcmp(Cmd, "pcicfg"))
+    {
+        /* PCI bus 0 through the HAL's bus handlers */
+        ULONG Device, Function, Found = 0;
+        for (Device = 0; Device < 32; Device++)
+        {
+            for (Function = 0; Function < 8; Function++)
+            {
+                PCI_SLOT_NUMBER Slot;
+                ULONG Id = 0xFFFFFFFF, Class = 0, Length;
+                Slot.u.AsULONG = 0;
+                Slot.u.bits.DeviceNumber = Device;
+                Slot.u.bits.FunctionNumber = Function;
+                Length = HalGetBusDataByOffset(PCIConfiguration, 0, Slot.u.AsULONG, &Id, 0, 4);
+                if (Length < 4 || (Id & 0xFFFF) == 0xFFFF || !Id)
+                {
+                    if (Function == 0 && Device == 0)
+                        QzPrint("  00:00.0 -> length %lu, id %08lx\n", Length, Id);
+                    if (Function == 0)
+                        break;
+                    continue;
+                }
+                HalGetBusDataByOffset(PCIConfiguration, 0, Slot.u.AsULONG, &Class, 8, 4);
+                QzPrint("  00:%02lx.%lu  %04lx:%04lx  class %06lx\n", Device, Function, Id & 0xFFFF,
+                        Id >> 16, Class >> 8);
+                Found++;
+            }
+        }
+        QzPrint("  %lu PCI function(s) on bus 0\n", Found);
+    }
+    else if (!strcmp(Cmd, "read"))
+    {
+        /* read <device path> <sector> [sector size]: raw I/O through the
+           device stack, as a file system would do it */
+        CHAR Path[96];
+        ULONG Sector = 0, SectorSize = 0, i = 0;
+        PCSTR p = Arg ? Arg : "";
+        WCHAR Wide[96];
+        UNICODE_STRING Name;
+        OBJECT_ATTRIBUTES Attributes;
+        IO_STATUS_BLOCK IoStatus;
+        LARGE_INTEGER Offset;
+        HANDLE File;
+        NTSTATUS Status;
+        PUCHAR Buffer;
+
+        while (*p && *p != ' ' && i < sizeof(Path) - 1)
+            Path[i++] = *p++;
+        Path[i] = 0;
+        p = Rest;
+        while (*p == ' ')
+            p++;
+        while (*p >= '0' && *p <= '9')
+            Sector = Sector * 10 + (*p++ - '0');
+        while (*p == ' ')
+            p++;
+        while (*p >= '0' && *p <= '9')
+            SectorSize = SectorSize * 10 + (*p++ - '0');
+        for (i = 0; Path[i]; i++)
+            Wide[i] = (UCHAR)Path[i];
+        Wide[i] = 0;
+        if (!SectorSize)
+            SectorSize = (strstr(Path, "CdRom") ? 2048 : 512);
+
+        RtlInitUnicodeString(&Name, Wide);
+        InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+        Status = ZwOpenFile(&File, FILE_READ_DATA | SYNCHRONIZE, &Attributes, &IoStatus,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_NONALERT);
+        if (!NT_SUCCESS(Status))
+        {
+            QzPrint("  read: cannot open %s (0x%08lx)\n", Path, Status);
+        }
+        else if (!(Buffer = ExAllocatePoolWithTag(NonPagedPool, SectorSize, 'daeR')))
+        {
+            ZwClose(File);
+        }
+        else
+        {
+            Offset.QuadPart = (LONGLONG)Sector * SectorSize;
+            Status = ZwReadFile(File, NULL, NULL, NULL, &IoStatus, Buffer, SectorSize, &Offset, NULL);
+            QzPrint("  %s sector %lu (%lu bytes): status 0x%08lx, %lu bytes read\n", Path, Sector,
+                    SectorSize, Status, (ULONG)IoStatus.Information);
+            if (!NT_SUCCESS(Status))
+            {
+                PFILE_OBJECT FileObject;
+                if (NT_SUCCESS(ObReferenceObjectByHandle(File, 0, IoFileObjectType, KernelMode,
+                                                         (PVOID *)&FileObject, NULL)))
+                {
+                    PDEVICE_OBJECT Target = IoGetRelatedDeviceObject(FileObject);
+                    QzPrint("    file object flags %08lx, device %p (%wZ), sent to %p (%wZ), vpb %p\n",
+                            FileObject->Flags, FileObject->DeviceObject,
+                            &FileObject->DeviceObject->DriverObject->DriverName, Target,
+                            &Target->DriverObject->DriverName, FileObject->Vpb);
+                    ObDereferenceObject(FileObject);
+                }
+                {
+                    DISK_GEOMETRY Geometry;
+                    RtlZeroMemory(&Geometry, sizeof(Geometry));
+                    Status = ZwDeviceIoControlFile(File, NULL, NULL, NULL, &IoStatus,
+                                                   IOCTL_CDROM_GET_DRIVE_GEOMETRY, NULL, 0,
+                                                   &Geometry, sizeof(Geometry));
+                    QzPrint("    geometry: status 0x%08lx, %lu bytes/sector, %lu sectors/track, "
+                            "%I64u cylinders, media %u\n", Status, Geometry.BytesPerSector,
+                            Geometry.SectorsPerTrack, Geometry.Cylinders.QuadPart, Geometry.MediaType);
+                }
+            }
+            if (NT_SUCCESS(Status))
+            {
+                ULONG Row, k;
+                for (Row = 0; Row < 64 && Row < IoStatus.Information; Row += 16)
+                {
+                    QzPrint("    %04lx ", Row);
+                    for (k = 0; k < 16; k++)
+                        QzPrint(" %02x", Buffer[Row + k]);
+                    QzPrint("  ");
+                    for (k = 0; k < 16; k++)
+                        QzPrint("%c", (Buffer[Row + k] >= 0x20 && Buffer[Row + k] < 0x7F) ? Buffer[Row + k] : '.');
+                    QzPrint("\n");
+                }
+                if (IoStatus.Information >= 512)
+                    QzPrint("    ... last two bytes of the first 512: %02x %02x\n", Buffer[510], Buffer[511]);
+            }
+            ExFreePoolWithTag(Buffer, 'daeR');
+            ZwClose(File);
+        }
+    }
+    else if (!strcmp(Cmd, "verbose"))
+    {
+        extern BOOLEAN QzDebugVerbose;
+        QzDebugVerbose = !(Arg && !strcmp(Arg, "off"));
+        QzPrint("  all DbgPrintEx levels %s\n", QzDebugVerbose ? "shown" : "filtered (errors only)");
+    }
+    else if (!strcmp(Cmd, "irptrace"))
+    {
+        extern BOOLEAN QzIoTraceIrps;
+        QzIoTraceIrps = !(Arg && !strcmp(Arg, "off"));
+        QzPrint("  IRP tracing %s (on the debug output)\n", QzIoTraceIrps ? "on" : "off");
+    }
     else if (!strcmp(Cmd, "drvobj"))
         QzIoDumpDrivers();
     else if (!strcmp(Cmd, "devices"))

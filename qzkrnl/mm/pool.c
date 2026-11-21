@@ -56,6 +56,53 @@ QzPoolGrow(ULONG Size)
     return Block;
 }
 
+/* Address-ordered insert with coalescing; flags already saved */
+static VOID
+QzPoolInsertFree(PQZ_POOL_HEADER Block)
+{
+    PQZ_POOL_HEADER *Link, Prev = NULL;
+
+    Block->Magic = QZ_POOL_MAGIC_FREE;
+    for (Link = &QzFreeList; *Link && *Link < Block; Link = &(*Link)->NextFree)
+        Prev = *Link;
+    Block->NextFree = *Link;
+    *Link = Block;
+
+    if (Block->NextFree &&
+        (PUCHAR)Block + Block->Size == (PUCHAR)Block->NextFree)
+    {
+        Block->Size += Block->NextFree->Size;
+        Block->NextFree = Block->NextFree->NextFree;
+    }
+    if (Prev && (PUCHAR)Prev + Prev->Size == (PUCHAR)Block)
+    {
+        Prev->Size += Block->Size;
+        Prev->NextFree = Block->NextFree;
+    }
+}
+
+/* Bytes to skip at Start so the data after a header lands on Align */
+static ULONG
+QzPoolFrontGap(ULONG_PTR Start, ULONG Align)
+{
+    ULONG_PTR Data, Aligned;
+    ULONG Gap;
+
+    if (!Align)
+        return 0;
+    Data = Start + sizeof(QZ_POOL_HEADER);
+    Aligned = (Data + Align - 1) & ~(ULONG_PTR)(Align - 1);
+    Gap = (ULONG)(Aligned - Data);
+    /* A non-empty gap must hold a free block of its own */
+    if (Gap && Gap < 2 * sizeof(QZ_POOL_HEADER))
+        Gap += Align;
+    return Gap;
+}
+
+/*
+ * As on NT, requests of a page or more get page-aligned memory (drivers
+ * such as cdrom.sys check), smaller ones 16-byte aligned memory.
+ */
 PVOID
 NTAPI
 ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
@@ -63,7 +110,7 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
                       IN ULONG Tag)
 {
     PQZ_POOL_HEADER *Link, Block = NULL, Rest;
-    ULONG Size, Flags;
+    ULONG Size, Flags, Align = (NumberOfBytes >= QZ_PAGE_SIZE) ? QZ_PAGE_SIZE : 0, Gap;
 
     if (NumberOfBytes == 0 || NumberOfBytes > QZ_POOL_SIZE)
         return NULL;
@@ -73,12 +120,24 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
 
     Flags = QzSaveFlagsAndDisable();
 
-    /* First fit */
+    /* First fit (with room for the alignment gap) */
     for (Link = &QzFreeList; *Link; Link = &(*Link)->NextFree)
     {
-        if ((*Link)->Size >= Size)
+        Gap = QzPoolFrontGap((ULONG_PTR)*Link, Align);
+        if ((*Link)->Size >= Gap + Size)
         {
             Block = *Link;
+            if (Gap)
+            {
+                /* The front part stays free; carve the aligned block after it */
+                PQZ_POOL_HEADER Aligned = (PQZ_POOL_HEADER)((PUCHAR)Block + Gap);
+                Aligned->Size = Block->Size - Gap;
+                Aligned->NextFree = Block->NextFree;
+                Block->Size = Gap;
+                Block->NextFree = Aligned;
+                Link = &Block->NextFree;
+                Block = Aligned;
+            }
             if (Block->Size - Size >= 2 * sizeof(QZ_POOL_HEADER))
             {
                 Rest = (PQZ_POOL_HEADER)((PUCHAR)Block + Size);
@@ -97,7 +156,17 @@ ExAllocatePoolWithTag(IN POOL_TYPE PoolType,
     }
 
     if (!Block)
+    {
+        /* Grow; an alignment gap at the old break becomes a free block */
+        Gap = QzPoolFrontGap(QzPoolBreak, Align);
+        if (Gap)
+        {
+            PQZ_POOL_HEADER Pad = QzPoolGrow(Gap);
+            if (Pad)
+                QzPoolInsertFree(Pad);
+        }
         Block = QzPoolGrow(Size);
+    }
 
     if (Block)
     {
@@ -132,7 +201,7 @@ NTAPI
 ExFreePoolWithTag(IN PVOID P,
                   IN ULONG TagToFree)
 {
-    PQZ_POOL_HEADER Block = (PQZ_POOL_HEADER)P - 1, *Link, Prev = NULL;
+    PQZ_POOL_HEADER Block = (PQZ_POOL_HEADER)P - 1;
     ULONG Flags;
 
     if ((ULONG_PTR)P < QZ_POOL_BASE + sizeof(QZ_POOL_HEADER) ||
@@ -148,25 +217,7 @@ ExFreePoolWithTag(IN PVOID P,
 
     QzPoolBytesUsed -= Block->Size;
     QzPoolAllocations--;
-    Block->Magic = QZ_POOL_MAGIC_FREE;
-
-    /* Insert in address order, then merge with neighbours */
-    for (Link = &QzFreeList; *Link && *Link < Block; Link = &(*Link)->NextFree)
-        Prev = *Link;
-    Block->NextFree = *Link;
-    *Link = Block;
-
-    if (Block->NextFree &&
-        (PUCHAR)Block + Block->Size == (PUCHAR)Block->NextFree)
-    {
-        Block->Size += Block->NextFree->Size;
-        Block->NextFree = Block->NextFree->NextFree;
-    }
-    if (Prev && (PUCHAR)Prev + Prev->Size == (PUCHAR)Block)
-    {
-        Prev->Size += Block->Size;
-        Prev->NextFree = Block->NextFree;
-    }
+    QzPoolInsertFree(Block);
 
     QzRestoreFlags(Flags);
 }

@@ -222,13 +222,11 @@ IoWMIRegistrationControl(IN PDEVICE_OBJECT DeviceObject,
 /* Process and thread queries (one "System" process until stage B6)        */
 /* ---------------------------------------------------------------------- */
 
-static UCHAR QzSystemProcessPlaceholder[0x400] __attribute__((aligned(16)));
-
 PEPROCESS
 NTAPI
 IoGetCurrentProcess(VOID)
 {
-    return (PEPROCESS)QzSystemProcessPlaceholder;
+    return PsInitialSystemProcess;   /* the System process object (ps/thread.c) */
 }
 
 PEPROCESS

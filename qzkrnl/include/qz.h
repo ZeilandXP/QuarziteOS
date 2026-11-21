@@ -112,6 +112,7 @@ typedef struct _QZ_THREAD
     KWAIT_BLOCK WaitBlock[QZ_THREAD_WAIT_BLOCKS];
 
     SHORT KernelApcDisable;        /* KeEnter/LeaveCriticalRegion */
+    PVOID PsThread;                /* ps/thread.c: the Thread object, if any */
 } QZ_THREAD, *PQZ_THREAD;
 
 /* ---------------------------------------------------------------------- */

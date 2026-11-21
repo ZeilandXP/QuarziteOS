@@ -60,11 +60,16 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | Handles | One system handle table (kernel handles, `0x8000xxxx`); `ZwClose`/`ObCloseHandle`, `ZwDuplicateObject`, `ZwQueryObject` (basic/name/type), `ZwMakeTemporaryObject`. Temporary objects lose their name with the last handle. |
 | Executive objects | `Event`, `Semaphore`, `Timer` types; `ZwCreate/Open/Set/Reset/Clear/PulseEvent`, `ZwCreate/Open/Set/CancelTimer`, `ZwWaitForSingleObject`, `ZwWaitForMultipleObjects`. `Adapter`, `Device`, `Driver` and `File` types exist for drivers to name; their procedures come with the I/O manager. |
 | Security | Stubs until tokens exist: access checks grant the generic-mapped request, privilege checks succeed. `SeExports` is real (privilege LUIDs and well-known SIDs). |
-| Pool | `ExAllocatePool[WithTag]` and `ExFreePool[WithTag]`, with tag and caller checks (`BAD_POOL_CALLER`). |
+| I/O manager | Driver and device objects (`IoCreateDriver`, `IoCreateDevice`, device stacks, symbolic links, timers, shutdown notification), IRPs (`IofCallDriver`, `IofCompleteRequest` with completion routines, pending propagation and buffered/direct I/O, cancellation, the IRP builders, remove locks, StartIo queues), file objects (`IoCreateFile`/`ZwCreateFile`/`ZwOpenFile`, relative opens, `Zw{Read,Write,DeviceIoControl,FsControl,QueryInformation,SetInformation,QueryVolumeInformation,QueryDirectory}File`), volume mounting through the VPB and the registered file systems, share access, work items and system worker threads, interrupt connection, controller objects, DMA adapters, MBR partition tables (`IoReadPartitionTableEx`). |
+| PnP manager | Device tree from the HAL's PnP driver (`HalInitPnpDriver`, `IoReportDetectedDevice`) down: IDs and capabilities, driver matching through `CriticalDeviceDatabase` and class filters, on-demand boot driver start (`DllInitialize`, `DriverEntry`, `AddDevice`), resources from requirements or boot configuration translated by the HAL, `IRP_MN_START_DEVICE`, bus relations, `IoInvalidateDeviceRelations`, `IoGetDeviceProperty`, device interfaces and PnP notifications, power IRP helpers. A boot driver that imports kernel exports qzkrnl only has stubs for is not started (`drivers` lists why). |
+| Real drivers | The unmodified ReactOS boot drivers run on it: `pci`, `isapnp`, `pciide`/`pciidex`, `atapi`, `disk`/`classpnp`, `partmgr`, `cdrom` on KMDF (`wdfldr`, `Wdf01000`) and `mountmgr`. On QEMU this gives `\Device\CdRom0`, `\Device\Harddisk0\DR0`, `Partition0..n`, `HarddiskVolume1..n` and the mount manager's volume names, and sectors read through them. |
+| Registry | `\REGISTRY\MACHINE\SYSTEM` is the loader's SYSTEM hive, read in place with ReactOS's hive library (`cmlib`); `CurrentControlSet` resolves through `Select\Current`. `HARDWARE` and the other keys are volatile and writable, and `HARDWARE\DESCRIPTION` is built from the loader's ARC configuration tree (the HAL finds the PCI BIOS there). `Zw{Open,Create,Query,Enumerate}Key`, `Zw{Query,Enumerate,Set,Delete}ValueKey`, `RtlQueryRegistryValues`. Writes to the SYSTEM hive are dropped until stage B5. |
+| Executive | Interlocked lists and S-lists, lookaside lists, rundown protection, ERESOURCE, fast and guarded mutexes, callback objects, `ZwQuerySystemInformation`, system threads as waitable `Thread` objects (`PsCreateSystemThread`), a `Process` object for System. |
+| Pool | `ExAllocatePool[WithTag]` and `ExFreePool[WithTag]`, with tag and caller checks (`BAD_POOL_CALLER`); allocations of a page or more are page-aligned, as on NT. |
 | Version | `RtlGetVersion`, `PsGetVersion` and `NtBuildNumber` report **6.1.7601 Service Pack 1**. |
 | Rtl | Formatted output with the NT format dialect (`%wZ`, `%Z`, `%S`, `%I64u`...), `DbgPrint[Ex]`, `_vsnprintf`, string and memory routines, counted strings, bitmaps (`RtlInitializeBitMap` & co.). |
 | Console | VGA text console with a live status line, PS/2 keyboard, COM1 (115200 8N1) input and output. |
-| Shell | `help`, `ver`, `mem`, `pool`, `pooltest`, `mods`, `drivers`, `threads`, `spawn`, `sleep`, `uptime`, `cpu`, `exports`, `synctest`, `obtest`, `obj [path]`, `irql`, `hal`, `time`, `call <export>`, `bugcheck`, `crash`, `reboot`. |
+| Shell | `help`, `ver`, `mem`, `pool`, `pooltest`, `mods`, `drivers`, `threads`, `spawn`, `sleep`, `uptime`, `cpu`, `exports`, `synctest`, `obtest`, `obj [path]`, `iotest`, `pnp`, `devtree`, `devices`, `drvobj`, `read <device> <sector>`, `reg [path]`, `pcicfg`, `start <service>`, `irptrace`, `verbose`, `irql`, `hal`, `time`, `call <export>`, `bugcheck`, `crash`, `reboot`. |
 
 ## Layout
 
@@ -79,6 +84,10 @@ qzkrnl/
   ob/        object manager: objects and types, namespace and lookup,
              handles, standard directories and links, self-test
   se/        security stubs, SeExports
+  io/        I/O manager: drivers, devices, IRPs, files and mounting,
+             storage helpers, PnP manager, self-test (iotest)
+  cm/        registry: the loader's SYSTEM hive (cmlib), volatile keys
+  ps/        system threads and the System process
   drv/       serial, VGA text, PS/2 keyboard, input queue
   rtl/       formatted output, string/memory runtime, bitmaps, time conversion,
              export lookup
@@ -96,5 +105,7 @@ See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
    `ke/halif.c`, `ke/i386/trap.c`).
 3. ~~Object manager, handles, executive objects~~ (stage B3, done; see
    `ob/`, `ex/exobj.c`, `se/se.c`, `ob/obtest.c`).
-4. I/O manager and driver loading, then start FreeLoader's boot drivers.
-5. Configuration manager on the loader's SYSTEM hive; `smss.exe`.
+4. ~~I/O manager, PnP manager, the boot drivers' disk stack~~ (stage B4,
+   done; see `io/`, `cm/registry.c`, `io/iotest.c`).
+5. Configuration manager proper: writable, persistent hives (drive
+   letters follow from it); then processes and `smss.exe`.

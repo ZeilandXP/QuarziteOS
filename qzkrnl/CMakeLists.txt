@@ -21,9 +21,12 @@ endif()
 spec2def(qzkrnl.exe qzkrnl.spec)
 
 list(APPEND SOURCE
+    cm/registry.c
+    ex/exmore.c
     ex/exobj.c
     ex/init.c
     ex/shell.c
+    ex/sync.c
     ex/version.c
     ex/worker.c
     ke/bugcheck.c
@@ -44,6 +47,8 @@ list(APPEND SOURCE
     io/iotest.c
     io/irp.c
     io/misc.c
+    io/pnp.c
+    io/storage.c
     mm/mdl.c
     mm/mm.c
     mm/pool.c
@@ -52,6 +57,7 @@ list(APPEND SOURCE
     ob/object.c
     ob/obname.c
     ob/obtest.c
+    ps/thread.c
     se/se.c
     drv/input.c
     drv/kbd.c
@@ -60,6 +66,7 @@ list(APPEND SOURCE
     rtl/bitmap.c
     rtl/print.c
     rtl/rtl.c
+    rtl/rtl2.c
     rtl/time.c
     rtl/ustr.c)
 
@@ -77,5 +84,8 @@ add_dependencies(qzkrnl psdk bugcodes)
 
 # Stage B2: qzkrnl runs on the HAL (IRQL, interrupts, clock, CMOS, reboot)
 add_importlibs(qzkrnl hal)
+
+# Stage B4: the loader's SYSTEM hive is read with ReactOS's hive library
+target_link_libraries(qzkrnl cmlib)
 
 add_cd_file(TARGET qzkrnl DESTINATION reactos/system32 NO_CAB FOR all)

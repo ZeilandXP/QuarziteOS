@@ -412,3 +412,140 @@ MmIsAddressValid(IN PVOID VirtualAddress)
         return TRUE;
     return (*(volatile ULONG *)(QZ_PTE_BASE + (Va >> 12) * 4) & QZ_PTE_PRESENT) != 0;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Reserved system mappings (a driver maps different MDLs into one range)  */
+/* ---------------------------------------------------------------------- */
+
+typedef struct _QZ_RESERVED_MAPPING
+{
+    ULONG Tag;
+    ULONG Pages;
+} QZ_RESERVED_MAPPING;
+
+PVOID
+NTAPI
+MmAllocateMappingAddress(IN SIZE_T NumberOfBytes, IN ULONG PoolTag)
+{
+    ULONG Pages = (ULONG)((NumberOfBytes + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT) + 1;
+    ULONG_PTR Va;
+    ULONG IrqFlags = QzSaveFlagsAndDisable();
+
+    if (QzIoSpaceNext + Pages * QZ_PAGE_SIZE > QZ_IOSPACE_BASE + QZ_IOSPACE_SIZE)
+    {
+        QzRestoreFlags(IrqFlags);
+        return NULL;
+    }
+    Va = QzIoSpaceNext;
+    QzIoSpaceNext += Pages * QZ_PAGE_SIZE;
+    QzRestoreFlags(IrqFlags);
+
+    /* The first page records the reservation; callers get the rest */
+    QzMapPage(Va, QzAllocPhysicalPage(), QZ_PTE_WRITE);
+    ((QZ_RESERVED_MAPPING *)Va)->Tag = PoolTag;
+    ((QZ_RESERVED_MAPPING *)Va)->Pages = Pages - 1;
+    return (PVOID)(Va + QZ_PAGE_SIZE);
+}
+
+VOID
+NTAPI
+MmFreeMappingAddress(IN PVOID BaseAddress, IN ULONG PoolTag)
+{
+    /* The address range itself is not recycled yet */
+    UNREFERENCED_PARAMETER(BaseAddress);
+    UNREFERENCED_PARAMETER(PoolTag);
+}
+
+PVOID
+NTAPI
+MmMapLockedPagesWithReservedMapping(IN PVOID MappingAddress, IN ULONG PoolTag, IN PMDL Mdl,
+                                    IN MEMORY_CACHING_TYPE CacheType)
+{
+    QZ_RESERVED_MAPPING *Reservation = (QZ_RESERVED_MAPPING *)((ULONG_PTR)MappingAddress - QZ_PAGE_SIZE);
+    ULONG Pages = ADDRESS_AND_SIZE_TO_SPAN_PAGES((PUCHAR)Mdl->StartVa + Mdl->ByteOffset, Mdl->ByteCount);
+    PPFN_NUMBER Pfns = MmGetMdlPfnArray(Mdl);
+    ULONG Flags = QZ_PTE_WRITE | (CacheType != MmCached ? (QZ_PTE_PCD | QZ_PTE_PWT) : 0), i;
+
+    UNREFERENCED_PARAMETER(PoolTag);
+    if (Pages > Reservation->Pages)
+        return NULL;
+    for (i = 0; i < Pages; i++)
+        QzMapPage((ULONG_PTR)MappingAddress + i * QZ_PAGE_SIZE, (ULONG)Pfns[i], Flags);
+    return (PUCHAR)MappingAddress + Mdl->ByteOffset;
+}
+
+VOID
+NTAPI
+MmUnmapReservedMapping(IN PVOID BaseAddress, IN ULONG PoolTag, IN PMDL Mdl)
+{
+    ULONG Pages = ADDRESS_AND_SIZE_TO_SPAN_PAGES((PUCHAR)Mdl->StartVa + Mdl->ByteOffset, Mdl->ByteCount);
+    ULONG i;
+
+    UNREFERENCED_PARAMETER(PoolTag);
+    for (i = 0; i < Pages; i++)
+        QzUnmapPage((ULONG_PTR)PAGE_ALIGN(BaseAddress) + i * QZ_PAGE_SIZE);
+}
+
+/* ---------------------------------------------------------------------- */
+/* MmGetSystemRoutineAddress: only what is really implemented             */
+/* ---------------------------------------------------------------------- */
+
+#include "exportnames.h"
+
+static int
+QzCompareExportName(PCSTR Name, ULONG Index)
+{
+    return strcmp(Name, QzImplementedExports[Index]);
+}
+
+BOOLEAN
+QzIsExportImplemented(PCSTR Name)
+{
+    ULONG Low = 0, High = RTL_NUMBER_OF(QzImplementedExports);
+    while (Low < High)
+    {
+        ULONG Mid = (Low + High) / 2;
+        int Order = QzCompareExportName(Name, Mid);
+        if (!Order)
+            return TRUE;
+        if (Order < 0)
+            High = Mid;
+        else
+            Low = Mid + 1;
+    }
+    return FALSE;
+}
+
+PVOID
+NTAPI
+MmGetSystemRoutineAddress(IN PUNICODE_STRING SystemRoutineName)
+{
+    CHAR Name[96];
+    ULONG i, Low = 0, High = RTL_NUMBER_OF(QzImplementedExports);
+    PLIST_ENTRY Entry;
+
+    if (SystemRoutineName->Length / sizeof(WCHAR) >= sizeof(Name))
+        return NULL;
+    for (i = 0; i < SystemRoutineName->Length / sizeof(WCHAR); i++)
+        Name[i] = (CHAR)SystemRoutineName->Buffer[i];
+    Name[i] = 0;
+
+    /* The kernel: a stub is as good as absent, callers fall back */
+    while (Low < High)
+    {
+        ULONG Mid = (Low + High) / 2;
+        int Order = QzCompareExportName(Name, Mid);
+        if (!Order)
+            return QzFindKernelExport(Name);
+        if (Order < 0)
+            High = Mid;
+        else
+            Low = Mid + 1;
+    }
+
+    /* Then the HAL (the second module the loader lists) */
+    Entry = QzLoaderBlock->LoadOrderListHead.Flink->Flink;
+    if (Entry != &QzLoaderBlock->LoadOrderListHead)
+        return QzFindImageExport(CONTAINING_RECORD(Entry, QZ_LDR_ENTRY, InLoadOrderLinks)->DllBase, Name);
+    return NULL;
+}

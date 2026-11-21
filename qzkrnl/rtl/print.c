@@ -339,6 +339,8 @@ DbgPrint(IN PCCH Format, ...)
     return STATUS_SUCCESS;
 }
 
+BOOLEAN QzDebugVerbose;
+
 ULONG
 __cdecl
 DbgPrintEx(IN ULONG ComponentId,
@@ -350,8 +352,9 @@ DbgPrintEx(IN ULONG ComponentId,
 
     UNREFERENCED_PARAMETER(ComponentId);
 
-    /* Default NT filtering: only error-level messages are shown */
-    if (!(Level == DPFLTR_ERROR_LEVEL || (Level > 31 && (Level & 1))))
+    /* Default NT filtering: only error-level messages are shown (the
+       shell's "verbose" command shows everything) */
+    if (!QzDebugVerbose && !(Level == DPFLTR_ERROR_LEVEL || (Level > 31 && (Level & 1))))
         return STATUS_SUCCESS;
 
     va_start(Args, Format);
@@ -360,13 +363,38 @@ DbgPrintEx(IN ULONG ComponentId,
     return STATUS_SUCCESS;
 }
 
+/*
+ * MSVCRT semantics, which ntstrsafe relies on: at most Count characters
+ * are stored; a NUL only if there is room; the result is the length when
+ * it fits (including exactly Count, with no NUL) and -1 otherwise.
+ */
 int
 __cdecl
 _vsnprintf(char *Buffer, size_t Count, const char *Format, va_list Args)
 {
-    int Result = QzVsnprintf(Buffer, Count, Format, Args);
-    /* MSVCRT semantics: -1 when the output did not fit */
-    return ((size_t)Result >= Count) ? -1 : Result;
+    char Small[256];
+    char *Temp = Small;
+    size_t TempSize = sizeof(Small);
+    int Result;
+
+    if (Count + 1 > TempSize)
+    {
+        Temp = ExAllocatePoolWithTag(NonPagedPool, Count + 1, 'tnrP');
+        if (!Temp)
+            return -1;
+        TempSize = Count + 1;
+    }
+    Result = QzVsnprintf(Temp, TempSize, Format, Args);
+    if (Result >= 0)
+    {
+        size_t Stored = min((size_t)Result, Count);
+        RtlCopyMemory(Buffer, Temp, Stored);
+        if (Stored < Count)
+            Buffer[Stored] = 0;
+    }
+    if (Temp != Small)
+        ExFreePoolWithTag(Temp, 'tnrP');
+    return ((size_t)Result > Count) ? -1 : Result;
 }
 
 int
@@ -445,16 +473,16 @@ _vsnwprintf(wchar_t *Buffer, size_t Count, const wchar_t *Format, va_list Args)
     }
     Narrow[i] = 0;
 
-    if (Count > OutSize)
+    if (Count + 1 > OutSize)
     {
-        Out = ExAllocatePoolWithTag(NonPagedPool, Count, 'tnrP');
+        Out = ExAllocatePoolWithTag(NonPagedPool, Count + 1, 'tnrP');
         if (!Out)
         {
             Out = Small;
         }
         else
         {
-            OutSize = Count;
+            OutSize = Count + 1;
         }
     }
     Result = QzVsnprintf(Out, OutSize, Narrow, Args);
@@ -464,7 +492,7 @@ _vsnwprintf(wchar_t *Buffer, size_t Count, const wchar_t *Format, va_list Args)
         Buffer[j] = 0;
     if (Out != Small)
         ExFreePoolWithTag(Out, 'tnrP');
-    return ((size_t)Result >= Count) ? -1 : Result;
+    return ((size_t)Result > Count) ? -1 : Result;
 }
 
 int

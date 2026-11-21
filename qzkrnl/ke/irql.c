@@ -269,7 +269,11 @@ KeFlushQueuedDpcs(VOID)
 static __inline BOOLEAN
 QzTrySetLock(PKSPIN_LOCK SpinLock)
 {
-    return (__atomic_fetch_or((volatile ULONG_PTR *)SpinLock, 1, __ATOMIC_ACQUIRE) & 1) == 0;
+    /* The owner is recorded as "thread | 1", the convention the checked HAL
+       (which acquires and releases some locks itself) verifies */
+    ULONG_PTR Expected = 0, Owner = (ULONG_PTR)QzCurrentThread | 1;
+    return __atomic_compare_exchange_n((volatile ULONG_PTR *)SpinLock, &Expected, Owner, FALSE,
+                                       __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
 }
 
 static __inline VOID

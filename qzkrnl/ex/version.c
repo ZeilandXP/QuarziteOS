@@ -40,10 +40,11 @@ NTSTATUS
 NTAPI
 RtlGetVersion(IN OUT PRTL_OSVERSIONINFOW lpVersionInformation)
 {
+    /* Like NT's kernel-mode RtlGetVersion: the basic fields are filled
+       whatever dwOSVersionInfoSize says (drivers such as the KMDF loader
+       call it with the size uninitialized); the extended ones only for
+       an RTL_OSVERSIONINFOEXW */
     ULONG Size = lpVersionInformation->dwOSVersionInfoSize;
-
-    if (Size != sizeof(RTL_OSVERSIONINFOW) && Size != sizeof(RTL_OSVERSIONINFOEXW))
-        return STATUS_INVALID_PARAMETER;
 
     lpVersionInformation->dwMajorVersion = QZ_NT_MAJOR;
     lpVersionInformation->dwMinorVersion = QZ_NT_MINOR;

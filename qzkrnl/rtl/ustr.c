@@ -147,8 +147,9 @@ VOID
 NTAPI
 RtlFreeUnicodeString(IN PUNICODE_STRING UnicodeString)
 {
+    /* No tag check: callers hand in strings allocated with their own tag */
     if (UnicodeString->Buffer)
-        ExFreePoolWithTag(UnicodeString->Buffer, QZ_STRING_TAG);
+        ExFreePool(UnicodeString->Buffer);
     UnicodeString->Buffer = NULL;
     UnicodeString->Length = UnicodeString->MaximumLength = 0;
 }
@@ -312,7 +313,7 @@ NTAPI
 RtlFreeAnsiString(IN PANSI_STRING AnsiString)
 {
     if (AnsiString->Buffer)
-        ExFreePoolWithTag(AnsiString->Buffer, QZ_STRING_TAG);
+        ExFreePool(AnsiString->Buffer);
     AnsiString->Buffer = NULL;
     AnsiString->Length = AnsiString->MaximumLength = 0;
 }

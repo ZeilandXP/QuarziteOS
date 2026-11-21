@@ -340,6 +340,243 @@
 @ stdcall KeRemoveByKeyDeviceQueue(ptr long)
 @ stdcall KeRemoveByKeyDeviceQueueIfBusy(ptr long)
 @ stdcall KeRemoveEntryDeviceQueue(ptr ptr)
+@ stdcall ZwOpenKey(ptr long ptr)
+@ stdcall ZwCreateKey(ptr long ptr long ptr long ptr)
+@ stdcall ZwQueryKey(ptr long ptr long ptr)
+@ stdcall ZwEnumerateKey(ptr long long ptr long ptr)
+@ stdcall ZwQueryValueKey(ptr ptr long ptr long ptr)
+@ stdcall ZwEnumerateValueKey(ptr long long ptr long ptr)
+@ stdcall ZwSetValueKey(ptr ptr long long ptr long)
+@ stdcall ZwDeleteValueKey(ptr ptr)
+@ stdcall ZwDeleteKey(ptr)
+@ stdcall ZwFlushKey(ptr)
+@ stdcall RtlQueryRegistryValues(long wstr ptr ptr ptr)
+@ stdcall RtlWriteRegistryValue(long wstr wstr long ptr long)
+@ stdcall RtlDeleteRegistryValue(long wstr wstr)
+@ stdcall RtlCheckRegistryKey(long wstr)
+@ stdcall RtlCreateRegistryKey(long wstr)
+@ stdcall IoSetThreadHardErrorMode(long)
+@ stdcall IoInvalidateDeviceRelations(ptr long)
+@ stdcall IoSynchronousInvalidateDeviceRelations(ptr long)
+@ stdcall IoInvalidateDeviceState(ptr)
+@ stdcall IoRequestDeviceEject(ptr)
+@ stdcall IoReportDetectedDevice(ptr long long long ptr ptr long ptr)
+@ stdcall IoGetDeviceProperty(ptr long long ptr ptr)
+@ stdcall IoOpenDeviceRegistryKey(ptr long long ptr)
+@ stdcall IoOpenDeviceInterfaceRegistryKey(ptr long ptr)
+@ stdcall IoRegisterDeviceInterface(ptr ptr ptr ptr)
+@ stdcall IoSetDeviceInterfaceState(ptr long)
+@ stdcall IoGetDeviceInterfaces(ptr ptr long ptr)
+@ stdcall IoRegisterPlugPlayNotification(long long ptr ptr ptr ptr ptr)
+@ stdcall IoUnregisterPlugPlayNotification(ptr)
+@ stdcall PoCallDriver(ptr ptr)
+@ stdcall PoStartNextPowerIrp(ptr)
+@ stdcall PoSetPowerState(ptr long long)
+@ stdcall PoRequestPowerIrp(ptr long long ptr ptr ptr)
+@ stdcall PoRegisterDeviceForIdleDetection(ptr long long long)
+@ cdecl tolower()
+@ cdecl toupper()
+@ cdecl towlower()
+@ cdecl towupper()
+@ cdecl isdigit()
+@ cdecl isxdigit()
+@ cdecl isspace()
+@ cdecl isupper()
+@ cdecl islower()
+@ cdecl isprint()
+@ cdecl strcpy()
+@ cdecl strcat()
+@ cdecl strchr()
+@ cdecl strrchr()
+@ cdecl strstr()
+@ cdecl _strnicmp()
+@ cdecl _stricmp()
+@ cdecl _strupr()
+@ cdecl _strlwr()
+@ cdecl wcscpy()
+@ cdecl wcsncpy()
+@ cdecl wcscat()
+@ cdecl wcsncat()
+@ cdecl wcsncmp()
+@ cdecl wcscmp()
+@ cdecl _wcsnicmp()
+@ cdecl _wcsicmp()
+@ cdecl wcschr()
+@ cdecl wcsrchr()
+@ cdecl wcsstr()
+@ cdecl _wcsupr()
+@ cdecl _wcslwr()
+@ cdecl atoi()
+@ fastcall -arch=i386 ExfInterlockedInsertHeadList(ptr ptr ptr)
+@ fastcall -arch=i386 ExfInterlockedInsertTailList(ptr ptr ptr)
+@ fastcall -arch=i386 ExfInterlockedRemoveHeadList(ptr ptr)
+@ fastcall -arch=i386 ExfInterlockedPushEntryList(ptr ptr ptr)
+@ fastcall -arch=i386 ExfInterlockedPopEntryList(ptr ptr)
+@ stdcall ExInterlockedInsertHeadList(ptr ptr ptr)
+@ stdcall ExInterlockedInsertTailList(ptr ptr ptr)
+@ stdcall ExInterlockedRemoveHeadList(ptr ptr)
+@ stdcall ExInterlockedPushEntryList(ptr ptr ptr)
+@ stdcall ExInterlockedPopEntryList(ptr ptr)
+@ fastcall -arch=i386 ExfInterlockedAddUlong(ptr long ptr)
+@ stdcall ExInterlockedAddUlong(ptr long ptr)
+@ stdcall ExInterlockedAddLargeInteger(ptr long long ptr)
+@ fastcall -arch=i386 ExInterlockedAddLargeStatistic(ptr long)
+@ fastcall -arch=i386 InterlockedPushEntrySList(ptr ptr)
+@ fastcall -arch=i386 InterlockedPopEntrySList(ptr)
+@ fastcall -arch=i386 ExInterlockedFlushSList(ptr)
+@ fastcall -arch=i386 ExInterlockedPushEntrySList(ptr ptr ptr)
+@ fastcall -arch=i386 ExInterlockedPopEntrySList(ptr ptr)
+@ stdcall ExInitializeNPagedLookasideList(ptr ptr ptr long long long long)
+@ stdcall ExInitializePagedLookasideList(ptr ptr ptr long long long long)
+@ stdcall ExDeleteNPagedLookasideList(ptr)
+@ stdcall ExDeletePagedLookasideList(ptr)
+@ stdcall ExAllocateFromPagedLookasideList(ptr) ExiAllocateFromPagedLookasideList
+@ stdcall ExFreeToPagedLookasideList(ptr ptr) ExiFreeToPagedLookasideList
+@ fastcall ExInitializeRundownProtection(ptr) ExfInitializeRundownProtection
+@ fastcall ExReInitializeRundownProtection(ptr) ExfReInitializeRundownProtection
+@ fastcall ExAcquireRundownProtection(ptr) ExfAcquireRundownProtection
+@ fastcall ExAcquireRundownProtectionEx(ptr long) ExfAcquireRundownProtectionEx
+@ fastcall ExReleaseRundownProtection(ptr) ExfReleaseRundownProtection
+@ fastcall ExReleaseRundownProtectionEx(ptr long) ExfReleaseRundownProtectionEx
+@ fastcall ExWaitForRundownProtectionRelease(ptr) ExfWaitForRundownProtectionRelease
+@ stdcall ExSizeOfRundownProtectionCacheAware()
+@ stdcall ExInitializeRundownProtectionCacheAware(ptr long)
+@ stdcall ExAllocateCacheAwareRundownProtection(long long)
+@ stdcall ExFreeCacheAwareRundownProtection(ptr)
+@ fastcall ExAcquireRundownProtectionCacheAware(ptr) ExfAcquireRundownProtectionCacheAware
+@ fastcall ExAcquireRundownProtectionCacheAwareEx(ptr long) ExfAcquireRundownProtectionCacheAwareEx
+@ fastcall ExReleaseRundownProtectionCacheAware(ptr) ExfReleaseRundownProtectionCacheAware
+@ fastcall ExReleaseRundownProtectionCacheAwareEx(ptr long) ExfReleaseRundownProtectionCacheAwareEx
+@ fastcall ExWaitForRundownProtectionReleaseCacheAware(ptr) ExfWaitForRundownProtectionReleaseCacheAware
+@ fastcall ExReInitializeRundownProtectionCacheAware(ptr) ExfReInitializeRundownProtectionCacheAware
+@ stdcall KeEnterGuardedRegion() _KeEnterGuardedRegion
+@ stdcall KeLeaveGuardedRegion() _KeLeaveGuardedRegion
+@ stdcall KeAreAllApcsDisabled()
+@ fastcall KeInitializeGuardedMutex(ptr)
+@ fastcall KeAcquireGuardedMutexUnsafe(ptr)
+@ fastcall KeReleaseGuardedMutexUnsafe(ptr)
+@ fastcall KeAcquireGuardedMutex(ptr)
+@ fastcall KeReleaseGuardedMutex(ptr)
+@ fastcall KeTryToAcquireGuardedMutex(ptr)
+@ stdcall KeAcquireInterruptSpinLock(ptr)
+@ stdcall KeReleaseInterruptSpinLock(ptr long)
+@ extern InitSafeBootMode
+@ stdcall ExUuidCreate(ptr)
+@ stdcall RtlInitializeGenericTableAvl(ptr ptr ptr ptr ptr)
+@ stdcall RtlInsertElementGenericTableAvl(ptr ptr long ptr)
+@ stdcall RtlLookupElementGenericTableAvl(ptr ptr)
+@ stdcall RtlDeleteElementGenericTableAvl(ptr ptr)
+@ stdcall RtlNumberGenericTableElementsAvl(ptr)
+@ stdcall RtlIsGenericTableEmptyAvl(ptr)
+@ stdcall RtlEnumerateGenericTableWithoutSplayingAvl(ptr ptr)
+@ stdcall RtlEnumerateGenericTableAvl(ptr long)
+@ stdcall RtlGetElementGenericTableAvl(ptr long)
+@ stdcall RtlMultiByteToUnicodeN(ptr long ptr str long)
+@ stdcall RtlMultiByteToUnicodeSize(ptr str long)
+@ stdcall RtlUnicodeToMultiByteN(ptr long ptr wstr long)
+@ stdcall RtlUnicodeToMultiByteSize(ptr wstr long)
+@ stdcall RtlUnicodeStringToInteger(ptr long ptr)
+@ stdcall RtlStringFromGUID(ptr ptr)
+@ stdcall RtlGUIDFromString(ptr ptr)
+@ stdcall RtlUnwind(ptr ptr ptr ptr)
+@ stdcall RtlCaptureStackBackTrace(long long ptr ptr)
+@ stdcall vDbgPrintEx(long long str ptr)
+@ stdcall vDbgPrintExWithPrefix(str long long str ptr)
+@ stdcall IoForwardAndCatchIrp(ptr ptr) IoForwardIrpSynchronously
+@ stdcall IoSetCompletionRoutineEx(ptr ptr ptr ptr long long long)
+@ stdcall IoCreateController(long)
+@ stdcall IoDeleteController(ptr)
+@ stdcall IoFreeController(ptr)
+@ stdcall IoAllocateController(ptr ptr ptr ptr)
+@ stdcall IoGetDmaAdapter(ptr ptr ptr)
+@ stdcall -arch=i386,arm READ_REGISTER_UCHAR(ptr)
+@ stdcall -arch=i386,arm READ_REGISTER_USHORT(ptr)
+@ stdcall -arch=i386,arm READ_REGISTER_ULONG(ptr)
+@ stdcall -arch=i386,arm WRITE_REGISTER_UCHAR(ptr long)
+@ stdcall -arch=i386,arm WRITE_REGISTER_USHORT(ptr long)
+@ stdcall -arch=i386,arm WRITE_REGISTER_ULONG(ptr long)
+@ stdcall -arch=i386,arm READ_REGISTER_BUFFER_UCHAR(ptr ptr long)
+@ stdcall -arch=i386,arm READ_REGISTER_BUFFER_USHORT(ptr ptr long)
+@ stdcall -arch=i386,arm READ_REGISTER_BUFFER_ULONG(ptr ptr long)
+@ stdcall -arch=i386,arm WRITE_REGISTER_BUFFER_UCHAR(ptr ptr long)
+@ stdcall -arch=i386,arm WRITE_REGISTER_BUFFER_USHORT(ptr ptr long)
+@ stdcall -arch=i386,arm WRITE_REGISTER_BUFFER_ULONG(ptr ptr long)
+@ fastcall HalExamineMBR(ptr long long ptr)
+@ stdcall IoReadDiskSignature(ptr long ptr)
+@ stdcall IoReadPartitionTableEx(ptr ptr)
+@ stdcall IoWritePartitionTableEx(ptr ptr)
+@ fastcall IoSetPartitionInformation(ptr long long long)
+@ stdcall IoSetPartitionInformationEx(ptr long ptr)
+@ stdcall IoCreateDisk(ptr ptr)
+@ stdcall IoGetDevicePropertyData(ptr ptr long long long ptr ptr ptr)
+@ fastcall IoGetPagingIoPriority(ptr)
+@ stdcall IoReportTargetDeviceChangeAsynchronous(ptr ptr ptr ptr)
+@ stdcall IoSetStartIoAttributes(ptr long long)
+@ stdcall IoWMIWriteEvent(ptr)
+@ stdcall IoSetSystemPartition(ptr)
+@ stdcall RtlCreateSystemVolumeInformationFolder(ptr)
+@ stdcall ZwQueryDirectoryFile(ptr ptr ptr ptr ptr ptr long long long ptr long)
+@ stdcall MmAllocateMappingAddress(long long)
+@ stdcall MmFreeMappingAddress(ptr long)
+@ stdcall MmMapLockedPagesWithReservedMapping(ptr long ptr long)
+@ stdcall MmUnmapReservedMapping(ptr long ptr)
+@ stdcall MmGetSystemRoutineAddress(ptr)
+@ stdcall PsCreateSystemThread(ptr long ptr ptr ptr ptr ptr)
+@ stdcall PsTerminateSystemThread(long)
+@ stdcall PsGetThreadHardErrorsAreDisabled(ptr)
+@ stdcall PsSetThreadHardErrorsAreDisabled(ptr long)
+@ extern PsThreadType
+@ extern PsProcessType
+@ extern PsInitialSystemProcess
+@ stdcall IoForwardIrpSynchronously(ptr ptr)
+@ stdcall IoReportHalResourceUsage(ptr ptr ptr long)
+@ stdcall IoReportResourceUsage(ptr ptr ptr long ptr ptr long long ptr)
+@ stdcall IoReportResourceForDetection(ptr ptr long ptr ptr long ptr)
+@ fastcall ExAcquireFastMutexUnsafe(ptr)
+@ fastcall ExReleaseFastMutexUnsafe(ptr)
+@ fastcall -arch=i386 ExiAcquireFastMutex(ptr)
+@ fastcall -arch=i386 ExiReleaseFastMutex(ptr)
+@ fastcall -arch=i386 ExiTryToAcquireFastMutex(ptr)
+@ stdcall ExInitializeResourceLite(ptr)
+@ stdcall ExDeleteResourceLite(ptr)
+@ stdcall ExReinitializeResourceLite(ptr)
+@ stdcall ExAcquireResourceExclusiveLite(ptr long)
+@ stdcall ExAcquireResourceSharedLite(ptr long)
+@ stdcall ExAcquireSharedStarveExclusive(ptr long)
+@ stdcall ExAcquireSharedWaitForExclusive(ptr long)
+@ fastcall ExReleaseResourceLite(ptr)
+@ stdcall ExReleaseResourceForThreadLite(ptr long)
+@ stdcall ExConvertExclusiveToSharedLite(ptr)
+@ stdcall ExIsResourceAcquiredExclusiveLite(ptr)
+@ stdcall ExIsResourceAcquiredSharedLite(ptr)
+@ stdcall ExGetExclusiveWaiterCount(ptr)
+@ stdcall ExGetSharedWaiterCount(ptr)
+@ stdcall ExEnterCriticalRegionAndAcquireResourceExclusive(ptr)
+@ fastcall ExReleaseResourceAndLeaveCriticalRegion(ptr)
+@ stdcall ExCreateCallback(ptr ptr long long)
+@ stdcall ExRegisterCallback(ptr ptr ptr)
+@ stdcall ExUnregisterCallback(ptr)
+@ stdcall ExNotifyCallback(ptr ptr ptr)
+@ stdcall ZwQuerySystemInformation(long ptr long ptr)
+@ stdcall ZwLoadDriver(ptr)
+@ stdcall ZwUnloadDriver(ptr)
+@ stdcall KdRefreshDebuggerNotPresent()
+@ stdcall DbgBreakPoint()
+@ stdcall DbgBreakPointWithStatus(long)
+@ stdcall MmIsDriverVerifying(ptr)
+@ stdcall MmLockPagableDataSection(ptr) MmLockPageableDataSection
+@ stdcall MmLockPagableSectionByHandle(ptr) MmLockPageableSectionByHandle
+@ stdcall MmUnlockPagableImageSection(ptr) MmUnlockPageableImageSection
+@ stdcall MmPageEntireDriver(ptr)
+@ stdcall MmResetDriverPaging(ptr)
+@ stdcall MmSizeOfMdl(ptr long)
+@ stdcall ExAllocatePoolWithQuotaTag(long long long)
+@ stdcall ExAllocatePoolWithQuota(long long)
+@ stdcall RtlImageDirectoryEntryToData(ptr long long ptr)
+@ stdcall RtlImageNtHeader(ptr)
+@ stdcall IoSetDevicePropertyData(ptr ptr long long long long ptr)
+@ stdcall PsIsThreadTerminating(ptr)
+@ stdcall ZwPowerInformation(long ptr long ptr long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -387,8 +624,6 @@
 @ stub CcZeroData
 @ stub CmRegisterCallback
 @ stub CmUnRegisterCallback
-@ stub DbgBreakPoint
-@ stub DbgBreakPointWithStatus
 @ stub DbgCommandString
 @ stub DbgLoadImageSymbols
 @ stub DbgPrintReturnControlC
@@ -396,108 +631,43 @@
 @ stub DbgQueryDebugFilterState
 @ stub DbgSetDebugFilterState
 @ stub -arch=x86_64 ExAcquireFastMutex
-@ stub ExAcquireFastMutexUnsafe
-@ stub ExAcquireResourceExclusiveLite
-@ stub ExAcquireResourceSharedLite
-@ stub ExAcquireRundownProtection
-@ stub ExAcquireRundownProtectionCacheAware
-@ stub ExAcquireRundownProtectionCacheAwareEx
-@ stub ExAcquireRundownProtectionEx
-@ stub ExAcquireSharedStarveExclusive
-@ stub ExAcquireSharedWaitForExclusive
-@ stub ExAllocateCacheAwareRundownProtection
-@ stub ExAllocateFromPagedLookasideList
-@ stub ExAllocatePoolWithQuota
-@ stub ExAllocatePoolWithQuotaTag
 @ stub ExAllocatePoolWithTagPriority
-@ stub ExConvertExclusiveToSharedLite
-@ stub ExCreateCallback
-@ stub ExDeleteNPagedLookasideList
-@ stub ExDeletePagedLookasideList
-@ stub ExDeleteResourceLite
 @ extern ExDesktopObjectType QzUnimplementedData
 @ stub ExDisableResourceBoostLite
 @ stub ExEnterCriticalRegionAndAcquireFastMutexUnsafe
-@ stub ExEnterCriticalRegionAndAcquireResourceExclusive
 @ stub ExEnterCriticalRegionAndAcquireResourceShared
 @ stub ExEnterCriticalRegionAndAcquireSharedWaitForExclusive
 @ stub ExEnumHandleTable
 @ stub ExExtendZone
-@ stub ExFreeCacheAwareRundownProtection
-@ stub ExFreeToPagedLookasideList
 @ stub ExGetCurrentProcessorCounts
 @ stub ExGetCurrentProcessorCpuUsage
-@ stub ExGetExclusiveWaiterCount
-@ stub ExGetSharedWaiterCount
-@ stub ExInitializeNPagedLookasideList
-@ stub ExInitializePagedLookasideList
-@ stub ExInitializeResourceLite
-@ stub ExInitializeRundownProtection
-@ stub ExInitializeRundownProtectionCacheAware
 @ stub ExInitializeZone
-@ stub ExInterlockedAddLargeInteger
-@ stub -arch=i386 ExInterlockedAddLargeStatistic
-@ stub ExInterlockedAddUlong
 @ stub -arch=i386 ExInterlockedCompareExchange64
 @ stub -arch=i386 ExInterlockedDecrementLong
 @ stub -arch=i386 ExInterlockedExchangeUlong
 @ stub ExInterlockedExtendZone
-@ stub -arch=i386 ExInterlockedFlushSList
 @ stub -arch=i386 ExInterlockedIncrementLong
-@ stub ExInterlockedInsertHeadList
-@ stub ExInterlockedInsertTailList
-@ stub ExInterlockedPopEntryList
-@ stub -arch=i386 ExInterlockedPopEntrySList
-@ stub ExInterlockedPushEntryList
-@ stub -arch=i386 ExInterlockedPushEntrySList
-@ stub ExInterlockedRemoveHeadList
 @ stub ExIsProcessorFeaturePresent
-@ stub ExIsResourceAcquiredExclusiveLite
-@ stub ExIsResourceAcquiredSharedLite
 @ stub ExLocalTimeToSystemTime
-@ stub ExNotifyCallback
 @ stub -arch=x86_64,arm ExQueryDepthSList
 @ stub ExQueryPoolBlockSize
 @ stub ExRaiseAccessViolation
 @ stub ExRaiseDatatypeMisalignment
 @ stub ExRaiseHardError
-@ stub ExReInitializeRundownProtection
-@ stub ExReInitializeRundownProtectionCacheAware
-@ stub ExRegisterCallback
-@ stub ExReinitializeResourceLite
 @ stub -arch=x86_64 ExReleaseFastMutex
-@ stub ExReleaseFastMutexUnsafe
 @ stub ExReleaseFastMutexUnsafeAndLeaveCriticalRegion
-@ stub ExReleaseResourceAndLeaveCriticalRegion
-@ stub ExReleaseResourceForThreadLite
-@ stub ExReleaseResourceLite
-@ stub ExReleaseRundownProtection
-@ stub ExReleaseRundownProtectionCacheAware
-@ stub ExReleaseRundownProtectionCacheAwareEx
-@ stub ExReleaseRundownProtectionEx
 @ stub ExRundownCompleted
 @ stub ExRundownCompletedCacheAware
 @ stub ExSetResourceOwnerPointer
 @ stub ExSetTimerResolution
-@ stub ExSizeOfRundownProtectionCacheAware
 @ stub ExSystemExceptionFilter
 @ stub ExSystemTimeToLocalTime
 @ stub -arch=x86_64 ExTryToAcquireFastMutex
-@ stub ExUnregisterCallback
-@ stub ExUuidCreate
 @ stub ExVerifySuite
-@ stub ExWaitForRundownProtectionRelease
-@ stub ExWaitForRundownProtectionReleaseCacheAware
 @ extern ExWindowStationObjectType QzUnimplementedData
 @ stub ExfAcquirePushLockExclusive
 @ stub ExfAcquirePushLockShared
-@ stub -arch=i386 ExfInterlockedAddUlong
 @ stub -arch=i386 ExfInterlockedCompareExchange64
-@ stub -arch=i386 ExfInterlockedInsertHeadList
-@ stub -arch=i386 ExfInterlockedInsertTailList
-@ stub -arch=i386 ExfInterlockedPopEntryList
-@ stub -arch=i386 ExfInterlockedPushEntryList
-@ stub -arch=i386 ExfInterlockedRemoveHeadList
 @ stub ExfReleasePushLock
 @ stub ExfReleasePushLockExclusive
 @ stub ExfReleasePushLockShared
@@ -512,9 +682,6 @@
 @ stub -arch=i386 Exi386InterlockedDecrementLong
 @ stub -arch=i386 Exi386InterlockedExchangeUlong
 @ stub -arch=i386 Exi386InterlockedIncrementLong
-@ stub -arch=i386 ExiAcquireFastMutex
-@ stub -arch=i386 ExiReleaseFastMutex
-@ stub -arch=i386 ExiTryToAcquireFastMutex
 @ stub FsRtlAcquireFileExclusive
 @ stub FsRtlAddBaseMcbEntry
 @ stub FsRtlAddLargeMcbEntry
@@ -634,7 +801,6 @@
 @ stub FsRtlUninitializeLargeMcb
 @ stub FsRtlUninitializeMcb
 @ stub FsRtlUninitializeOplock
-@ stub HalExamineMBR
 @ stub HeadlessDispatch
 @ stub InbvAcquireDisplayOwnership
 @ stub InbvCheckDisplayOwnership
@@ -648,20 +814,14 @@
 @ stub InbvSetScrollRegion
 @ stub InbvSetTextColor
 @ stub InbvSolidColorFill
-@ extern InitSafeBootMode QzUnimplementedData
 @ stub -arch=i386,arm InterlockedCompareExchange
 @ stub -arch=i386,arm InterlockedDecrement
 @ stub -arch=i386,arm InterlockedExchange
 @ stub -arch=i386,arm InterlockedExchangeAdd
 @ stub -arch=i386,arm InterlockedIncrement
-@ stub -arch=i386 InterlockedPopEntrySList
-@ stub -arch=i386 InterlockedPushEntrySList
-@ stub -arch=arm InterlockedPopEntrySList
-@ stub -arch=arm InterlockedPushEntrySList
 @ stub -arch=x86_64 InitializeSListHead
 @ stub IoAcquireVpbSpinLock
 @ stub IoAllocateAdapterChannel
-@ stub IoAllocateController
 @ stub IoAssignDriveLetters
 @ stub IoAssignResources
 @ stub IoCancelFileOpen
@@ -672,8 +832,6 @@
 @ stub IoCheckQuerySetVolumeInformation
 @ stub IoCheckQuotaBufferValidity
 @ stub IoConnectInterruptEx
-@ stub IoCreateController
-@ stub IoCreateDisk
 @ stub IoCreateNotificationEvent
 @ stub IoCreateSynchronizationEvent
 @ stub IoCsqInitialize
@@ -682,7 +840,6 @@
 @ stub IoCsqInsertIrpEx
 @ stub IoCsqRemoveIrp
 @ stub IoCsqRemoveNextIrp
-@ stub IoDeleteController
 @ extern IoDeviceHandlerObjectSize QzUnimplementedData
 @ extern IoDeviceHandlerObjectType QzUnimplementedData
 @ stub IoDisconnectInterruptEx
@@ -690,30 +847,18 @@
 @ stub IoEnumerateDeviceObjectList
 @ stub IoEnumerateRegisteredFiltersList
 @ stub IoFastQueryNetworkAttributes
-@ stub IoForwardAndCatchIrp
-@ stub IoForwardIrpSynchronously
-@ stub IoFreeController
 @ stub IoGetBootDiskInformation
 @ stub IoGetDeviceInterfaceAlias
 @ stub -version=0x602+ IoGetDeviceInterfacePropertyData
-@ stub IoGetDeviceInterfaces
-@ stub IoGetDeviceProperty
-@ stub IoGetDevicePropertyData
 @ stub IoGetDeviceToVerify
 @ stub IoGetDiskDeviceObject
-@ stub IoGetDmaAdapter
 @ stub IoGetInitialStack
-@ stub IoGetPagingIoPriority
 @ stub IoGetRequestorSessionId
 @ stub IoGetTopLevelIrp
-@ stub IoInvalidateDeviceRelations
-@ stub IoInvalidateDeviceState
 @ stub -arch=x86_64 IoIs32bitProcess
 @ stub IoIsFileOriginRemote
 @ stub IoIsSystemThread
 @ stub IoIsValidNameGraftingBuffer
-@ stub IoOpenDeviceInterfaceRegistryKey
-@ stub IoOpenDeviceRegistryKey
 @ stub IoPageRead
 @ stub IoPnPDeliverServicePowerNotification
 @ stub IoQueryDeviceDescription
@@ -723,41 +868,21 @@
 @ stub IoQueueThreadIrp
 @ stub IoRaiseHardError
 @ stub IoRaiseInformationalHardError
-@ stub IoReadDiskSignature
 @ extern IoReadOperationCount QzUnimplementedData
 @ stub IoReadPartitionTable
-@ stub IoReadPartitionTableEx
 @ extern IoReadTransferCount QzUnimplementedData
-@ stub IoRegisterDeviceInterface
-@ stub IoRegisterPlugPlayNotification
 @ stub IoReleaseVpbSpinLock
-@ stub IoReportDetectedDevice
-@ stub IoReportHalResourceUsage
-@ stub IoReportResourceForDetection
-@ stub IoReportResourceUsage
 @ stub IoReportTargetDeviceChange
-@ stub IoReportTargetDeviceChangeAsynchronous
-@ stub IoRequestDeviceEject
-@ stub IoSetCompletionRoutineEx
 @ stub -version=0x602+ IoSetDeviceInterfacePropertyData
-@ stub IoSetDeviceInterfaceState
-@ stub IoSetDevicePropertyData
 @ stub IoSetDeviceToVerify
 @ stub IoSetFileOrigin
 @ stub IoSetInformation
 @ stub IoSetIoCompletion
-@ stub IoSetPartitionInformation
-@ stub IoSetPartitionInformationEx
-@ stub IoSetStartIoAttributes
-@ stub IoSetSystemPartition
-@ stub IoSetThreadHardErrorMode
 @ stub IoSetTopLevelIrp
 @ extern IoStatisticsLock QzUnimplementedData
-@ stub IoSynchronousInvalidateDeviceRelations
 @ stub IoSynchronousPageWrite
 @ stub IoThreadToProcess
 @ stub IoTranslateBusAddress
-@ stub IoUnregisterPlugPlayNotification
 @ stub IoValidateDeviceIoControlAccess
 @ stub IoVerifyPartitionTable
 @ stub IoVolumeDeviceToDosName
@@ -775,10 +900,8 @@
 @ stub IoWMISetSingleInstance
 @ stub IoWMISetSingleItem
 @ stub IoWMISuggestInstanceName
-@ stub IoWMIWriteEvent
 @ extern IoWriteOperationCount QzUnimplementedData
 @ stub IoWritePartitionTable
-@ stub IoWritePartitionTableEx
 @ extern IoWriteTransferCount QzUnimplementedData
 @ stub KdChangeOption
 @ stub KdDisableDebugger
@@ -786,32 +909,26 @@
 @ extern KdEnteredDebugger QzUnimplementedData
 @ stub KdPollBreakIn
 @ stub KdPowerTransition
-@ stub KdRefreshDebuggerNotPresent
 @ stub KdSystemDebugControl
 @ stub -arch=i386 Ke386CallBios
 @ stub -arch=i386 Ke386IoSetAccessProcess
 @ stub -arch=i386 Ke386QueryIoAccessMap
 @ stub -arch=i386 Ke386SetIoAccessMap
-@ stub KeAcquireGuardedMutex
-@ stub KeAcquireGuardedMutexUnsafe
 @ stub -arch=x86_64 KeAcquireInStackQueuedSpinLock
 @ stub KeAcquireInStackQueuedSpinLockForDpc
 @ stub -arch=x86_64 KeAcquireInStackQueuedSpinLockRaiseToSynch
-@ stub KeAcquireInterruptSpinLock
 @ stub -arch=x86_64 KeAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeAcquireQueuedSpinLockRaiseToSynch
 @ stub KeAcquireSpinLockForDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToSynch
 @ stub KeAddSystemServiceTable
-@ stub KeAreAllApcsDisabled
 @ stub KeAttachProcess
 @ stub KeCapturePersistentThreadState
 @ stub KeDeregisterBugCheckCallback
 @ stub KeDeregisterBugCheckReasonCallback
 @ stub KeDeregisterNmiCallback
 @ stub KeDetachProcess
-@ stub KeEnterGuardedRegion
 @ stub KeEnterKernelDebugger
 @ stub KeFindConfigurationEntry
 @ stub KeFindConfigurationNextEntry
@@ -831,7 +948,6 @@
 @ stub -arch=i386 KeI386SetGdtSelector
 @ stub KeInitializeApc
 @ stub KeInitializeCrashDumpHeader
-@ stub KeInitializeGuardedMutex
 @ stub KeInitializeQueue
 @ stub KeInsertHeadQueue
 @ stub KeInsertQueue
@@ -840,7 +956,6 @@
 @ stub KeIpiGenericCall
 @ stub KeIsAttachedProcess
 @ stub KeIsWaitListEmpty
-@ stub KeLeaveGuardedRegion
 @ extern KeLoaderBlock QzUnimplementedData
 @ stub -arch=x86_64 KeLowerIrql
 @ stub KeProfileInterruptWithSource
@@ -852,11 +967,8 @@
 @ stub KeRegisterBugCheckCallback
 @ stub KeRegisterBugCheckReasonCallback
 @ stub KeRegisterNmiCallback
-@ stub KeReleaseGuardedMutex
-@ stub KeReleaseGuardedMutexUnsafe
 @ stub -arch=x86_64 KeReleaseInStackQueuedSpinLock
 @ stub KeReleaseInStackQueuedSpinLockForDpc
-@ stub KeReleaseInterruptSpinLock
 @ stub -arch=x86_64 KeReleaseQueuedSpinLock
 @ stub -arch=x86_64 KeReleaseSpinLock
 @ stub KeReleaseSpinLockForDpc
@@ -882,7 +994,6 @@
 @ stub KeSignalCallDpcSynchronize
 @ stub KeStackAttachProcess
 @ stub KeTerminateThread
-@ stub KeTryToAcquireGuardedMutex
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLockRaiseToSynch
 @ stub KeUnstackDetachProcess
@@ -915,7 +1026,6 @@
 @ stub MmAdjustWorkingSetSize
 @ stub MmAdvanceMdl
 @ stub MmAllocateContiguousMemory
-@ stub MmAllocateMappingAddress
 @ stub MmAllocateNonCachedMemory
 @ stub MmAllocatePagesForMdl
 @ stub MmAllocatePagesForMdlEx
@@ -929,24 +1039,18 @@
 @ stub MmFlushImageSection
 @ stub MmForceSectionClosed
 @ stub MmFreeContiguousMemory
-@ stub MmFreeMappingAddress
 @ stub MmFreeNonCachedMemory
 @ stub MmFreePagesFromMdl
 @ stub MmGetPhysicalMemoryRanges
-@ stub MmGetSystemRoutineAddress
 @ stub MmGetVirtualForPhysical
 @ stub MmGrowKernelStack
 @ extern MmHighestUserAddress QzUnimplementedData
-@ stub MmIsDriverVerifying
 @ stub MmIsIoSpaceActive
 @ stub MmIsNonPagedSystemAddressValid
 @ stub MmIsRecursiveIoFault
 @ stub MmIsThisAnNtAsSystem
 @ stub MmIsVerifierEnabled
-@ stub MmLockPagableDataSection
 @ stub MmLockPagableImageSection
-@ stub MmLockPagableSectionByHandle
-@ stub MmMapLockedPagesWithReservedMapping
 @ stub MmMapMemoryDumpMdl
 @ stub MmMapUserAddressesToPage
 @ stub MmMapVideoDisplay
@@ -955,23 +1059,18 @@
 @ stub MmMapViewOfSection
 @ stub MmMarkPhysicalMemoryAsBad
 @ stub MmMarkPhysicalMemoryAsGood
-@ stub MmPageEntireDriver
 @ stub MmPrefetchPages
 @ stub MmProbeAndLockProcessPages
 @ stub MmProbeAndLockSelectedPages
 @ stub MmProtectMdlSystemAddress
 @ stub MmQuerySystemSize
 @ stub MmRemovePhysicalMemory
-@ stub MmResetDriverPaging
 @ extern MmSectionObjectType QzUnimplementedData
 @ stub MmSecureVirtualMemory
 @ stub MmSetAddressRangeModified
 @ stub MmSetBankedSection
-@ stub MmSizeOfMdl
 @ extern MmSystemRangeStart QzUnimplementedData
 @ stub MmTrimAllSystemPagableMemory
-@ stub MmUnlockPagableImageSection
-@ stub MmUnmapReservedMapping
 @ stub MmUnmapVideoDisplay
 @ stub MmUnmapViewInSessionSpace
 @ stub MmUnmapViewInSystemSpace
@@ -1046,7 +1145,6 @@
 @ stub PfxInitialize
 @ stub PfxInsertPrefix
 @ stub PfxRemovePrefix
-@ stub PoCallDriver
 @ stub PoCancelDeviceNotify
 @ stub -version=0x602+ PoFxActivateComponent
 @ stub -version=0x602+ PoFxCompleteDevicePowerNotRequired
@@ -1059,16 +1157,12 @@
 @ stub -version=0x602+ PoFxStartDevicePowerManagement
 @ stub -version=0x602+ PoFxUnregisterDevice
 @ stub PoQueueShutdownWorkItem
-@ stub PoRegisterDeviceForIdleDetection
 @ stub PoRegisterDeviceNotify
 @ stub PoRegisterSystemState
-@ stub PoRequestPowerIrp
 @ stub PoRequestShutdownEvent
 @ stub PoSetHiberRange
-@ stub PoSetPowerState
 @ stub PoSetSystemState
 @ stub PoShutdownBugCheck
-@ stub PoStartNextPowerIrp
 @ stub PoUnregisterSystemState
 @ stub ProbeForRead
 @ stub ProbeForWrite
@@ -1078,7 +1172,6 @@
 @ stub PsChargeProcessPagedPoolQuota
 @ stub PsChargeProcessPoolQuota
 @ stub PsCreateSystemProcess
-@ stub PsCreateSystemThread
 @ stub PsDereferenceImpersonationToken
 @ stub PsDereferencePrimaryToken
 @ stub PsDisableImpersonation
@@ -1115,7 +1208,6 @@
 @ stub PsGetProcessWin32Process
 @ stub PsGetProcessWin32WindowStation
 @ stub PsGetThreadFreezeCount
-@ stub PsGetThreadHardErrorsAreDisabled
 @ stub PsGetThreadId
 @ stub PsGetThreadProcess
 @ stub PsGetThreadProcessId
@@ -1123,17 +1215,14 @@
 @ stub PsGetThreadTeb
 @ stub PsGetThreadWin32Thread
 @ stub PsImpersonateClient
-@ extern PsInitialSystemProcess QzUnimplementedData
 @ stub PsIsProcessBeingDebugged
 @ stub PsIsSystemProcess
 @ stub PsIsSystemThread
 @ stub PsIsThreadImpersonating
-@ stub PsIsThreadTerminating
 @ extern PsJobType QzUnimplementedData
 @ stub PsLookupProcessByProcessId
 @ stub PsLookupProcessThreadByCid
 @ stub PsLookupThreadByThreadId
-@ extern PsProcessType QzUnimplementedData
 @ stub PsReferenceImpersonationToken
 @ stub PsReferencePrimaryToken
 @ stub PsRemoveCreateThreadNotifyRoutine
@@ -1155,17 +1244,8 @@
 @ stub PsSetProcessSecurityPort
 @ stub PsSetProcessWin32Process
 @ stub PsSetProcessWindowStation
-@ stub PsSetThreadHardErrorsAreDisabled
 @ stub PsSetThreadWin32Thread
-@ stub PsTerminateSystemThread
-@ extern PsThreadType QzUnimplementedData
 @ stub PsWrapApcWow64Thread
-@ stub -arch=i386,arm READ_REGISTER_BUFFER_UCHAR
-@ stub -arch=i386,arm READ_REGISTER_BUFFER_ULONG
-@ stub -arch=i386,arm READ_REGISTER_BUFFER_USHORT
-@ stub -arch=i386,arm READ_REGISTER_UCHAR
-@ stub -arch=i386,arm READ_REGISTER_ULONG
-@ stub -arch=i386,arm READ_REGISTER_USHORT
 @ stub RtlAbsoluteToSelfRelativeSD
 @ stub RtlAddAccessAllowedAce
 @ stub RtlAddAccessAllowedAceEx
@@ -1181,9 +1261,7 @@
 @ stub RtlAreBitsClear
 @ stub RtlAreBitsSet
 @ stub RtlCaptureContext
-@ stub RtlCaptureStackBackTrace
 @ stub RtlCharToInteger
-@ stub RtlCheckRegistryKey
 @ stub RtlCmDecodeMemIoResource
 @ stub RtlCmEncodeMemIoResource
 @ stub RtlCompareMemoryUlong
@@ -1201,9 +1279,7 @@
 @ stub RtlCreateAcl
 @ stub RtlCreateAtomTable
 @ stub RtlCreateHeap
-@ stub RtlCreateRegistryKey
 @ stub RtlCreateSecurityDescriptor
-@ stub RtlCreateSystemVolumeInformationFolder
 @ stub RtlCustomCPToUnicodeN
 @ stub RtlDecompressBuffer
 @ stub RtlDecompressChunks
@@ -1212,11 +1288,9 @@
 @ stub RtlDeleteAce
 @ stub RtlDeleteAtomFromAtomTable
 @ stub RtlDeleteElementGenericTable
-@ stub RtlDeleteElementGenericTableAvl
 @ stub RtlDeleteNoSplay
 @ stub RtlDeleteOwnersRanges
 @ stub RtlDeleteRange
-@ stub RtlDeleteRegistryValue
 @ stub RtlDescribeChunk
 @ stub RtlDestroyAtomTable
 @ stub RtlDestroyHeap
@@ -1226,10 +1300,8 @@
 @ stub -arch=win32 RtlEnlargedUnsignedDivide
 @ stub -arch=win32 RtlEnlargedUnsignedMultiply
 @ stub RtlEnumerateGenericTable
-@ stub RtlEnumerateGenericTableAvl
 @ stub RtlEnumerateGenericTableLikeADirectory
 @ stub RtlEnumerateGenericTableWithoutSplaying
-@ stub RtlEnumerateGenericTableWithoutSplayingAvl
 @ stub RtlEqualLuid
 @ stub RtlEqualSid
 @ stub -arch=win32 RtlExtendedIntegerMultiply
@@ -1248,7 +1320,6 @@
 @ stub RtlFreeHeap
 @ stub RtlFreeOemString
 @ stub RtlFreeRangeList
-@ stub RtlGUIDFromString
 @ stub RtlGenerate8dot3Name
 @ stub RtlGetAce
 @ stub RtlGetCallersAddress
@@ -1256,7 +1327,6 @@
 @ stub RtlGetDaclSecurityDescriptor
 @ stub RtlGetDefaultCodePage
 @ stub RtlGetElementGenericTable
-@ stub RtlGetElementGenericTableAvl
 @ stub RtlGetFirstRange
 @ stub RtlGetGroupSecurityDescriptor
 @ stub RtlGetLastRange
@@ -1266,18 +1336,14 @@
 @ stub RtlGetSaclSecurityDescriptor
 @ stub RtlGetSetBootStatusData
 @ stub RtlHashUnicodeString
-@ stub RtlImageDirectoryEntryToData
-@ stub RtlImageNtHeader
 @ stub RtlInitAnsiStringEx
 @ stub RtlInitCodePageTable
 @ stub RtlInitUnicodeStringEx
 @ stub RtlInitializeGenericTable
-@ stub RtlInitializeGenericTableAvl
 @ stub RtlInitializeRangeList
 @ stub RtlInitializeSid
 @ stub RtlInitializeUnicodePrefix
 @ stub RtlInsertElementGenericTable
-@ stub RtlInsertElementGenericTableAvl
 @ stub RtlInsertElementGenericTableFull
 @ stub RtlInsertElementGenericTableFullAvl
 @ stub RtlInsertUnicodePrefix
@@ -1305,7 +1371,6 @@
 @ stub RtlIpv6StringToAddressExW
 @ stub RtlIpv6StringToAddressW
 @ stub RtlIsGenericTableEmpty
-@ stub RtlIsGenericTableEmptyAvl
 @ stub RtlIsNameLegalDOS8Dot3
 @ stub RtlIsRangeAvailable
 @ stub RtlIsValidOemCharacter
@@ -1322,19 +1387,15 @@
 @ stub RtlLockBootStatusData
 @ stub RtlLookupAtomInAtomTable
 @ stub RtlLookupElementGenericTable
-@ stub RtlLookupElementGenericTableAvl
 @ stub RtlLookupElementGenericTableFull
 @ stub RtlLookupElementGenericTableFullAvl
 @ stub -arch=x86_64 RtlLookupFunctionEntry
 @ stub RtlMapSecurityErrorToNtStatus
 @ stub RtlMergeRangeLists
-@ stub RtlMultiByteToUnicodeN
-@ stub RtlMultiByteToUnicodeSize
 @ stub RtlNextUnicodePrefix
 @ stub RtlNtStatusToDosError
 @ stub RtlNtStatusToDosErrorNoTeb
 @ stub RtlNumberGenericTableElements
-@ stub RtlNumberGenericTableElementsAvl
 @ stub RtlOemStringToCountedUnicodeString
 @ stub RtlOemStringToUnicodeSize
 @ stub RtlOemStringToUnicodeString
@@ -1344,7 +1405,6 @@
 @ stub RtlPrefetchMemoryNonTemporal
 @ stub RtlPrefixString
 @ stub RtlQueryAtomInAtomTable
-@ stub RtlQueryRegistryValues
 @ stub RtlQueryTimeZoneInformation
 @ stub RtlRandom
 @ stub RtlRandomEx
@@ -1364,7 +1424,6 @@
 @ stub RtlSetTimeZoneInformation
 @ stub RtlSizeHeap
 @ stub RtlSplay
-@ stub RtlStringFromGUID
 @ stub RtlSubAuthorityCountSid
 @ stub RtlSubAuthoritySid
 @ stub RtlSubtreePredecessor
@@ -1385,16 +1444,12 @@
 @ stub -arch=i386,arm RtlUlonglongByteSwap
 @ stub RtlUnicodeStringToAnsiSize
 @ stub RtlUnicodeStringToCountedOemString
-@ stub RtlUnicodeStringToInteger
 @ stub RtlUnicodeStringToOemSize
 @ stub RtlUnicodeStringToOemString
 @ stub RtlUnicodeToCustomCPN
-@ stub RtlUnicodeToMultiByteN
-@ stub RtlUnicodeToMultiByteSize
 @ stub RtlUnicodeToOemN
 @ stub -version=0x601+ RtlUnicodeToUTF8N
 @ stub RtlUnlockBootStatusData
-@ stub RtlUnwind
 @ stub -arch=x86_64,arm RtlUnwindEx
 @ stub RtlUpcaseUnicodeStringToAnsiString
 @ stub RtlUpcaseUnicodeStringToCountedOemString
@@ -1412,7 +1467,6 @@
 @ stub -arch=x86_64,arm RtlVirtualUnwind
 @ stub RtlVolumeDeviceToDosName
 @ stub RtlWalkFrameChain
-@ stub RtlWriteRegistryValue
 @ stub RtlZeroHeap
 @ stub RtlxAnsiStringToUnicodeSize
 @ stub RtlxOemStringToUnicodeSize
@@ -1469,12 +1523,6 @@
 @ stub VfFailDriver
 @ stub VfFailSystemBIOS
 @ stub VfIsVerificationEnabled
-@ stub -arch=i386,arm WRITE_REGISTER_BUFFER_UCHAR
-@ stub -arch=i386,arm WRITE_REGISTER_BUFFER_ULONG
-@ stub -arch=i386,arm WRITE_REGISTER_BUFFER_USHORT
-@ stub -arch=i386,arm WRITE_REGISTER_UCHAR
-@ stub -arch=i386,arm WRITE_REGISTER_ULONG
-@ stub -arch=i386,arm WRITE_REGISTER_USHORT
 @ stub WmiFlushTrace
 @ stub WmiGetClock
 @ stub WmiQueryTrace
@@ -1497,33 +1545,25 @@
 @ stub ZwCloseObjectAuditAlarm
 @ stub ZwConnectPort
 @ stub ZwCreateJobObject
-@ stub ZwCreateKey
 @ stub ZwCreateSection
 @ stub ZwDeleteBootEntry
 @ stub ZwDeleteDriverEntry
 @ stub ZwDeleteFile
-@ stub ZwDeleteKey
-@ stub ZwDeleteValueKey
 @ stub ZwDisplayString
 @ stub ZwDuplicateToken
 @ stub ZwEnumerateBootEntries
 @ stub ZwEnumerateDriverEntries
-@ stub ZwEnumerateKey
-@ stub ZwEnumerateValueKey
 @ stub ZwFlushInstructionCache
-@ stub ZwFlushKey
 @ stub ZwFlushVirtualMemory
 @ stub ZwFreeVirtualMemory
 @ stub ZwInitiatePowerAction
 @ stub ZwIsProcessInJob
-@ stub ZwLoadDriver
 @ stub ZwLoadKey
 @ stub ZwMapViewOfSection
 @ stub ZwModifyBootEntry
 @ stub ZwModifyDriverEntry
 @ stub ZwNotifyChangeKey
 @ stub ZwOpenJobObject
-@ stub ZwOpenKey
 @ stub ZwOpenProcess
 @ stub ZwOpenProcessToken
 @ stub ZwOpenProcessTokenEx
@@ -1531,12 +1571,10 @@
 @ stub ZwOpenThread
 @ stub ZwOpenThreadToken
 @ stub ZwOpenThreadTokenEx
-@ stub ZwPowerInformation
 @ stub ZwQueryBootEntryOrder
 @ stub ZwQueryBootOptions
 @ stub ZwQueryDefaultLocale
 @ stub ZwQueryDefaultUILanguage
-@ stub ZwQueryDirectoryFile
 @ stub ZwQueryDriverEntryOrder
 @ stub ZwQueryEaFile
 @ stub ZwQueryFullAttributesFile
@@ -1545,11 +1583,8 @@
 @ stub ZwQueryInformationThread
 @ stub ZwQueryInformationToken
 @ stub ZwQueryInstallUILanguage
-@ stub ZwQueryKey
 @ stub ZwQuerySection
 @ stub ZwQuerySecurityObject
-@ stub ZwQuerySystemInformation
-@ stub ZwQueryValueKey
 @ stub ZwReplaceKey
 @ stub ZwRequestWaitReplyPort
 @ stub ZwRestoreKey
@@ -1569,12 +1604,10 @@
 @ stub ZwSetSecurityObject
 @ stub ZwSetSystemInformation
 @ stub ZwSetSystemTime
-@ stub ZwSetValueKey
 @ stub ZwSetVolumeInformationFile
 @ stub ZwTerminateJobObject
 @ stub ZwTerminateProcess
 @ stub ZwTranslateFilePath
-@ stub ZwUnloadDriver
 @ stub ZwUnloadKey
 @ stub ZwUnmapViewOfSection
 @ stub ZwYieldExecution
@@ -1606,27 +1639,12 @@
 @ stub _purecall
 @ stub -arch=x86_64,arm _setjmp
 @ stub -arch=x86_64,arm _setjmpex
-@ stub _stricmp
-@ stub _strlwr
-@ stub _strnicmp
 @ stub _strnset
 @ stub _strrev
 @ stub _strset
-@ stub _strupr
-@ stub _wcsicmp
-@ stub _wcslwr
-@ stub _wcsnicmp
 @ stub _wcsnset
 @ stub _wcsrev
-@ stub _wcsupr
-@ stub atoi
 @ stub atol
-@ stub isdigit
-@ stub islower
-@ stub isprint
-@ stub isspace
-@ stub isupper
-@ stub isxdigit
 @ stub -arch=x86_64,arm longjmp
 @ stub mbstowcs
 @ stub mbtowc
@@ -1635,31 +1653,11 @@
 @ stub qsort
 @ stub rand
 @ stub srand
-@ stub strcat
-@ stub strchr
-@ stub strcpy
 @ stub strncat
-@ stub strrchr
 @ stub strspn
-@ stub strstr
-@ stub tolower
-@ stub toupper
-@ stub towlower
-@ stub towupper
-@ stub vDbgPrintEx
-@ stub vDbgPrintExWithPrefix
 @ stub vsprintf
-@ stub wcscat
-@ stub wcschr
-@ stub wcscmp
-@ stub wcscpy
 @ stub wcscspn
-@ stub wcsncat
-@ stub wcsncmp
-@ stub wcsncpy
-@ stub wcsrchr
 @ stub wcsspn
-@ stub wcsstr
 @ stub wcstombs
 @ stub wctomb
 @ stub -arch=arm __dtoi64

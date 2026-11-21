@@ -178,11 +178,42 @@ class Checker:
         return [r for r in self.results if not r[1]]
 
 
+def make_test_disk(path):
+    """A 16 MB disk with an MBR and two partitions, for the disk stack.
+
+    The first sector of partition 1 holds a marker the test reads back
+    through \\Device\\Harddisk0\\Partition1.
+    """
+    import struct
+    size = 16 * 1024 * 1024
+    with open(path, "wb") as f:
+        f.truncate(size)
+        mbr = bytearray(512)
+        mbr[0x1B8:0x1BC] = struct.pack("<I", 0x51A2E0F5)
+
+        def entry(boot, kind, start, count):
+            return struct.pack("<B3sB3sII", boot, b"\xfe\xff\xff", kind, b"\xfe\xff\xff",
+                               start, count)
+
+        mbr[0x1BE:0x1CE] = entry(0x80, 0x06, 2048, 8192)
+        mbr[0x1CE:0x1DE] = entry(0x00, 0x0B, 10240, 20480)
+        mbr[510:512] = b"\x55\xaa"
+        f.seek(0)
+        f.write(mbr)
+        f.seek(2048 * 512)
+        f.write(b"QZPART1-SECTOR-0")
+
+
 def run_qzkrnl(iso, out):
     chk = Checker()
     with tempfile.TemporaryDirectory() as tmp:
-        vm = Qemu(iso, tmp)
+        disk = os.path.join(tmp, "disk.img")
+        make_test_disk(disk)
+        vm = Qemu(iso, tmp, extra=["-drive", f"file={disk},format=raw,if=ide,index=0"])
         try:
+            # With a hard disk that has an MBR, isoboot asks before booting the CD
+            if vm.wait_screen("Press any key", 60):
+                vm.sendkey("ret")
             menu = select_boot_entry(vm, "QuarziteOS Kernel", 2)
             open(os.path.join(out, "freeldr-menu.txt"), "w").write(menu)
             chk.check("FreeLoader menu lists the qzkrnl entry",
@@ -211,7 +242,7 @@ def run_qzkrnl(iso, out):
                 ("mem", [r"Physical memory: \d+ KB usable", r"Free\s+\d+ pages"]),
                 ("mods", [r"ntoskrnl\.exe", r"hal\.dll", r"kdcom\.dll",
                           r"modules loaded by FreeLoader"]),
-                ("drivers", [r"boot drivers \(loaded and bound"]),
+                ("drivers", [r"29 boot drivers: 0 started"]),
                 ("pooltest", [r"pooltest: 512 allocations, 0 errors -> PASS"]),
                 ("spawn 3", []),
                 ("sleep 1000", [r"slept 1000 ms \((99\d|10[0-4]\d) ms elapsed"]),
@@ -231,6 +262,25 @@ def run_qzkrnl(iso, out):
                 ("devices", [r"\\Device\\QzTestDisk0\s+\\Driver\\QzTestDisk",
                              r"\\FileSystem\\QzTestFs", r"\(mounted\)"]),
                 ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0, HAL KeGetCurrentIrql = 0\), \d+ DPCs retired"]),
+                # Stage B4: the real ReactOS boot drivers through qzkrnl's PnP manager
+                ("pnp", [r"PnP: 0x00000000, \d+ device node\(s\), \d+ started",
+                         r"AddDevice \\Driver\\pci for PCI_HAL\\PNP0A03",
+                         r"DriverEntry \\Driver\\Wdf01000 -> 0x00000000"]),
+                ("devtree", [r"PCI_HAL\\PNP0A03\\0 \[started, pci\]",
+                             r"PCI\\VEN_8086&DEV_7010\S+ \[started, pciide\]",
+                             r"PCIIDE\\IDEChannel\S+ \[started, atapi\]",
+                             r"IDE\\DiskQEMU_HARDDISK\S+ \[started, disk\]",
+                             r"STORAGE\\Partition\S+ \[started\]",
+                             r"IDE\\CdRomQEMU\S+ \[started, cdrom\]"]),
+                ("read \\Device\\CdRom0 16", [r"2048 bytes read", r"\.CD001\."]),
+                ("read \\Device\\Harddisk0\\Partition0 0", [r"512 bytes read",
+                                                         r"last two bytes of the first 512: 55 aa"]),
+                ("read \\Device\\Harddisk0\\Partition1 0", [r"QZPART1-SECTOR-0"]),
+                ("drivers", [r"MountMgr\s+started", r"cdrom\s+started \(PnP\)",
+                             r"29 boot drivers: \d+ started"]),
+                ("obj \\GLOBAL??", [r"PhysicalDrive0\s+SymbolicLink\s+-> \\Device\\Harddisk0\\DR0",
+                                     r"Volume\{[0-9A-F-]+\}\s+SymbolicLink\s+-> \\Device\\HarddiskVolume1",
+                                     r"CdRom0\s+SymbolicLink"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
                          r"[1-9]\d* interrupt objects connected"]),
@@ -238,7 +288,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)

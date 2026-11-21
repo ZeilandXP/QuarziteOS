@@ -49,6 +49,9 @@ NTSTATUS QzIoStartBootDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *Drive
 VOID QzIoDumpDrivers(VOID);
 NTSTATUS NTAPI QzIoInvalidDeviceRequest(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 VOID QzIoCallReinitRoutines(BOOLEAN Boot);
+BOOLEAN QzIsExportImplemented(PCSTR Name);
+ULONG QzIoCheckImports(PVOID ImageBase, PCSTR *FirstMissing, ULONG Depth);
+VOID QzIoDumpBootDrivers(VOID);
 
 /* ---------------------------------------------------------------------- */
 /* Device objects (io/device.c)                                            */
@@ -119,10 +122,27 @@ VOID NTAPI QzIoDeleteDriver(PVOID Object);
 ULONG QzIoFileSystemCount(VOID);
 
 /* ---------------------------------------------------------------------- */
+/* PnP manager (io/pnp.c) and the read-only registry (cm/registry.c)       */
+/* ---------------------------------------------------------------------- */
+
+VOID QzPnpInit(VOID);
+NTSTATUS QzPnpStart(VOID);
+VOID QzPnpDumpTree(BOOLEAN Verbose);
+ULONG QzPnpDeviceCount(PULONG Started);
+extern POBJECT_TYPE CmKeyObjectType;
+VOID QzCmInit(PLOADER_PARAMETER_BLOCK LoaderBlock);
+BOOLEAN QzCmHiveReady(VOID);
+ULONG QzCmDroppedWrites(VOID);
+NTSTATUS QzCmReadValue(PCWSTR KeyPath, PCWSTR ValueName, PVOID Buffer, ULONG Length,
+                       PULONG Type, PULONG DataLength);
+VOID QzCmDumpKey(PCWSTR Path);
+
+/* ---------------------------------------------------------------------- */
 /* Worker threads (ex/worker.c)                                            */
 /* ---------------------------------------------------------------------- */
 
 VOID QzExWorkerInit(VOID);
+VOID QzPsInit(VOID);
 
 /* ---------------------------------------------------------------------- */
 /* Self-test (io/iotest.c)                                                 */

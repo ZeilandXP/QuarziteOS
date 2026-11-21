@@ -20,6 +20,7 @@
 #undef IoCompleteRequest
 
 static volatile LONG QzIrpAllocations, QzIrpOutstanding;
+BOOLEAN QzIoTraceIrps;   /* shell "irptrace": log dispatch and completion */
 static KSPIN_LOCK QzIoCancelLock;
 
 ULONG QzIoIrpsAllocated(VOID)   { return (ULONG)QzIrpAllocations; }
@@ -116,6 +117,21 @@ IofCallDriver(IN PDEVICE_OBJECT DeviceObject,
         KeBugCheckEx(NO_MORE_IRP_STACK_LOCATIONS, (ULONG_PTR)Irp, 0, 0, 0);
     Stack = --Irp->Tail.Overlay.CurrentStackLocation;
     Stack->DeviceObject = DeviceObject;
+    if (QzIoTraceIrps)
+    {
+        NTSTATUS Status;
+        if (Stack->MajorFunction == IRP_MJ_DEVICE_CONTROL ||
+            Stack->MajorFunction == IRP_MJ_INTERNAL_DEVICE_CONTROL)
+            DbgPrint("irp %p: mj %02x ioctl %08lx -> %wZ (%p)\n", Irp, Stack->MajorFunction,
+                     Stack->Parameters.DeviceIoControl.IoControlCode,
+                     &DeviceObject->DriverObject->DriverName, DeviceObject);
+        else
+            DbgPrint("irp %p: mj %02x mn %02x -> %wZ (%p)\n", Irp, Stack->MajorFunction,
+                     Stack->MinorFunction, &DeviceObject->DriverObject->DriverName, DeviceObject);
+        Status = DeviceObject->DriverObject->MajorFunction[Stack->MajorFunction](DeviceObject, Irp);
+        DbgPrint("irp %p: %wZ returned 0x%08lx\n", Irp, &DeviceObject->DriverObject->DriverName, Status);
+        return Status;
+    }
     return DeviceObject->DriverObject->MajorFunction[Stack->MajorFunction](DeviceObject, Irp);
 }
 

@@ -333,6 +333,65 @@ QzIoInitializeImports(PVOID ImageBase, ULONG Depth)
 }
 
 /* ---------------------------------------------------------------------- */
+/* The import gate: a driver bound to export stubs is not started          */
+/* ---------------------------------------------------------------------- */
+
+/*
+ * Count the kernel imports of an image (and of the export drivers it
+ * pulls in) that qzkrnl only has stubs for. Calling a stub stops the
+ * system, so such a driver is refused up front with a clear message.
+ */
+ULONG
+QzIoCheckImports(PVOID ImageBase, PCSTR *FirstMissing, ULONG Depth)
+{
+    PUCHAR Base = ImageBase;
+    PIMAGE_NT_HEADERS Nt = (PIMAGE_NT_HEADERS)(Base + ((PIMAGE_DOS_HEADER)Base)->e_lfanew);
+    PIMAGE_DATA_DIRECTORY Directory = &Nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    PIMAGE_IMPORT_DESCRIPTOR Import;
+    ULONG Missing = 0;
+
+    if (!Directory->Size || Depth > 8)
+        return 0;
+    for (Import = (PIMAGE_IMPORT_DESCRIPTOR)(Base + Directory->VirtualAddress); Import->Name; Import++)
+    {
+        PCSTR DllName = (PCSTR)(Base + Import->Name);
+        PIMAGE_THUNK_DATA Thunk;
+
+        if (!_stricmp(DllName, "ntoskrnl.exe"))
+        {
+            if (!Import->OriginalFirstThunk)
+                continue;
+            for (Thunk = (PIMAGE_THUNK_DATA)(Base + Import->OriginalFirstThunk); Thunk->u1.AddressOfData; Thunk++)
+            {
+                PCSTR Name;
+                if (IMAGE_SNAP_BY_ORDINAL(Thunk->u1.Ordinal))
+                    continue;
+                Name = (PCSTR)((PIMAGE_IMPORT_BY_NAME)(Base + Thunk->u1.AddressOfData))->Name;
+                if (!QzIsExportImplemented(Name))
+                {
+                    if (!Missing && FirstMissing)
+                        *FirstMissing = Name;
+                    Missing++;
+                }
+            }
+        }
+        else if (!QzIoIsCoreModule(DllName))
+        {
+            PQZ_LDR_ENTRY Module = QzIoFindModuleA(DllName);
+            if (Module)
+            {
+                PCSTR DllMissing = NULL;
+                ULONG Count = QzIoCheckImports(Module->DllBase, &DllMissing, Depth + 1);
+                if (Count && !Missing && FirstMissing)
+                    *FirstMissing = DllMissing;
+                Missing += Count;
+            }
+        }
+    }
+    return Missing;
+}
+
+/* ---------------------------------------------------------------------- */
 /* Boot drivers                                                            */
 /* ---------------------------------------------------------------------- */
 
@@ -398,6 +457,18 @@ QzIoStartBootDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject)
     if (!NT_SUCCESS(Status))
         return Status;
     Driver->DriverSection = Module;
+
+    {
+        PCSTR FirstMissing = NULL;
+        ULONG Missing = QzIoCheckImports(Module->DllBase, &FirstMissing, 0);
+        if (Missing)
+        {
+            DbgPrint(QZ_KERNEL_NAME ": not starting %wZ: it imports %lu export(s) qzkrnl does not "
+                     "implement yet (%s, ...)\n", ServiceName, Missing, FirstMissing);
+            QzIoFinishDriverEntry(Driver, STATUS_PROCEDURE_NOT_FOUND);
+            return STATUS_PROCEDURE_NOT_FOUND;
+        }
+    }
 
     Status = QzIoInitializeImports(Module->DllBase, 0);
     if (NT_SUCCESS(Status))
@@ -561,4 +632,53 @@ QzIoInit(VOID)
     IoFileObjectType->TypeInfo.UseDefaultObject = FALSE;
     IoFileObjectType->DefaultObject = NULL;   /* waits use FILE_OBJECT.Event */
     IoDriverObjectType->TypeInfo.DeleteProcedure = QzIoDeleteDriver;
+}
+
+/* The shell's "drivers": every boot driver, started or not, and why not */
+VOID
+QzIoDumpBootDrivers(VOID)
+{
+    PLIST_ENTRY Entry;
+    ULONG Count = 0, Started = 0, Blocked = 0;
+
+    for (Entry = QzLoaderBlock->BootDriverListHead.Flink;
+         Entry != &QzLoaderBlock->BootDriverListHead;
+         Entry = Entry->Flink)
+    {
+        PBOOT_DRIVER_LIST_ENTRY Boot = CONTAINING_RECORD(Entry, BOOT_DRIVER_LIST_ENTRY, Link);
+        PQZ_LDR_ENTRY Module = (PQZ_LDR_ENTRY)Boot->LdrEntry;
+        UNICODE_STRING Service = Boot->RegistryPath;
+        PDRIVER_OBJECT Driver;
+        PCSTR FirstMissing = NULL;
+        ULONG Missing;
+        USHORT i = Service.Length / sizeof(WCHAR);
+
+        while (i && Service.Buffer[i - 1] != L'\\')
+            i--;
+        Service.Buffer += i;
+        Service.Length -= i * sizeof(WCHAR);
+        Count++;
+
+        Driver = QzIoFindDriver(&Service);
+        Missing = Module ? QzIoCheckImports(Module->DllBase, &FirstMissing, 0) : 0;
+        if (Driver && QzDriverExtension(Driver)->EntryCalled && NT_SUCCESS(QzDriverExtension(Driver)->EntryStatus))
+        {
+            Started++;
+            QzPrint("  %-12wZ started%s\n", &Service, Driver->DriverExtension->AddDevice ? " (PnP)" : "");
+        }
+        else if (Missing)
+        {
+            Blocked++;
+            QzPrint("  %-12wZ needs %lu more kernel export(s), e.g. %s\n", &Service, Missing, FirstMissing);
+        }
+        else if (Driver)
+        {
+            QzPrint("  %-12wZ DriverEntry failed (0x%08lx)\n", &Service, QzDriverExtension(Driver)->EntryStatus);
+        }
+        else
+        {
+            QzPrint("  %-12wZ ready (starts when a device needs it)\n", &Service);
+        }
+    }
+    QzPrint("  %lu boot drivers: %lu started, %lu waiting for kernel exports\n", Count, Started, Blocked);
 }
