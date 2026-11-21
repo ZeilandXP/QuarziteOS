@@ -638,6 +638,33 @@
 @ cdecl vsprintf(ptr str ptr)
 @ stdcall IoConnectInterruptEx(ptr)
 @ stdcall IoDisconnectInterruptEx(ptr)
+@ extern LpcPortObjectType
+@ stdcall LpcRequestPort(ptr ptr)
+@ stdcall LpcRequestWaitReplyPort(ptr ptr ptr)
+@ stdcall ZwSecureConnectPort(ptr ptr ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall ZwConnectPort(ptr ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall ZwRequestWaitReplyPort(ptr ptr ptr)
+@ extern SeTokenObjectType
+@ stdcall NtOpenProcessToken(ptr long ptr)
+@ stdcall NtOpenProcessTokenEx(ptr long long ptr)
+@ stdcall ZwOpenProcessToken(ptr long ptr)
+@ stdcall ZwOpenProcessTokenEx(ptr long long ptr)
+@ stdcall NtAdjustPrivilegesToken(ptr long ptr long ptr ptr)
+@ stdcall ZwAdjustPrivilegesToken(ptr long ptr long ptr ptr)
+@ stdcall NtQueryInformationToken(ptr long ptr long ptr)
+@ stdcall ZwQueryInformationToken(ptr long long long ptr)
+@ stdcall NtDuplicateToken(ptr long ptr long long ptr)
+@ stdcall ZwDuplicateToken(ptr long ptr long long ptr)
+@ stdcall RtlLengthRequiredSid(long)
+@ stdcall RtlValidSid(ptr)
+@ stdcall RtlLengthSid(ptr)
+@ stdcall RtlCopySid(long ptr ptr)
+@ stdcall RtlEqualSid(ptr ptr)
+@ stdcall RtlInitializeSid(ptr ptr long)
+@ stdcall RtlSubAuthoritySid(ptr long)
+@ stdcall RtlSubAuthorityCountSid(ptr)
+@ stdcall RtlConvertSidToUnicodeString(ptr ptr long)
+@ stdcall ZwSetSystemInformation(long ptr long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -1054,9 +1081,6 @@
 @ stub LdrEnumResources
 @ stub LdrFindResourceDirectory_U
 @ stub LdrFindResource_U
-@ extern LpcPortObjectType QzUnimplementedData
-@ stub LpcRequestPort
-@ stub LpcRequestWaitReplyPort
 @ stub LsaCallAuthenticationPackage
 @ stub LsaDeregisterLogonProcess
 @ stub LsaFreeReturnBuffer
@@ -1119,7 +1143,6 @@
 @ extern NlsOemCodePage QzUnimplementedData
 @ extern NlsOemLeadByteInfo QzUnimplementedData
 @ stub NtAddAtom
-@ stub NtAdjustPrivilegesToken
 @ stub NtAllocateLocallyUniqueId
 @ stub NtAllocateUuids
 @ stub NtAllocateVirtualMemory
@@ -1127,7 +1150,6 @@
 @ stub NtCreateSection
 @ stub NtDeleteAtom
 @ stub NtDeleteFile
-@ stub NtDuplicateToken
 @ stub NtFindAtom
 @ stub NtFreeVirtualMemory
 @ extern NtGlobalFlag QzUnimplementedData
@@ -1135,8 +1157,6 @@
 @ stub NtMapViewOfSection
 @ stub NtNotifyChangeDirectoryFile
 @ stub NtOpenProcess
-@ stub NtOpenProcessToken
-@ stub NtOpenProcessTokenEx
 @ stub NtOpenThread
 @ stub NtOpenThreadToken
 @ stub NtOpenThreadTokenEx
@@ -1146,7 +1166,6 @@
 @ stub NtQueryInformationFile
 @ stub NtQueryInformationProcess
 @ stub NtQueryInformationThread
-@ stub NtQueryInformationToken
 @ stub NtQueryQuotaInformationFile
 @ stub NtQuerySecurityObject
 @ stub NtQuerySystemInformation
@@ -1278,13 +1297,11 @@
 @ stub RtlCompressBuffer
 @ stub RtlCompressChunks
 @ stub RtlConvertLongToLargeInteger
-@ stub RtlConvertSidToUnicodeString
 @ stub RtlConvertUlongToLargeInteger
 @ stub RtlCopyLuid
 @ stub -arch=x86_64 RtlCopyMemory
 @ stub -arch=x86_64 RtlCopyMemoryNonTemporal
 @ stub RtlCopyRangeList
-@ stub RtlCopySid
 @ stub RtlCreateAcl
 @ stub RtlCreateAtomTable
 @ stub RtlCreateHeap
@@ -1312,7 +1329,6 @@
 @ stub RtlEnumerateGenericTableLikeADirectory
 @ stub RtlEnumerateGenericTableWithoutSplaying
 @ stub RtlEqualLuid
-@ stub RtlEqualSid
 @ stub -arch=win32 RtlExtendedIntegerMultiply
 @ stub -arch=win32 RtlExtendedLargeIntegerDivide
 @ stub -arch=win32 RtlExtendedMagicDivide
@@ -1350,7 +1366,6 @@
 @ stub RtlInitUnicodeStringEx
 @ stub RtlInitializeGenericTable
 @ stub RtlInitializeRangeList
-@ stub RtlInitializeSid
 @ stub RtlInitializeUnicodePrefix
 @ stub RtlInsertElementGenericTable
 @ stub RtlInsertElementGenericTableFull
@@ -1390,9 +1405,7 @@
 @ stub -arch=win32 RtlLargeIntegerShiftLeft
 @ stub -arch=win32 RtlLargeIntegerShiftRight
 @ stub -arch=win32 RtlLargeIntegerSubtract
-@ stub RtlLengthRequiredSid
 @ stub RtlLengthSecurityDescriptor
-@ stub RtlLengthSid
 @ stub RtlLockBootStatusData
 @ stub RtlLookupAtomInAtomTable
 @ stub RtlLookupElementGenericTable
@@ -1433,8 +1446,6 @@
 @ stub RtlSetTimeZoneInformation
 @ stub RtlSizeHeap
 @ stub RtlSplay
-@ stub RtlSubAuthorityCountSid
-@ stub RtlSubAuthoritySid
 @ stub RtlSubtreePredecessor
 @ stub RtlSubtreeSuccessor
 @ stub RtlTimeToElapsedTimeFields
@@ -1471,7 +1482,6 @@
 @ stub -arch=i386,arm RtlUshortByteSwap
 @ stub RtlValidRelativeSecurityDescriptor
 @ stub RtlValidSecurityDescriptor
-@ stub RtlValidSid
 @ stub RtlVerifyVersionInfo
 @ stub -arch=x86_64,arm RtlVirtualUnwind
 @ stub RtlVolumeDeviceToDosName
@@ -1522,7 +1532,6 @@
 @ extern SeSystemDefaultDacl QzUnimplementedData
 @ stub SeTokenImpersonationLevel
 @ stub SeTokenIsRestricted
-@ extern SeTokenObjectType QzUnimplementedData
 @ stub SeTokenType
 @ stub SeUnregisterLogonSessionTerminatedRoutine
 @ stub SeValidSecurityDescriptor
@@ -1545,18 +1554,15 @@
 @ stub ZwAccessCheckAndAuditAlarm
 @ stub ZwAddBootEntry
 @ stub ZwAddDriverEntry
-@ stub ZwAdjustPrivilegesToken
 @ stub ZwAlertThread
 @ stub ZwAssignProcessToJobObject
 @ stub ZwCancelIoFile
 @ stub ZwCloseObjectAuditAlarm
-@ stub ZwConnectPort
 @ stub ZwCreateJobObject
 @ stub ZwDeleteBootEntry
 @ stub ZwDeleteDriverEntry
 @ stub ZwDeleteFile
 @ stub ZwDisplayString
-@ stub ZwDuplicateToken
 @ stub ZwEnumerateBootEntries
 @ stub ZwEnumerateDriverEntries
 @ stub ZwFlushInstructionCache
@@ -1568,8 +1574,6 @@
 @ stub ZwModifyDriverEntry
 @ stub ZwOpenJobObject
 @ stub ZwOpenProcess
-@ stub ZwOpenProcessToken
-@ stub ZwOpenProcessTokenEx
 @ stub ZwOpenThread
 @ stub ZwOpenThreadToken
 @ stub ZwOpenThreadTokenEx
@@ -1583,16 +1587,13 @@
 @ stub ZwQueryInformationJobObject
 @ stub ZwQueryInformationProcess
 @ stub ZwQueryInformationThread
-@ stub ZwQueryInformationToken
 @ stub ZwQueryInstallUILanguage
 @ stub ZwQuerySection
 @ stub ZwQuerySecurityObject
 @ stub ZwReplaceKey
-@ stub ZwRequestWaitReplyPort
 @ stub ZwRestoreKey
 @ stub ZwSaveKey
 @ stub ZwSaveKeyEx
-@ stub ZwSecureConnectPort
 @ stub ZwSetBootEntryOrder
 @ stub ZwSetBootOptions
 @ stub ZwSetDefaultLocale
@@ -1604,7 +1605,6 @@
 @ stub ZwSetInformationProcess
 @ stub ZwSetInformationThread
 @ stub ZwSetSecurityObject
-@ stub ZwSetSystemInformation
 @ stub ZwSetSystemTime
 @ stub ZwSetVolumeInformationFile
 @ stub ZwTerminateJobObject

@@ -608,7 +608,19 @@ NtCreateSection(OUT PHANDLE SectionHandle,
         AllocationAttributes |= SEC_COMMIT;
     if (FileHandle)
     {
-        Status = ObReferenceObjectByHandle(FileHandle, FILE_READ_DATA, IoFileObjectType, Mode,
+        /* An image needs the file opened for execution; data, for what the view may do */
+        ACCESS_MASK FileAccess;
+        if (AllocationAttributes & SEC_IMAGE)
+            FileAccess = FILE_EXECUTE;
+        else if (SectionPageProtection & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE))
+            FileAccess = FILE_READ_DATA | FILE_WRITE_DATA;
+        else if (SectionPageProtection & PAGE_EXECUTE)
+            FileAccess = FILE_EXECUTE;
+        else
+            FileAccess = FILE_READ_DATA;
+        if (SectionPageProtection & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY))
+            FileAccess |= FILE_EXECUTE;
+        Status = ObReferenceObjectByHandle(FileHandle, FileAccess, IoFileObjectType, Mode,
                                            (PVOID *)&FileObject, NULL);
         if (!NT_SUCCESS(Status))
             return Status;
@@ -665,6 +677,22 @@ ZwOpenSection(OUT PHANDLE SectionHandle, IN ACCESS_MASK DesiredAccess, IN POBJEC
     return QZ_AS_KERNEL(NtOpenSection(SectionHandle, DesiredAccess, ObjectAttributes));
 }
 
+/* The section access a view with this protection needs */
+static ACCESS_MASK
+QzMmViewAccess(ULONG Win32Protect)
+{
+    switch (Win32Protect & 0xFF)
+    {
+        case PAGE_EXECUTE:              return SECTION_MAP_EXECUTE;
+        case PAGE_EXECUTE_READ:
+        case PAGE_EXECUTE_WRITECOPY:    return SECTION_MAP_EXECUTE | SECTION_MAP_READ;
+        case PAGE_EXECUTE_READWRITE:    return SECTION_MAP_EXECUTE | SECTION_MAP_READ | SECTION_MAP_WRITE;
+        case PAGE_READWRITE:            return SECTION_MAP_READ | SECTION_MAP_WRITE;
+        case PAGE_NOACCESS:             return 0;
+        default:                        return SECTION_MAP_READ;
+    }
+}
+
 NTSTATUS
 NTAPI
 NtMapViewOfSection(IN HANDLE SectionHandle,
@@ -692,7 +720,7 @@ NtMapViewOfSection(IN HANDLE SectionHandle,
     if (!QzReadArg(Mode, &Base, UBaseAddress, sizeof(Base)) || !QzReadArg(Mode, &Size, UViewSize, sizeof(Size)) ||
         (USectionOffset && !QzReadArg(Mode, &Offset, USectionOffset, sizeof(Offset))))
         return STATUS_ACCESS_VIOLATION;
-    Status = ObReferenceObjectByHandle(SectionHandle, SECTION_MAP_READ, MmSectionObjectType, Mode,
+    Status = ObReferenceObjectByHandle(SectionHandle, QzMmViewAccess(Win32Protect), MmSectionObjectType, Mode,
                                        (PVOID *)&Section, NULL);
     if (!NT_SUCCESS(Status))
         return Status;

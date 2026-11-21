@@ -8,6 +8,7 @@
  */
 
 #include "qzio.h"
+#include "qzps.h"
 
 /* ---------------------------------------------------------------------- */
 /* ERESOURCE: shared/exclusive locks with recursion and hand-off           */
@@ -479,6 +480,40 @@ ExNotifyCallback(IN PCALLBACK_OBJECT CallbackObject,
 /* System information                                                      */
 /* ---------------------------------------------------------------------- */
 
+extern BOOLEAN QzSysenterAvailable;         /* ke/i386/cpu.c */
+
+/* Family, model/stepping and KF_* bits of the boot processor, from CPUID */
+static VOID
+QzExProcessorIdentity(PUSHORT Level, PUSHORT Revision, PULONG FeatureBits)
+{
+    ULONG Eax, Ebx, Ecx, Edx, Family, Model, Bits = 0;
+
+    __asm__ __volatile__("cpuid" : "=a"(Eax), "=b"(Ebx), "=c"(Ecx), "=d"(Edx) : "a"(1), "c"(0));
+    Family = (Eax >> 8) & 0xF;
+    Model = (Eax >> 4) & 0xF;
+    if (Family == 0xF)
+        Family += (Eax >> 20) & 0xFF;
+    if (Family == 0x6 || Family >= 0xF)
+        Model |= ((Eax >> 16) & 0xF) << 4;
+    *Level = (USHORT)Family;
+    *Revision = (USHORT)((Model << 8) | (Eax & 0xF));
+
+    if (Edx & (1 << 4))  Bits |= KF_RDTSC;
+    if (Edx & (1 << 3))  Bits |= KF_LARGE_PAGE;
+    if (Edx & (1 << 13)) Bits |= KF_GLOBAL_PAGE;
+    if (Edx & (1 << 15)) Bits |= KF_CMOV;
+    if (Edx & (1 << 12)) Bits |= KF_MTRR;
+    if (Edx & (1 << 8))  Bits |= KF_CMPXCHG8B;
+    if (Edx & (1 << 23)) Bits |= KF_MMX;
+    if (Edx & (1 << 16)) Bits |= KF_PAT;
+    if (Edx & (1 << 24)) Bits |= KF_FXSR;
+    if (Edx & (1 << 25)) Bits |= KF_XMMI;
+    if (Edx & (1 << 26)) Bits |= KF_XMMI64;
+    if (QzSysenterAvailable)
+        Bits |= KF_FAST_SYSCALL;
+    *FeatureBits = Bits | KF_CR4 | KF_WORKING_PTE;
+}
+
 NTSTATUS
 NTAPI
 ZwQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
@@ -557,6 +592,78 @@ ZwQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
             break;
         }
 
+        case SystemProcessorInformation:
+        {
+            PSYSTEM_PROCESSOR_INFORMATION Info = SystemInformation;
+            Needed = sizeof(*Info);
+            if (Length < Needed)
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+            RtlZeroMemory(Info, sizeof(*Info));
+            Info->ProcessorArchitecture = PROCESSOR_ARCHITECTURE_INTEL;
+            QzExProcessorIdentity(&Info->ProcessorLevel, &Info->ProcessorRevision, &Info->ProcessorFeatureBits);
+            break;
+        }
+
+        case SystemPerformanceInformation:
+        {
+            PSYSTEM_PERFORMANCE_INFORMATION Info = SystemInformation;
+            ULONG Total, Free;
+            Needed = sizeof(*Info);
+            if (Length < Needed)
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+            QzMmGetStats(&Total, &Free);
+            RtlZeroMemory(Info, sizeof(*Info));
+            Info->AvailablePages = Free;
+            Info->CommittedPages = Total - Free;
+            Info->CommitLimit = Total;
+            Info->PeakCommitment = Total - Free;
+            break;
+        }
+
+        case SystemProcessorPerformanceInformation:
+        {
+            PSYSTEM_PROCESSOR_PERFORMANCE_INFORMATION Info = SystemInformation;
+            Needed = sizeof(*Info);
+            if (Length < Needed)
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+            RtlZeroMemory(Info, sizeof(*Info));
+            KeQueryTickCount(&Info->KernelTime);
+            Info->KernelTime.QuadPart *= KeQueryTimeIncrement();
+            break;
+        }
+
+        case SystemFlagsInformation:
+        {
+            PSYSTEM_FLAGS_INFORMATION Info = SystemInformation;
+            Needed = sizeof(*Info);
+            if (Length < Needed)
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+            Info->Flags = 0;                    /* NtGlobalFlag */
+            break;
+        }
+
+        case SystemRangeStartInformation:
+            Needed = sizeof(ULONG_PTR);
+            if (Length < Needed)
+            {
+                Status = STATUS_INFO_LENGTH_MISMATCH;
+                break;
+            }
+            *(PULONG_PTR)SystemInformation = (ULONG_PTR)MmSystemRangeStart;
+            break;
+
         case SystemKernelDebuggerInformation:
         {
             PSYSTEM_KERNEL_DEBUGGER_INFORMATION Info = SystemInformation;
@@ -593,6 +700,73 @@ ZwQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
     if (ResultLength)
         *ResultLength = Needed;
     return Status;
+}
+
+/*
+ * Setting system information. Sessions: there is one session space (the
+ * system's), so a new session only gets the next number; win32k.sys as a
+ * service table extension needs drivers loaded from disk (B7).
+ */
+NTSTATUS
+NTAPI
+NtSetSystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
+                       IN PVOID SystemInformation,
+                       IN ULONG Length)
+{
+    static LONG NextSession = -1;
+    KPROCESSOR_MODE Mode = ExGetPreviousMode();
+
+    switch (SystemInformationClass)
+    {
+        case SystemSessionCreate:
+        {
+            ULONG Id;
+            if (Length != sizeof(ULONG))
+                return STATUS_INFO_LENGTH_MISMATCH;
+            Id = (ULONG)InterlockedIncrement(&NextSession);
+            return QzWriteArg(Mode, SystemInformation, &Id, sizeof(Id)) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
+        }
+
+        case SystemSessionDetach:
+            return Length == sizeof(ULONG) ? STATUS_SUCCESS : STATUS_INFO_LENGTH_MISMATCH;
+
+        case SystemExtendServiceTableInformation:
+        {
+            UNICODE_STRING Name;
+            WCHAR Buffer[128];
+            if (Length != sizeof(UNICODE_STRING))
+                return STATUS_INFO_LENGTH_MISMATCH;
+            Buffer[0] = 0;
+            if (QzReadArg(Mode, &Name, SystemInformation, sizeof(Name)))
+            {
+                USHORT Bytes = min(Name.Length, sizeof(Buffer) - sizeof(WCHAR));
+                if (QzReadArg(Mode, Buffer, Name.Buffer, Bytes))
+                    Buffer[Bytes / sizeof(WCHAR)] = 0;
+            }
+            DbgPrint(QZ_KERNEL_NAME ": loading %ls as the service table extension needs drivers from disk "
+                     "(stage B7, next milestone)\n", Buffer);
+            return STATUS_NOT_IMPLEMENTED;
+        }
+
+        case SystemFlagsInformation:
+        case SystemTimeAdjustmentInformation:
+        case SystemFileCacheInformation:
+        case SystemDpcBehaviorInformation:
+        case SystemRegistryQuotaInformation:
+            return STATUS_SUCCESS;              /* noted, not acted on */
+
+        default:
+            return STATUS_INVALID_INFO_CLASS;
+    }
+}
+
+NTSTATUS
+NTAPI
+ZwSetSystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
+                       IN PVOID SystemInformation,
+                       IN ULONG Length)
+{
+    return QZ_AS_KERNEL(NtSetSystemInformation(SystemInformationClass, SystemInformation, Length));
 }
 
 /* ---------------------------------------------------------------------- */

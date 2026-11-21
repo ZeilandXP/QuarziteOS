@@ -96,7 +96,8 @@ QzObpTableOf(HANDLE Handle, KPROCESSOR_MODE AccessMode, PLONG Index)
     {
         Table = QzObpCurrentTable();
     }
-    if (Value == 0 || (Value & 3))
+    Value &= ~3UL;            /* the low two bits are the caller's tag */
+    if (Value == 0)
         return NULL;
     *Index = (LONG)(Value >> 2) - 1;
     return Table;
@@ -415,7 +416,8 @@ QzObpLookupInTable(PQZ_HANDLE_TABLE Table, HANDLE Handle, PQZ_HANDLE_ENTRY Out)
         Table = &QzKernelHandleTable;
         Value &= ~QZ_KERNEL_HANDLE_BIT;
     }
-    if (!Value || (Value & 3))
+    Value &= ~3UL;
+    if (!Value)
         return FALSE;
     Index = (LONG)(Value >> 2) - 1;
     OldIrql = QzAcquireSpinLock(&Table->Lock);
@@ -523,7 +525,8 @@ NtDuplicateObject(IN HANDLE SourceProcessHandle,
         ULONG Value = (ULONG)(ULONG_PTR)SourceHandle & ~QZ_KERNEL_HANDLE_BIT;
         PQZ_HANDLE_TABLE Table = ((ULONG_PTR)SourceHandle & QZ_KERNEL_HANDLE_BIT) ? &QzKernelHandleTable
                                                                                  : Source->HandleTable;
-        if (Value && !(Value & 3))
+        Value &= ~3UL;
+        if (Value)
             QzObpCloseEntry(Table, (LONG)(Value >> 2) - 1);
     }
 Done:

@@ -369,6 +369,7 @@ QzCmCreateCellKey(HCELL_INDEX Parent, PCUNICODE_STRING Name, BOOLEAN Volatile, U
         HvMarkCellDirty(QzHive, Node->Security, FALSE);
     }
 
+    HvMarkCellDirty(QzHive, Parent, FALSE);
     if (!CmpAddSubKey(QzHive, Parent, Cell))
     {
         HvFreeCell(QzHive, Cell);
@@ -404,8 +405,9 @@ QzCmSetCellValue(HCELL_INDEX KeyCell, PCUNICODE_STRING Name, ULONG Type, PVOID D
     {
         /* Replace the data of an existing value */
         Value = (PCM_KEY_VALUE)HvGetCell(QzHive, ValueCell);
-        CmpFreeValueData(QzHive, Value->Data, Value->DataLength);
         HvMarkCellDirty(QzHive, ValueCell, FALSE);
+        CmpMarkValueDataDirty(QzHive, Value);
+        CmpFreeValueData(QzHive, Value->Data, Value->DataLength);
     }
     else
     {
@@ -419,6 +421,9 @@ QzCmSetCellValue(HCELL_INDEX KeyCell, PCUNICODE_STRING Name, ULONG Type, PVOID D
         Value->NameLength = (USHORT)CmpCopyName(QzHive, Value->Name, (PUNICODE_STRING)Name);
         Value->Flags = (NameSize < Name->Length) ? VALUE_COMP_NAME : 0;
         Node = QzCmNode(KeyCell);
+        HvMarkCellDirty(QzHive, KeyCell, FALSE);
+        if (Node->ValueList.Count)
+            HvMarkCellDirty(QzHive, Node->ValueList.List, FALSE);    /* it is reallocated */
         Status = CmpAddValueToList(QzHive, ValueCell, Node->ValueList.Count, Storage, &Node->ValueList);
         if (!NT_SUCCESS(Status))
         {
@@ -473,6 +478,12 @@ QzCmDeleteCellValue(HCELL_INDEX KeyCell, PCUNICODE_STRING Name)
     if (!CmpFindNameInList(QzHive, &Node->ValueList, (PUNICODE_STRING)Name, &Index, &ValueCell) ||
         ValueCell == HCELL_NIL)
         return STATUS_OBJECT_NAME_NOT_FOUND;
+    /* cmlib wants every cell it changes or frees marked dirty first */
+    HvMarkCellDirty(QzHive, KeyCell, FALSE);
+    HvMarkCellDirty(QzHive, Node->ValueList.List, FALSE);
+    HvMarkCellDirty(QzHive, ValueCell, FALSE);
+    CmpMarkValueDataDirty(QzHive, (PCM_KEY_VALUE)HvGetCell(QzHive, ValueCell));
+    Node = QzCmNode(KeyCell);
     Status = CmpRemoveValueFromList(QzHive, Index, &Node->ValueList);
     if (!NT_SUCCESS(Status))
         return Status;
@@ -842,6 +853,8 @@ QzCmOpen(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES Object
     Parse.Volatile = (CreateOptions & REG_OPTION_VOLATILE) != 0;
     Parse.Disposition = REG_OPENED_EXISTING_KEY;
     Attributes.Attributes |= OBJ_CASE_INSENSITIVE;
+    if (ExGetPreviousMode() != KernelMode)
+        Attributes.Attributes &= ~OBJ_KERNEL_HANDLE;
 
     /* An empty name relative to a key reopens that key */
     if (Attributes.RootDirectory && (!Attributes.ObjectName || !Attributes.ObjectName->Length))
@@ -854,7 +867,7 @@ QzCmOpen(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES Object
         Status = QzCmCreateKeyObject(Key->IsCell, Key->Cell, Key->Mem, &Copy);
         if (NT_SUCCESS(Status))
         {
-            Status = ObOpenObjectByPointer(Copy, OBJ_KERNEL_HANDLE, NULL, DesiredAccess,
+            Status = ObOpenObjectByPointer(Copy, Attributes.Attributes & OBJ_KERNEL_HANDLE, NULL, DesiredAccess,
                                            CmKeyObjectType, KernelMode, KeyHandle);
             ObDereferenceObject(Copy);
         }
@@ -1484,6 +1497,22 @@ ZwFlushKey(IN HANDLE KeyHandle)
     return STATUS_SUCCESS;
 }
 
+/*
+ * smss says when the system hives may be used. The loader already gave
+ * them to us and they are writable since B5, so this only accepts the
+ * first call, like NT, which refuses a second one.
+ */
+NTSTATUS
+NTAPI
+NtInitializeRegistry(IN USHORT Flag)
+{
+    static LONG Done;
+    UNREFERENCED_PARAMETER(Flag);
+    if (ExGetPreviousMode() != KernelMode && InterlockedExchange(&Done, 1))
+        return STATUS_ACCESS_DENIED;
+    return STATUS_SUCCESS;
+}
+
 /* ---------------------------------------------------------------------- */
 /* HARDWARE\DESCRIPTION from the loader's ARC configuration tree           */
 /* ---------------------------------------------------------------------- */
@@ -1595,6 +1624,96 @@ QzCmImportArcNode(PQZ_MEM_KEY Parent, PCONFIGURATION_COMPONENT_DATA Node,
 }
 
 static VOID
+QzCpuid(ULONG Leaf, ULONG Regs[4])
+{
+    __asm__ __volatile__("cpuid" : "=a"(Regs[0]), "=b"(Regs[1]), "=c"(Regs[2]), "=d"(Regs[3]) : "a"(Leaf), "c"(0));
+}
+
+/*
+ * The loader's tree has no processors on x86: NT describes them itself
+ * from CPUID. CentralProcessor\0 and FloatingPointProcessor\0 (one
+ * processor, as the scheduler has).
+ */
+static VOID
+QzCmDescribeProcessors(PQZ_MEM_KEY Description)
+{
+    PQZ_MEM_KEY System = QzMemCreatePath(Description, L"System"), Cpu, Fpu;
+    ULONG Regs[4], Family, Model, Stepping, MaxExtended, i, Mhz = 0, Feature = 0;
+    CHAR Vendor[13], Brand[49];
+    WCHAR Text[64];
+    ULONG Info[4] = { 0, 0, 0, 1 };
+    ULONGLONG Start, End;
+
+    if (!System || QzMemCreatePath(System, L"CentralProcessor")->SubKeys)
+        return;
+    Cpu = QzMemCreatePath(QzMemCreatePath(System, L"CentralProcessor"), L"0");
+    Fpu = QzMemCreatePath(QzMemCreatePath(System, L"FloatingPointProcessor"), L"0");
+    if (!Cpu || !Fpu)
+        return;
+
+    QzCpuid(0, Regs);
+    RtlCopyMemory(Vendor, &Regs[1], 4);
+    RtlCopyMemory(Vendor + 4, &Regs[3], 4);
+    RtlCopyMemory(Vendor + 8, &Regs[2], 4);
+    Vendor[12] = 0;
+    QzCpuid(1, Regs);
+    Family = (Regs[0] >> 8) & 0xF;
+    Model = (Regs[0] >> 4) & 0xF;
+    Stepping = Regs[0] & 0xF;
+    if (Family == 0xF)
+        Family += (Regs[0] >> 20) & 0xFF;
+    if (Family == 0x6 || Family >= 0xF)
+        Model |= ((Regs[0] >> 16) & 0xF) << 4;
+    if (Regs[3] & (1 << 24)) Feature |= KF_FXSR;
+    if (Regs[3] & (1 << 25)) Feature |= KF_XMMI;
+    if (Regs[3] & (1 << 26)) Feature |= KF_XMMI64;
+    if (Regs[3] & (1 << 23)) Feature |= KF_MMX;
+    if (Regs[3] & (1 << 15)) Feature |= KF_CMOV;
+    if (Regs[3] & (1 << 4))  Feature |= KF_RDTSC;
+    if (Regs[3] & (1 << 8))  Feature |= KF_CMPXCHG8B;
+
+    Brand[0] = 0;
+    QzCpuid(0x80000000, Regs);
+    MaxExtended = Regs[0];
+    if (MaxExtended >= 0x80000004)
+    {
+        for (i = 0; i < 3; i++)
+        {
+            QzCpuid(0x80000002 + i, Regs);
+            RtlCopyMemory(Brand + i * 16, Regs, 16);
+        }
+        Brand[48] = 0;
+    }
+
+    /* The clock: time stamps over 10 ms */
+    if (Feature & KF_RDTSC)
+    {
+        Start = __rdtsc();
+        KeStallExecutionProcessor(10000);
+        End = __rdtsc();
+        Mhz = (ULONG)((End - Start + 5000) / 10000);
+    }
+
+    _snwprintf(Text, RTL_NUMBER_OF(Text), L"x86 Family %lu Model %lu Stepping %lu", Family, Model, Stepping);
+    QzMemSetValueW(Cpu, L"Identifier", REG_SZ, Text, (ULONG)(wcslen(Text) + 1) * sizeof(WCHAR));
+    QzMemSetValueW(Fpu, L"Identifier", REG_SZ, Text, (ULONG)(wcslen(Text) + 1) * sizeof(WCHAR));
+    _snwprintf(Text, RTL_NUMBER_OF(Text), L"%hs", Vendor);
+    QzMemSetValueW(Cpu, L"VendorIdentifier", REG_SZ, Text, (ULONG)(wcslen(Text) + 1) * sizeof(WCHAR));
+    if (Brand[0])
+    {
+        PCSTR Name = Brand;
+        while (*Name == ' ')
+            Name++;
+        _snwprintf(Text, RTL_NUMBER_OF(Text), L"%hs", Name);
+        QzMemSetValueW(Cpu, L"ProcessorNameString", REG_SZ, Text, (ULONG)(wcslen(Text) + 1) * sizeof(WCHAR));
+    }
+    QzMemSetValueW(Cpu, L"FeatureSet", REG_DWORD, &Feature, sizeof(Feature));
+    QzMemSetValueW(Cpu, L"~MHz", REG_DWORD, &Mhz, sizeof(Mhz));
+    QzMemSetValueW(Cpu, L"Component Information", REG_BINARY, Info, sizeof(Info));
+    QzMemSetValueW(Fpu, L"Component Information", REG_BINARY, Info, sizeof(Info));
+}
+
+static VOID
 QzCmBuildVolatileTree(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     PQZ_MEM_KEY Machine, Description;
@@ -1618,6 +1737,7 @@ QzCmBuildVolatileTree(PLOADER_PARAMETER_BLOCK LoaderBlock)
                  LoaderBlock->ConfigurationRoot, LoaderBlock->ConfigurationRoot->ComponentEntry.Type);
         QzCmImportArcNode(Description, LoaderBlock->ConfigurationRoot, Internal, 0);
     }
+    QzCmDescribeProcessors(Description);
 }
 
 /* ---------------------------------------------------------------------- */

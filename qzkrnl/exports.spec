@@ -731,3 +731,36 @@
 # Vista interrupt connection
 @ stdcall IoConnectInterruptEx(ptr)
 @ stdcall IoDisconnectInterruptEx(ptr)
+
+# LPC, tokens (B7)
+@ extern LpcPortObjectType
+@ stdcall LpcRequestPort(ptr ptr)
+@ stdcall LpcRequestWaitReplyPort(ptr ptr ptr)
+@ stdcall ZwSecureConnectPort(ptr ptr ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall ZwConnectPort(ptr ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall ZwRequestWaitReplyPort(ptr ptr ptr)
+@ extern SeTokenObjectType
+@ stdcall NtOpenProcessToken(ptr long ptr)
+@ stdcall NtOpenProcessTokenEx(ptr long long ptr)
+@ stdcall ZwOpenProcessToken(ptr long ptr)
+@ stdcall ZwOpenProcessTokenEx(ptr long long ptr)
+@ stdcall NtAdjustPrivilegesToken(ptr long ptr long ptr ptr)
+@ stdcall ZwAdjustPrivilegesToken(ptr long ptr long ptr ptr)
+@ stdcall NtQueryInformationToken(ptr long ptr long ptr)
+@ stdcall ZwQueryInformationToken(ptr long long long ptr)
+@ stdcall NtDuplicateToken(ptr long ptr long long ptr)
+@ stdcall ZwDuplicateToken(ptr long ptr long long ptr)
+
+# Security identifiers (B7)
+@ stdcall RtlLengthRequiredSid(long)
+@ stdcall RtlValidSid(ptr)
+@ stdcall RtlLengthSid(ptr)
+@ stdcall RtlCopySid(long ptr ptr)
+@ stdcall RtlEqualSid(ptr ptr)
+@ stdcall RtlInitializeSid(ptr ptr long)
+@ stdcall RtlSubAuthoritySid(ptr long)
+@ stdcall RtlSubAuthorityCountSid(ptr)
+@ stdcall RtlConvertSidToUnicodeString(ptr ptr long)
+
+# System information (B7)
+@ stdcall ZwSetSystemInformation(long ptr long)

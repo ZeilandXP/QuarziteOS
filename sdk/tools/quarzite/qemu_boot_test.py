@@ -309,9 +309,11 @@ def run_qzkrnl(iso, out):
                 ("type \\SystemRoot\\system32\\smss.exe", [r"smss\.exe: (\d+) bytes \(size \1\)",
                                                              r"first line: MZ"]),
                 ("secttest", [r"secttest: \d+ passed, 0 failed"]),
+                ("lpctest", [r"lpctest: \d+ passed, 0 failed"]),
                 # The exit criterion of stage B6: smss.exe starts
                 ("smss", [r"ps: started \\SystemRoot\\System32\\smss\.exe",
                           r"smss\.exe \(pid \d+\): ntdll's loader is done; running the image",
+                          r"loading \\SystemRoot\\System32\\win32k\.sys as the service table extension",
                           r"smss: pid \d+, ran its own code"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
@@ -320,7 +322,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "smss", "pnp") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "smss", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)

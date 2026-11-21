@@ -340,6 +340,9 @@ QzExWaitableObject(PVOID Object)
     POBJECT_TYPE Type = OBJECT_TO_OBJECT_HEADER(Object)->Type;
     if (Type == IoFileObjectType)
         return &((PFILE_OBJECT)Object)->Event;
+    /* A small DefaultObject is an offset into the body (NT's convention) */
+    if ((ULONG_PTR)Type->DefaultObject && (ULONG_PTR)Type->DefaultObject < 0x10000)
+        return (PUCHAR)Object + (ULONG_PTR)Type->DefaultObject;
     return Type->DefaultObject ? Type->DefaultObject : Object;
 }
 

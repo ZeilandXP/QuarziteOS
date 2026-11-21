@@ -19,6 +19,9 @@ POBJECT_TYPE PsProcessType;
 PEPROCESS PsInitialSystemProcess;
 
 VOID NTAPI QzPsDeleteProcess(PVOID Object);   /* ps/process.c */
+VOID QzLpcInit(VOID);                          /* lpc/port.c */
+VOID QzSeInitTokens(VOID);                     /* se/token.c */
+VOID QzExInitKeyedEvents(VOID);                /* ex/keyed.c */
 
 static GENERIC_MAPPING QzThreadMapping =
 {
@@ -399,4 +402,7 @@ QzPsInit(VOID)
     PsProcessType = QzPsCreateType(L"Process", &QzProcessMapping, PROCESS_ALL_ACCESS, QzPsDeleteProcess);
     QzPsInitProcesses();
     QzMmSectionInit();
+    QzLpcInit();
+    QzSeInitTokens();
+    QzExInitKeyedEvents();
 }

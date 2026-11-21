@@ -75,6 +75,7 @@ QzCmdHelp(VOID)
             "                    FPU state)\n"
             "  secttest          self-test: sections (ntdll.dll as an image, copy on write,\n"
             "                    shared memory; starts PnP if needed)\n"
+            "  lpctest           self-test: LPC ports, keyed events, the system token\n"
             "  smss              start \\SystemRoot\\System32\\smss.exe\n"
             "  syscalls [on|off] system service statistics; trace every call\n"
             "  dir <path>        list a directory (e.g. \\SystemRoot\\system32)\n"
@@ -292,6 +293,8 @@ QzExecute(PCHAR Line)
         QzNeedDevices();
         QzRunSectionTests();
     }
+    else if (!strcmp(Cmd, "lpctest"))
+        QzRunLpcTests();
     else if (!strcmp(Cmd, "smss"))
     {
         /* Start it, give it a few seconds, and say how far it got */

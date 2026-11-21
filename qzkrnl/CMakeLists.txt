@@ -26,6 +26,7 @@ list(APPEND SOURCE
     ex/exmore.c
     ex/exobj.c
     ex/init.c
+    ex/keyed.c
     ex/shell.c
     ex/sync.c
     ex/version.c
@@ -55,6 +56,8 @@ list(APPEND SOURCE
     io/misc.c
     io/pnp.c
     io/storage.c
+    lpc/lpctest.c
+    lpc/port.c
     mm/mdl.c
     mm/mm.c
     mm/section.c
@@ -71,6 +74,7 @@ list(APPEND SOURCE
     ps/process.c
     ps/thread.c
     se/se.c
+    se/token.c
     drv/input.c
     drv/kbd.c
     drv/serial.c
@@ -79,6 +83,7 @@ list(APPEND SOURCE
     rtl/print.c
     rtl/rtl.c
     rtl/rtl2.c
+    rtl/sid.c
     rtl/time.c
     rtl/ustr.c)
 

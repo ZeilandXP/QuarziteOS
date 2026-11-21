@@ -228,3 +228,4 @@ ULONG QzServiceNumber(PCSTR Name);
 VOID QzRunVmTests(VOID);
 VOID QzRunUserTests(VOID);
 VOID QzRunSectionTests(VOID);
+VOID QzRunLpcTests(VOID);
