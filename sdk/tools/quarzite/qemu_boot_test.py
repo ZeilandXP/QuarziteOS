@@ -286,7 +286,10 @@ def run_qzkrnl(iso, out):
                              r"IDE\\CdRomQEMU\S+ \[started, cdrom\]",
                              r"PCI\\VEN_8086&DEV_24CD\S+ \[started, usbehci\]",
                              r"USB\\ROOT_HUB20\S+ \[started, usbhub\]",
-                             r"USB\\Vid_0627&Pid_0001\S+ \["]),
+                             # Stage B7: drivers loaded from disk (the HID stack)
+                             r"USB\\Vid_0627&Pid_0001\S+ \[started, hidusb\]",
+                             r"HID\\Vid_0627&Pid_0001\S+ \[started, mouhid\]"]),
+                ("input mouse 20000", [r"input: mouse event: flags 0x1, buttons 0x1"], "click"),
                 ("read \\Device\\CdRom0 16", [r"2048 bytes read", r"\.CD001\."]),
                 ("read \\Device\\Harddisk0\\Partition0 0", [r"512 bytes read",
                                                          r"last two bytes of the first 512: 55 aa"]),
@@ -310,19 +313,28 @@ def run_qzkrnl(iso, out):
                                                              r"first line: MZ"]),
                 ("secttest", [r"secttest: \d+ passed, 0 failed"]),
                 ("lpctest", [r"lpctest: \d+ passed, 0 failed"]),
+                ("ldrtest", [r"ldrtest: \d+ passed, 0 failed"]),
                 # The exit criterion of stage B6: smss.exe starts
                 ("smss", [r"ps: started \\SystemRoot\\System32\\smss\.exe",
                           r"smss\.exe \(pid \d+\): ntdll's loader is done; running the image",
-                          r"loading \\SystemRoot\\System32\\win32k\.sys as the service table extension",
+                          r"loaded \\SystemRoot\\System32\\win32k\.sys at",
+                          r"win32k\.sys is loaded but not started: it imports \d+ export",
                           r"smss: pid \d+, ran its own code"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
                          r"[1-9]\d* interrupt objects connected"]),
             ]
-            for cmd, patterns in commands:
+            for cmd, patterns, *action in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "smss", "pnp") else 30,
+                if action and action[0] == "click":
+                    # A left click on the USB tablet while the shell waits for it
+                    vm.wait_serial(r"input: waiting", 30, start=mark)
+                    time.sleep(1)
+                    vm.monitor("mouse_button 1")
+                    time.sleep(0.3)
+                    vm.monitor("mouse_button 0")
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "vmtest", "usertest", "secttest", "lpctest", "ldrtest", "smss", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)

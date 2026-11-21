@@ -52,6 +52,7 @@ list(APPEND SOURCE
     io/file.c
     io/iotest.c
     io/isofs.c
+    io/ldrtest.c
     io/irp.c
     io/misc.c
     io/pnp.c
@@ -61,6 +62,7 @@ list(APPEND SOURCE
     mm/mdl.c
     mm/mm.c
     mm/section.c
+    mm/sysload.c
     mm/vm.c
     mm/vmtest.c
     mm/pool.c
@@ -106,3 +108,4 @@ add_importlibs(qzkrnl hal)
 target_link_libraries(qzkrnl cmlib)
 
 add_cd_file(TARGET qzkrnl DESTINATION reactos/system32 NO_CAB FOR all)
+add_subdirectory(tests/ldrtest)

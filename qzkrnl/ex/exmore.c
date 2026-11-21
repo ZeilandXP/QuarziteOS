@@ -703,9 +703,58 @@ ZwQuerySystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
 }
 
 /*
+ * win32k.sys: loaded like a driver, but it is no driver: DriverEntry gets
+ * a driver object of its own that the I/O manager does not know, and it
+ * extends the system service table (KeAddSystemServiceTable).
+ */
+static NTSTATUS
+QzExLoadServiceTableImage(PCUNICODE_STRING Path)
+{
+    static DRIVER_OBJECT Win32k;
+    PQZ_LDR_ENTRY Module;
+    PCSTR FirstMissing = NULL;
+    ULONG Missing;
+    NTSTATUS Status;
+
+    Status = QzMmLoadSystemImage(Path, (PVOID *)&Module);
+    if (Status == STATUS_IMAGE_ALREADY_LOADED)
+    {
+        QzMmUnloadSystemImage(Module);          /* drop the reference just taken */
+        return Status;
+    }
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Missing = QzIoCheckImports(Module->DllBase, &FirstMissing, 0);
+    if (Missing)
+    {
+        DbgPrint(QZ_KERNEL_NAME ": %wZ is loaded but not started: it imports %lu export(s) qzkrnl does not "
+                 "implement yet (%s, ...)\n", &Module->BaseDllName, Missing, FirstMissing);
+        QzMmUnloadSystemImage(Module);
+        return STATUS_PROCEDURE_NOT_FOUND;
+    }
+    Status = QzIoInitializeImports(Module->DllBase, 0);
+    if (NT_SUCCESS(Status) && Module->EntryPoint)
+    {
+        RtlZeroMemory(&Win32k, sizeof(Win32k));
+        Win32k.Type = IO_TYPE_DRIVER;
+        Win32k.Size = sizeof(Win32k);
+        Win32k.DriverStart = Module->DllBase;
+        Win32k.DriverSize = Module->SizeOfImage;
+        Win32k.DriverSection = Module;
+        Win32k.DriverInit = (PDRIVER_INITIALIZE)Module->EntryPoint;
+        DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ\n", &Module->BaseDllName);
+        Status = Win32k.DriverInit(&Win32k, NULL);
+        DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ -> 0x%08lx\n", &Module->BaseDllName, Status);
+    }
+    if (!NT_SUCCESS(Status))
+        QzMmUnloadSystemImage(Module);
+    return Status;
+}
+
+/*
  * Setting system information. Sessions: there is one session space (the
- * system's), so a new session only gets the next number; win32k.sys as a
- * service table extension needs drivers loaded from disk (B7).
+ * system's), so a new session only gets the next number.
  */
 NTSTATUS
 NTAPI
@@ -732,20 +781,16 @@ NtSetSystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
 
         case SystemExtendServiceTableInformation:
         {
-            UNICODE_STRING Name;
             WCHAR Buffer[128];
+            UNICODE_STRING Name;
             if (Length != sizeof(UNICODE_STRING))
                 return STATUS_INFO_LENGTH_MISMATCH;
-            Buffer[0] = 0;
-            if (QzReadArg(Mode, &Name, SystemInformation, sizeof(Name)))
-            {
-                USHORT Bytes = min(Name.Length, sizeof(Buffer) - sizeof(WCHAR));
-                if (QzReadArg(Mode, Buffer, Name.Buffer, Bytes))
-                    Buffer[Bytes / sizeof(WCHAR)] = 0;
-            }
-            DbgPrint(QZ_KERNEL_NAME ": loading %ls as the service table extension needs drivers from disk "
-                     "(stage B7, next milestone)\n", Buffer);
-            return STATUS_NOT_IMPLEMENTED;
+            if (!QzReadArg(Mode, &Name, SystemInformation, sizeof(Name)) || Name.Length > sizeof(Buffer) ||
+                !QzReadArg(Mode, Buffer, Name.Buffer, Name.Length))
+                return STATUS_ACCESS_VIOLATION;
+            Name.Buffer = Buffer;
+            Name.MaximumLength = Name.Length;
+            return QzExLoadServiceTableImage(&Name);
         }
 
         case SystemFlagsInformation:
@@ -770,38 +815,86 @@ ZwSetSystemInformation(IN SYSTEM_INFORMATION_CLASS SystemInformationClass,
 }
 
 /* ---------------------------------------------------------------------- */
-/* Loading drivers by service name (the boot loader already loaded them)   */
+/* Loading drivers by service key                                         */
 /* ---------------------------------------------------------------------- */
+
+/* "\Registry\Machine\System\CurrentControlSet\Services\Name" -> "Name" */
+static VOID
+QzExServiceName(PCUNICODE_STRING Path, PUNICODE_STRING Service)
+{
+    USHORT i = Path->Length / sizeof(WCHAR);
+
+    *Service = *Path;
+    while (i && Service->Buffer[i - 1] != L'\\')
+        i--;
+    Service->Buffer += i;
+    Service->Length -= i * sizeof(WCHAR);
+    Service->MaximumLength = Service->Length;
+}
 
 NTSTATUS
 NTAPI
 ZwLoadDriver(IN PUNICODE_STRING DriverServiceName)
 {
-    UNICODE_STRING Service = *DriverServiceName;
+    UNICODE_STRING Service;
     PDRIVER_OBJECT Driver;
-    NTSTATUS Status;
-    USHORT i = Service.Length / sizeof(WCHAR);
 
-    while (i && Service.Buffer[i - 1] != L'\\')
-        i--;
-    Service.Buffer += i;
-    Service.Length -= i * sizeof(WCHAR);
-    Service.MaximumLength = Service.Length;
-
-    if (QzIoFindDriver(&Service))
-        return STATUS_IMAGE_ALREADY_LOADED;
-    Status = QzIoStartBootDriver(&Service, &Driver);
-    if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
-        Status = STATUS_DRIVER_UNABLE_TO_LOAD;   /* not on disk access yet (B7) */
-    return Status;
+    QzExServiceName(DriverServiceName, &Service);
+    Driver = QzIoFindDriver(&Service);
+    if (Driver)
+    {
+        if (NT_SUCCESS(QzDriverExtension(Driver)->EntryStatus) || !QzDriverExtension(Driver)->EntryCalled)
+            return STATUS_IMAGE_ALREADY_LOADED;
+        QzIoUnloadDriver(&Service);           /* it failed before: try again */
+    }
+    return QzIoLoadDriver(&Service, &Driver);
 }
 
 NTSTATUS
 NTAPI
 ZwUnloadDriver(IN PUNICODE_STRING DriverServiceName)
 {
-    UNREFERENCED_PARAMETER(DriverServiceName);
-    return STATUS_NOT_SUPPORTED;
+    UNICODE_STRING Service;
+    QzExServiceName(DriverServiceName, &Service);
+    return QzIoUnloadDriver(&Service);
+}
+
+/* The services from user mode: the name is copied; every caller holds SeLoadDriverPrivilege */
+static NTSTATUS
+QzExCaptureServiceKey(PUNICODE_STRING User, PUNICODE_STRING Captured, PWCHAR Buffer, ULONG Size)
+{
+    KPROCESSOR_MODE Mode = ExGetPreviousMode();
+    UNICODE_STRING Name;
+
+    if (!QzReadArg(Mode, &Name, User, sizeof(Name)))
+        return STATUS_ACCESS_VIOLATION;
+    if (!Name.Length || Name.Length > Size || (Name.Length & 1))
+        return STATUS_INVALID_PARAMETER;
+    if (!QzReadArg(Mode, Buffer, Name.Buffer, Name.Length))
+        return STATUS_ACCESS_VIOLATION;
+    Captured->Buffer = Buffer;
+    Captured->Length = Captured->MaximumLength = Name.Length;
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
+NtLoadDriver(IN PUNICODE_STRING DriverServiceName)
+{
+    WCHAR Buffer[256];
+    UNICODE_STRING Name;
+    NTSTATUS Status = QzExCaptureServiceKey(DriverServiceName, &Name, Buffer, sizeof(Buffer));
+    return NT_SUCCESS(Status) ? QZ_AS_KERNEL(ZwLoadDriver(&Name)) : Status;
+}
+
+NTSTATUS
+NTAPI
+NtUnloadDriver(IN PUNICODE_STRING DriverServiceName)
+{
+    WCHAR Buffer[256];
+    UNICODE_STRING Name;
+    NTSTATUS Status = QzExCaptureServiceKey(DriverServiceName, &Name, Buffer, sizeof(Buffer));
+    return NT_SUCCESS(Status) ? QZ_AS_KERNEL(ZwUnloadDriver(&Name)) : Status;
 }
 
 /* ---------------------------------------------------------------------- */

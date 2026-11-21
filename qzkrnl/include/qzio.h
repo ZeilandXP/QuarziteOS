@@ -45,7 +45,19 @@ typedef struct _QZ_DRIVER_EXTENSION
 extern LIST_ENTRY QzIoDriverList;
 VOID QzIoInit(VOID);
 PDRIVER_OBJECT QzIoFindDriver(PCUNICODE_STRING ServiceName);
-NTSTATUS QzIoStartBootDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject);
+NTSTATUS QzIoLoadDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject);
+NTSTATUS QzIoUnloadDriver(PCUNICODE_STRING ServiceName);
+BOOLEAN QzIoIsBootService(PCUNICODE_STRING ServiceName);
+NTSTATUS QzIoInitializeImports(PVOID ImageBase, ULONG Depth);
+VOID QzIoForgetDll(PVOID ImageBase);
+
+/* mm/sysload.c: kernel images loaded from disk */
+VOID QzMmInitSystemImages(VOID);
+NTSTATUS QzMmLoadSystemImage(PCUNICODE_STRING Path, PVOID *Entry);
+VOID QzMmUnloadSystemImage(PVOID Entry);
+BOOLEAN QzMmIsDiskImage(PVOID Entry);
+ULONG QzMmSystemImagePages(VOID);
+PVOID QzMmFindModuleExport(PVOID Entry, PCSTR Name);
 VOID QzIoDumpDrivers(VOID);
 NTSTATUS NTAPI QzIoInvalidDeviceRequest(PDEVICE_OBJECT DeviceObject, PIRP Irp);
 VOID QzIoCallReinitRoutines(BOOLEAN Boot);

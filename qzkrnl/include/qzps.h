@@ -229,3 +229,5 @@ VOID QzRunVmTests(VOID);
 VOID QzRunUserTests(VOID);
 VOID QzRunSectionTests(VOID);
 VOID QzRunLpcTests(VOID);
+VOID QzRunLoaderTests(VOID);
+VOID QzIoShellInput(PCSTR Which, ULONG Milliseconds);

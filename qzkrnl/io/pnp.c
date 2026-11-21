@@ -37,6 +37,7 @@ int __cdecl _strnicmp(const char *A, const char *B, size_t Count);
 #define QZ_DN_RAW          0x0040
 #define QZ_DN_REENUMERATE  0x0080
 #define QZ_DN_RECORDED     0x0100
+#define QZ_DN_DEFERRED     0x0200   /* its driver is on disk: after the boot volume */
 
 /* Enum\...\Capabilities bits (cfgmgr32.h's CM_DEVCAP_*) */
 #define CM_DEVCAP_LOCKSUPPORTED      0x0001
@@ -115,6 +116,7 @@ static LIST_ENTRY QzPnpNotifications = { &QzPnpNotifications, &QzPnpNotification
 static FAST_MUTEX QzPnpListLock;
 static ULONG QzPnpNodeCount, QzPnpStartedCount;
 static BOOLEAN QzPnpStarted;
+static BOOLEAN QzPnpBootPhase = TRUE;   /* only boot drivers until \SystemRoot is mounted */
 
 static const WCHAR QzControlSet[] = L"\\Registry\\Machine\\System\\CurrentControlSet\\";
 
@@ -531,15 +533,21 @@ QzPnpAddDriver(PQZ_DEVICE_NODE Node, PCWSTR Service, BOOLEAN Function)
     NTSTATUS Status;
 
     RtlInitUnicodeString(&Name, Service);
-    Status = QzIoStartBootDriver(&Name, &Driver);
+    Status = QzIoLoadDriver(&Name, &Driver);
     if (!NT_SUCCESS(Status))
     {
-        if (Function && Status == STATUS_OBJECT_NAME_NOT_FOUND)
+        if (Function && (Status == STATUS_OBJECT_NAME_NOT_FOUND || Status == STATUS_OBJECT_PATH_NOT_FOUND ||
+                         Status == STATUS_DLL_NOT_FOUND || Status == STATUS_DRIVER_UNABLE_TO_LOAD ||
+                         Status == STATUS_PROCEDURE_NOT_FOUND || Status == STATUS_INVALID_IMAGE_FORMAT))
         {
-            /* Not a boot driver: it loads from disk later (stage B7) */
+            /* The driver never ran: the device just has none */
             Node->Flags |= QZ_DN_NO_DRIVER;
             Node->Problem = Status;
-            Node->ProblemText = "driver not loaded by the boot loader";
+            Node->ProblemText = Status == STATUS_PROCEDURE_NOT_FOUND ? "driver needs exports qzkrnl lacks" :
+                                Status == STATUS_DRIVER_UNABLE_TO_LOAD ? "service disabled" :
+                                Status == STATUS_INVALID_IMAGE_FORMAT ? "driver image is not valid" :
+                                Status == STATUS_DLL_NOT_FOUND ? "a DLL the driver imports is missing" :
+                                "driver file or service not found";
         }
         else if (Function)
         {
@@ -588,6 +596,14 @@ QzPnpAddDrivers(PQZ_DEVICE_NODE Node)
             return;
         }
         Node->Flags |= QZ_DN_NO_DRIVER;
+        return;
+    }
+    if (QzPnpBootPhase && !QzIoIsBootService(&Node->ServiceName))
+    {
+        /* As on NT: drivers that are not boot drivers load once the boot
+           volume is there (see QzPnpStart) */
+        Node->Flags |= QZ_DN_NO_DRIVER | QZ_DN_DEFERRED;
+        Node->ProblemText = "waits for the boot volume";
         return;
     }
 
@@ -875,6 +891,25 @@ QzPnpEnumerateChildren(PQZ_DEVICE_NODE Node)
             ObDereferenceObject(Pdo);
     }
     ExFreePool(Relations);
+}
+
+static VOID QzPnpProcessNode(PQZ_DEVICE_NODE Node);
+
+/* The second pass: devices whose drivers waited for the boot volume */
+static VOID
+QzPnpRetryDeferred(PQZ_DEVICE_NODE Node)
+{
+    PQZ_DEVICE_NODE Child;
+
+    if (Node->Flags & QZ_DN_DEFERRED)
+    {
+        Node->Flags &= ~(QZ_DN_DEFERRED | QZ_DN_NO_DRIVER);
+        Node->ProblemText = NULL;
+        QzPnpProcessNode(Node);
+        return;
+    }
+    for (Child = Node->Child; Child; Child = Child->Sibling)
+        QzPnpRetryDeferred(Child);
 }
 
 static VOID
@@ -1499,6 +1534,20 @@ IoRegisterDeviceInterface(IN PDEVICE_OBJECT PhysicalDeviceObject,
         Interface->LinkLength = (USHORT)(LinkChars * sizeof(WCHAR));
         Interface->Enabled = FALSE;
         InsertTailList(&QzPnpInterfaces, &Interface->Link);
+
+        /* The link exists from registration on, as ReactOS has it: its
+           class drivers (mouclass, kbdclass) open their own interface
+           while starting, before they enable it */
+        {
+            union { OBJECT_NAME_INFORMATION Info; UCHAR Raw[256]; } Target;
+            UNICODE_STRING Link;
+            ULONG Length;
+            Link.Buffer = Interface->Name.Buffer;
+            Link.Length = Link.MaximumLength = Interface->LinkLength;
+            if (NT_SUCCESS(ObQueryNameString(PhysicalDeviceObject, &Target.Info, sizeof(Target), &Length)) &&
+                Target.Info.Name.Length)
+                IoCreateSymbolicLink(&Link, &Target.Info.Name);
+        }
     }
     ExReleaseFastMutex(&QzPnpListLock);
 
@@ -2032,13 +2081,19 @@ QzPnpStart(VOID)
     {
         UNICODE_STRING MountMgr = RTL_CONSTANT_STRING(L"mountmgr");
         PDRIVER_OBJECT Driver;
-        if (NT_SUCCESS(QzIoStartBootDriver(&MountMgr, &Driver)))
+        if (NT_SUCCESS(QzIoLoadDriver(&MountMgr, &Driver)))
             QzPnpAssignDriveLetters();
     }
 
     /* The boot volume: an ARC name for \SystemRoot, and a file system for the media */
     QzIsoInit();
     QzPnpCreateArcNames();
+
+    /* Now drivers can come from \SystemRoot\System32\drivers */
+    QzPnpLockTree();
+    QzPnpBootPhase = FALSE;
+    QzPnpRetryDeferred(QzPnpRoot);
+    QzPnpUnlockTree();
 
     QzIoCallReinitRoutines(TRUE);
     QzIoCallReinitRoutines(FALSE);
@@ -2068,6 +2123,12 @@ QzPnpDumpNode(PQZ_DEVICE_NODE Node, BOOLEAN Verbose)
         QzPrint("  %wZ [%s, %wZ]\n", &Node->InstancePath, State, &Node->ServiceName);
     else
         QzPrint("  %wZ [%s]\n", &Node->InstancePath, State);
+    if (Verbose && Node->ProblemText && (Node->Flags & QZ_DN_NO_DRIVER))
+    {
+        for (i = 0; i < Node->Level; i++)
+            QzPrint("  ");
+        QzPrint("      (%s, 0x%08lx)\n", Node->ProblemText, Node->Problem);
+    }
     if (Verbose && Node->Description)
     {
         for (i = 0; i < Node->Level; i++)

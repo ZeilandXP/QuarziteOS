@@ -67,7 +67,8 @@ QzCmdHelp(VOID)
             "                    filters, mounting a test file system)\n"
             "  pnp               start the device tree (HAL, then PCI and below)\n"
             "  devtree           the device tree with resources\n"
-            "  start <service>   start a boot driver (DriverEntry)\n"
+            "  start <service>   start a driver: a boot driver, or loaded from disk\n"
+            "  unload <service>  unload a driver loaded from disk (DriverUnload)\n"
             "  reg [path]        list a registry key (default \\Registry\\Machine\\System)\n"
             "  vmtest            self-test: process address spaces (reserve, commit,\n"
             "                    protect, guard pages, isolation, handles)\n"
@@ -76,6 +77,9 @@ QzCmdHelp(VOID)
             "  secttest          self-test: sections (ntdll.dll as an image, copy on write,\n"
             "                    shared memory; starts PnP if needed)\n"
             "  lpctest           self-test: LPC ports, keyed events, the system token\n"
+            "  input mouse|kbd [ms] read one event from the mouse or keyboard class driver\n"
+            "  ldrtest           self-test: drivers loaded from disk (load, imports,\n"
+            "                    relocation, unload)\n"
             "  smss              start \\SystemRoot\\System32\\smss.exe\n"
             "  syscalls [on|off] system service statistics; trace every call\n"
             "  dir <path>        list a directory (e.g. \\SystemRoot\\system32)\n"
@@ -295,6 +299,17 @@ QzExecute(PCHAR Line)
     }
     else if (!strcmp(Cmd, "lpctest"))
         QzRunLpcTests();
+    else if (!strcmp(Cmd, "input"))
+    {
+        PCHAR Count = QzNextToken(&Cursor);
+        QzNeedDevices();
+        QzIoShellInput(Arg, Count ? strtoul(Count, NULL, 0) : 10000);
+    }
+    else if (!strcmp(Cmd, "ldrtest"))
+    {
+        QzNeedDevices();
+        QzRunLoaderTests();
+    }
     else if (!strcmp(Cmd, "smss"))
     {
         /* Start it, give it a few seconds, and say how far it got */
@@ -349,7 +364,7 @@ QzExecute(PCHAR Line)
     }
     else if (!strcmp(Cmd, "devtree"))
         QzPnpDumpTree(TRUE);
-    else if (!strcmp(Cmd, "start") || !strcmp(Cmd, "reg"))
+    else if (!strcmp(Cmd, "start") || !strcmp(Cmd, "unload") || !strcmp(Cmd, "reg"))
     {
         WCHAR Wide[128];
         UNICODE_STRING Name;
@@ -366,10 +381,16 @@ QzExecute(PCHAR Line)
         {
             QzCmDumpKey(Wide);
         }
-        else
+        else if (Cmd[0] == 'u')
         {
             RtlInitUnicodeString(&Name, Wide);
-            QzPrint("  %S: 0x%08lx\n", Wide, QzIoStartBootDriver(&Name, &Driver));
+            QzPrint("  %S: 0x%08lx\n", Wide, QzIoUnloadDriver(&Name));
+        }
+        else
+        {
+            QzNeedDevices();      /* a driver that is no boot driver comes from the CD */
+            RtlInitUnicodeString(&Name, Wide);
+            QzPrint("  %S: 0x%08lx\n", Wide, QzIoLoadDriver(&Name, &Driver));
         }
     }
     else if (!strcmp(Cmd, "pcicfg"))

@@ -7,10 +7,12 @@
  *
  * FreeLoader has already loaded the boot drivers and the export drivers
  * they import (scsiport, classpnp, ...), relocated them and bound their
- * imports to qzkrnl. Starting a driver here means: create its driver
- * object, run DllInitialize for every export driver it depends on, then
- * call DriverEntry. Drivers are started on demand (when the PnP manager
- * finds a device for them, or from the shell), so one driver hitting a
+ * imports to qzkrnl. Every other driver is loaded from the file its
+ * service key names (ImagePath, or System32\drivers\<service>.sys) by
+ * mm/sysload.c. Starting a driver means: create its driver object, run
+ * DllInitialize for every export driver it depends on, then call
+ * DriverEntry. Drivers are started on demand (when the PnP manager finds
+ * a device for them, ZwLoadDriver, or the shell), so one driver hitting a
  * missing export does not take the others down with it.
  */
 
@@ -59,6 +61,9 @@ QzIoDeleteDriver(PVOID Object)
         Next = Client->NextExtension;
         ExFreePoolWithTag(Client, QZ_IO_TAG);
     }
+    /* A driver loaded from disk takes its image (and imports) with it */
+    if (QzMmIsDiskImage(Driver->DriverSection))
+        QzMmUnloadSystemImage(Driver->DriverSection);
 }
 
 static NTSTATUS
@@ -266,8 +271,23 @@ QzIoIsCoreModule(PCSTR Name)
     return FALSE;
 }
 
+/* An export driver went away: a new load runs its DllInitialize again */
+VOID
+QzIoForgetDll(PVOID ImageBase)
+{
+    ULONG i;
+    for (i = 0; i < QzIoInitializedDllCount; i++)
+    {
+        if (QzIoInitializedDlls[i] == ImageBase)
+        {
+            QzIoInitializedDlls[i] = QzIoInitializedDlls[--QzIoInitializedDllCount];
+            return;
+        }
+    }
+}
+
 /* Run DllInitialize for the export drivers an image imports (depth first) */
-static NTSTATUS
+NTSTATUS
 QzIoInitializeImports(PVOID ImageBase, ULONG Depth)
 {
     PUCHAR Base = ImageBase;
@@ -473,15 +493,180 @@ QzIoFindBootDriver(PCUNICODE_STRING ServiceName)
     return NULL;
 }
 
-NTSTATUS
-QzIoStartBootDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject)
+/* What a service key says about loading its driver */
+typedef struct _QZ_SERVICE_INFO
 {
-    PBOOT_DRIVER_LIST_ENTRY Boot;
-    PQZ_LDR_ENTRY Module;
+    ULONG Type;                         /* SERVICE_KERNEL_DRIVER, SERVICE_FILE_SYSTEM_DRIVER, ... */
+    ULONG Start;
+    WCHAR ImagePath[160];               /* an NT path */
+} QZ_SERVICE_INFO, *PQZ_SERVICE_INFO;
+
+static NTSTATUS
+QzIoQueryService(PCUNICODE_STRING ServiceName, PQZ_SERVICE_INFO Info)
+{
+    UCHAR Buffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + 160 * sizeof(WCHAR)];
+    PKEY_VALUE_PARTIAL_INFORMATION Value = (PVOID)Buffer;
+    UNICODE_STRING ValueName, Path, Raw;
+    OBJECT_ATTRIBUTES Attributes;
+    WCHAR KeyBuffer[160];
+    UNICODE_STRING KeyName;
+    HANDLE Key;
+    ULONG Length;
+    NTSTATUS Status;
+
+    KeyName.Buffer = KeyBuffer;
+    KeyName.Length = 0;
+    KeyName.MaximumLength = sizeof(KeyBuffer);
+    RtlAppendUnicodeToString(&KeyName, QzServicesPath);
+    RtlAppendUnicodeStringToString(&KeyName, ServiceName);
+    InitializeObjectAttributes(&Attributes, &KeyName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    Status = ZwOpenKey(&Key, KEY_READ, &Attributes);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    Info->Type = SERVICE_KERNEL_DRIVER;
+    Info->Start = SERVICE_DEMAND_START;
+    RtlInitUnicodeString(&ValueName, L"Type");
+    if (NT_SUCCESS(ZwQueryValueKey(Key, &ValueName, KeyValuePartialInformation, Value, sizeof(Buffer), &Length)) &&
+        Value->Type == REG_DWORD)
+        Info->Type = *(PULONG)Value->Data;
+    RtlInitUnicodeString(&ValueName, L"Start");
+    if (NT_SUCCESS(ZwQueryValueKey(Key, &ValueName, KeyValuePartialInformation, Value, sizeof(Buffer), &Length)) &&
+        Value->Type == REG_DWORD)
+        Info->Start = *(PULONG)Value->Data;
+
+    Path.Buffer = Info->ImagePath;
+    Path.Length = 0;
+    Path.MaximumLength = sizeof(Info->ImagePath);
+    RtlInitUnicodeString(&ValueName, L"ImagePath");
+    Raw.Length = 0;
+    if (NT_SUCCESS(ZwQueryValueKey(Key, &ValueName, KeyValuePartialInformation, Value,
+                                   sizeof(Buffer) - sizeof(WCHAR), &Length)) &&
+        (Value->Type == REG_SZ || Value->Type == REG_EXPAND_SZ) && Value->DataLength > sizeof(WCHAR))
+    {
+        Raw.Buffer = (PWCHAR)Value->Data;
+        Raw.Length = (USHORT)Value->DataLength;
+        while (Raw.Length && !Raw.Buffer[Raw.Length / sizeof(WCHAR) - 1])
+            Raw.Length -= sizeof(WCHAR);
+        Raw.MaximumLength = Raw.Length;
+    }
+    ZwClose(Key);
+
+    if (!Raw.Length)
+    {
+        /* The default: System32\drivers\<service>.sys */
+        RtlAppendUnicodeToString(&Path, L"\\SystemRoot\\System32\\drivers\\");
+        RtlAppendUnicodeStringToString(&Path, ServiceName);
+        RtlAppendUnicodeToString(&Path, L".sys");
+    }
+    else
+    {
+        static const WCHAR Expand[] = L"%SystemRoot%\\";
+        UNICODE_STRING Prefix;
+        RtlInitUnicodeString(&Prefix, Expand);
+        if (RtlPrefixUnicodeString(&Prefix, &Raw, TRUE))
+        {
+            Raw.Buffer += Prefix.Length / sizeof(WCHAR);
+            Raw.Length -= Prefix.Length;
+            RtlAppendUnicodeToString(&Path, L"\\SystemRoot\\");
+        }
+        else if (Raw.Buffer[0] != L'\\')
+        {
+            /* "system32\drivers\x.sys" is relative to the system root */
+            RtlAppendUnicodeToString(&Path, L"\\SystemRoot\\");
+        }
+        if (!NT_SUCCESS(RtlAppendUnicodeStringToString(&Path, &Raw)))
+            return STATUS_NAME_TOO_LONG;
+    }
+    Info->ImagePath[Path.Length / sizeof(WCHAR)] = UNICODE_NULL;
+    return STATUS_SUCCESS;
+}
+
+/* Create the driver object for a loaded image and run DriverEntry */
+static NTSTATUS
+QzIoStartDriver(PCUNICODE_STRING ServiceName, PQZ_LDR_ENTRY Module, PUNICODE_STRING RegistryPath,
+                BOOLEAN FileSystem, PDRIVER_OBJECT *DriverObject)
+{
     PIMAGE_NT_HEADERS Nt;
     PDRIVER_OBJECT Driver;
     WCHAR NameBuffer[64];
     UNICODE_STRING Name;
+    NTSTATUS Status;
+
+    Nt = (PIMAGE_NT_HEADERS)((PUCHAR)Module->DllBase + ((PIMAGE_DOS_HEADER)Module->DllBase)->e_lfanew);
+    Name.Buffer = NameBuffer;
+    Name.Length = 0;
+    Name.MaximumLength = sizeof(NameBuffer);
+    RtlAppendUnicodeToString(&Name, FileSystem ? L"\\FileSystem\\" : L"\\Driver\\");
+    RtlAppendUnicodeStringToString(&Name, ServiceName);
+
+    Status = QzIoCreateDriverObject(&Name, ServiceName, Module->DllBase, Module->SizeOfImage,
+                                    (PDRIVER_INITIALIZE)((PUCHAR)Module->DllBase +
+                                                         Nt->OptionalHeader.AddressOfEntryPoint),
+                                    &Driver);
+    if (!NT_SUCCESS(Status))
+    {
+        if (QzMmIsDiskImage(Module))
+            QzMmUnloadSystemImage(Module);
+        return Status;
+    }
+    Driver->DriverSection = Module;   /* the driver object owns a disk image from here on */
+
+    {
+        PCSTR FirstMissing = NULL;
+        ULONG Missing = QzIoCheckImports(Module->DllBase, &FirstMissing, 0);
+        if (Missing)
+        {
+            DbgPrint(QZ_KERNEL_NAME ": not starting %wZ: it imports %lu export(s) qzkrnl does not "
+                     "implement yet (%s, ...)\n", ServiceName, Missing, FirstMissing);
+            if (QzMmIsDiskImage(Module))
+            {
+                /* Nothing of it ran: give the image back now */
+                Driver->DriverSection = NULL;
+                Driver->DriverInit = NULL;
+                Driver->DriverStart = NULL;
+                QzMmUnloadSystemImage(Module);
+            }
+            QzIoFinishDriverEntry(Driver, STATUS_PROCEDURE_NOT_FOUND);
+            *DriverObject = Driver;
+            return STATUS_PROCEDURE_NOT_FOUND;
+        }
+    }
+
+    Status = QzIoInitializeImports(Module->DllBase, 0);
+    if (NT_SUCCESS(Status))
+    {
+        DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ\n", &Name);
+        Status = Driver->DriverInit(Driver, RegistryPath);
+        DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ -> 0x%08lx\n", &Name, Status);
+    }
+    QzIoFinishDriverEntry(Driver, Status);
+    *DriverObject = Driver;
+    return Status;
+}
+
+/* A service whose driver needs no file system: FreeLoader loaded it, or it runs */
+BOOLEAN
+QzIoIsBootService(PCUNICODE_STRING ServiceName)
+{
+    PBOOT_DRIVER_LIST_ENTRY Boot = QzIoFindBootDriver(ServiceName);
+    return (Boot && Boot->LdrEntry) || QzIoFindDriver(ServiceName) != NULL;
+}
+
+/*
+ * Start the driver of a service: a boot driver FreeLoader loaded, or the
+ * image its service key names, loaded from disk. A driver is started once;
+ * later calls return its driver object and DriverEntry's status.
+ */
+NTSTATUS
+QzIoLoadDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject)
+{
+    PBOOT_DRIVER_LIST_ENTRY Boot;
+    PDRIVER_OBJECT Driver;
+    QZ_SERVICE_INFO Info;
+    UNICODE_STRING Path, RegistryPath;
+    WCHAR RegistryBuffer[160];
+    PVOID Module;
     NTSTATUS Status;
 
     *DriverObject = NULL;
@@ -493,47 +678,66 @@ QzIoStartBootDriver(PCUNICODE_STRING ServiceName, PDRIVER_OBJECT *DriverObject)
     }
 
     Boot = QzIoFindBootDriver(ServiceName);
-    if (!Boot || !Boot->LdrEntry)
-        return STATUS_OBJECT_NAME_NOT_FOUND;   /* not loaded by FreeLoader */
-    Module = (PQZ_LDR_ENTRY)Boot->LdrEntry;
-    Nt = (PIMAGE_NT_HEADERS)((PUCHAR)Module->DllBase + ((PIMAGE_DOS_HEADER)Module->DllBase)->e_lfanew);
+    if (Boot && Boot->LdrEntry)
+        return QzIoStartDriver(ServiceName, (PQZ_LDR_ENTRY)Boot->LdrEntry, &Boot->RegistryPath, FALSE,
+                               DriverObject);
 
-    Name.Buffer = NameBuffer;
-    Name.Length = 0;
-    Name.MaximumLength = sizeof(NameBuffer);
-    RtlAppendUnicodeToString(&Name, L"\\Driver\\");
-    RtlAppendUnicodeStringToString(&Name, ServiceName);
-
-    Status = QzIoCreateDriverObject(&Name, ServiceName, Module->DllBase, Module->SizeOfImage,
-                                    (PDRIVER_INITIALIZE)((PUCHAR)Module->DllBase +
-                                                         Nt->OptionalHeader.AddressOfEntryPoint),
-                                    &Driver);
+    Status = QzIoQueryService(ServiceName, &Info);
     if (!NT_SUCCESS(Status))
+        return Status;   /* no such service */
+    if (Info.Start == SERVICE_DISABLED)
+        return STATUS_DRIVER_UNABLE_TO_LOAD;
+    if (!(Info.Type & (SERVICE_KERNEL_DRIVER | SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)))
+        return STATUS_INVALID_IMAGE_FORMAT;   /* a Win32 service */
+
+    RtlInitUnicodeString(&Path, Info.ImagePath);
+    Status = QzMmLoadSystemImage(&Path, &Module);
+    if (Status == STATUS_IMAGE_ALREADY_LOADED)
+    {
+        /* Loaded as some other image's import; the driver now holds it too */
+        Status = STATUS_SUCCESS;
+    }
+    if (!NT_SUCCESS(Status))
+    {
+        DbgPrint(QZ_KERNEL_NAME ": cannot load %wZ (%ls): 0x%08lx\n", ServiceName, Info.ImagePath, Status);
         return Status;
-    Driver->DriverSection = Module;
-
-    {
-        PCSTR FirstMissing = NULL;
-        ULONG Missing = QzIoCheckImports(Module->DllBase, &FirstMissing, 0);
-        if (Missing)
-        {
-            DbgPrint(QZ_KERNEL_NAME ": not starting %wZ: it imports %lu export(s) qzkrnl does not "
-                     "implement yet (%s, ...)\n", ServiceName, Missing, FirstMissing);
-            QzIoFinishDriverEntry(Driver, STATUS_PROCEDURE_NOT_FOUND);
-            return STATUS_PROCEDURE_NOT_FOUND;
-        }
     }
 
-    Status = QzIoInitializeImports(Module->DllBase, 0);
-    if (NT_SUCCESS(Status))
+    RegistryPath.Buffer = RegistryBuffer;
+    RegistryPath.Length = 0;
+    RegistryPath.MaximumLength = sizeof(RegistryBuffer);
+    RtlAppendUnicodeToString(&RegistryPath, QzServicesPath);
+    RtlAppendUnicodeStringToString(&RegistryPath, ServiceName);
+    return QzIoStartDriver(ServiceName, Module, &RegistryPath,
+                           (Info.Type & (SERVICE_FILE_SYSTEM_DRIVER | SERVICE_RECOGNIZER_DRIVER)) != 0,
+                           DriverObject);
+}
+
+/* DriverUnload, then the driver object goes, and its image with it */
+NTSTATUS
+QzIoUnloadDriver(PCUNICODE_STRING ServiceName)
+{
+    PDRIVER_OBJECT Driver = QzIoFindDriver(ServiceName);
+    PQZ_DRIVER_EXTENSION Extension;
+
+    if (!Driver)
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    Extension = QzDriverExtension(Driver);
+    if (NT_SUCCESS(Extension->EntryStatus) || !Extension->EntryCalled)
     {
-        DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ\n", &Name);
-        Status = Driver->DriverInit(Driver, &Boot->RegistryPath);
-        DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ -> 0x%08lx\n", &Name, Status);
+        /* A running driver unloads only if it can, and has no PnP devices */
+        if (!Driver->DriverUnload || (Driver->DriverExtension->AddDevice && Driver->DeviceObject))
+            return STATUS_INVALID_DEVICE_REQUEST;
+        if (!QzMmIsDiskImage(Driver->DriverSection))
+            return STATUS_INVALID_DEVICE_REQUEST;   /* boot images stay */
+        DbgPrint(QZ_KERNEL_NAME ": DriverUnload %wZ\n", &Driver->DriverName);
+        Driver->DriverUnload(Driver);
     }
-    QzIoFinishDriverEntry(Driver, Status);
-    *DriverObject = Driver;
-    return Status;
+    RemoveEntryList(&Extension->Link);
+    Extension->Link.Flink = NULL;
+    ObMakeTemporaryObject(Driver);
+    ObDereferenceObject(Driver);
+    return STATUS_SUCCESS;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -675,6 +879,7 @@ VOID
 QzIoInit(VOID)
 {
     InitializeListHead(&QzIoDriverList);
+    QzMmInitSystemImages();
 
     /* Give the I/O object types (created by the object manager) their
        procedures */

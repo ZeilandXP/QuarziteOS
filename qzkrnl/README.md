@@ -70,6 +70,7 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | Security | One system token (`se/token.c`, `Token` type): every process runs as LocalSystem in Administrators and Everyone with every privilege enabled. `Nt[Open]ProcessToken[Ex]`, `NtQueryInformationToken` (user, groups, privileges, owner, primary group, default DACL, source, type, statistics, session), `NtAdjustPrivilegesToken`, `NtDuplicateToken`. Access checks grant the generic-mapped request, privilege checks succeed. `SeExports` is real (privilege LUIDs and well-known SIDs); `Rtl*Sid` helpers, including `RtlConvertSidToUnicodeString`. |
 | I/O manager | Driver and device objects (`IoCreateDriver`, `IoCreateDevice`, device stacks, symbolic links, timers, shutdown notification), IRPs (`IofCallDriver`, `IofCompleteRequest` with completion routines, pending propagation and buffered/direct I/O, cancellation, the IRP builders, remove locks, StartIo queues), file objects (`IoCreateFile`/`ZwCreateFile`/`ZwOpenFile`, relative opens, `Zw{Read,Write,DeviceIoControl,FsControl,QueryInformation,SetInformation,QueryVolumeInformation,QueryDirectory}File`), volume mounting through the VPB and the registered file systems, share access, work items and system worker threads, interrupt connection, controller objects, DMA adapters, MBR partition tables (`IoReadPartitionTableEx`). |
 | PnP manager | Device tree from the HAL's PnP driver (`HalInitPnpDriver`, `IoReportDetectedDevice`) down: IDs and capabilities, driver matching through `CriticalDeviceDatabase` and class filters, on-demand boot driver start (`DllInitialize`, `DriverEntry`, `AddDevice`), resources from requirements or boot configuration translated by the HAL, `IRP_MN_START_DEVICE`, bus relations, `IoInvalidateDeviceRelations`, `IoGetDeviceProperty`, device interfaces and PnP notifications, power IRP helpers. A boot driver that imports kernel exports qzkrnl only has stubs for is not started (`drivers` lists why). |
+| Drivers from disk | `mm/sysload.c` loads kernel images itself: the file is read whole, laid out at its RVAs in a window of its own (`0xB8000000`), relocated, its `/GS` cookie set, and bound to the modules it imports (export drivers such as `hidclass.sys` or `videoprt.sys` are loaded from `System32\drivers` or `System32` first, forwarders followed); it goes on the loaded module list like the boot images. Images are reference counted, and the last reference unloads (`DllUnload` for export drivers, the pages back). A service's driver comes from its `ImagePath` (`System32\...`, `%SystemRoot%\...` or an NT path; `System32\drivers\<service>.sys` without one); `ZwLoadDriver`/`NtLoadDriver`, `ZwUnloadDriver`/`NtUnloadDriver` (`DriverUnload`, then the image), `\FileSystem\` objects for file system services, disabled services refused. The PnP manager loads drivers that are not boot drivers once the boot volume is mounted, as NT does: on QEMU's USB tablet and keyboard, `hidusb`, `hidclass`, `hidparse`, `mouhid`/`mouclass` and `kbdhid`/`kbdclass` all come from the CD, and `input mouse|kbd` reads their events. The import gate applies to them too: `bochsmp` (through `videoprt`) waits for `Ke386CallBios`, and `win32k.sys` loads for smss but does not start yet (375 exports to go). |
 | Real drivers | The unmodified ReactOS boot drivers run on it: `pci`, `isapnp`, `pciide`/`pciidex`, `atapi`, `disk`/`classpnp`, `partmgr`, `cdrom` on KMDF (`wdfldr`, `Wdf01000`) and `mountmgr`. On QEMU this gives `\Device\CdRom0`, `\Device\Harddisk0\DR0`, `Partition0..n`, `HarddiskVolume1..n` and the mount manager's volume names, and sectors read through them. |
 | Registry | `\REGISTRY\MACHINE\SYSTEM` is the loader's SYSTEM hive, copied into writable bins with ReactOS's hive library (`cmlib`): keys and values are created, replaced and deleted in stable or volatile (`REG_OPTION_VOLATILE`) storage, and deleted keys invalidate their open handles. `CurrentControlSet` is a volatile symbolic link key to the `ControlSetNNN` that `Select\Current` names. `HARDWARE` and the other keys are volatile in-memory keys, and `HARDWARE\DESCRIPTION` is built from the loader's ARC configuration tree (the HAL finds the PCI BIOS there), plus `CentralProcessor\0` and `FloatingPointProcessor\0` from CPUID (identifier, vendor, name, feature set, clock). `Zw{Open,Create,Query,Enumerate,Delete,Flush}Key`, `Zw{Query,Enumerate,Set,Delete}ValueKey`, `ZwNotifyChangeKey` (event or work item), `Rtl{Query,Write,Delete}RegistryValue(s)`. The PnP manager records each device under `Enum\<instance path>` with its software key in `Control\Class\{guid}\NNNN`; `mountmgr` keeps its drive letters in `MountedDevices`. Changes live in memory until there is a file system to write the hive back to (stage B7). |
 | Executive | Interlocked lists and S-lists, lookaside lists, rundown protection, ERESOURCE, fast and guarded mutexes, callback objects, `ZwQuerySystemInformation`, system threads as waitable `Thread` objects (`PsCreateSystemThread`), a `Process` object for System. |
@@ -91,15 +92,15 @@ qzkrnl/
              waits, timers, scheduler, user threads, system services,
              self-tests (synctest, usertest); ke/i386: CPU tables, traps
   mm/        physical pages, page tables, contiguous memory, MDLs, pool,
-             process address spaces and page faults, sections, self-test
-             (vmtest, secttest)
+             process address spaces and page faults, sections, kernel image
+             loader (sysload.c), self-test (vmtest, secttest)
   ob/        object manager: objects and types, namespace and lookup,
              handles, standard directories and links, self-test
   se/        the system token, access check stubs, SeExports
   lpc/       LPC ports, self-test (lpctest: ports, keyed events, tokens)
-  io/        I/O manager: drivers, devices, IRPs, files and mounting,
-             storage helpers, PnP manager, the ISO 9660 boot file system,
-             self-test (iotest)
+  io/        I/O manager: drivers (boot drivers and from disk), devices,
+             IRPs, files and mounting, storage helpers, PnP manager, the ISO
+             9660 boot file system, self-tests (iotest, ldrtest)
   cm/        registry: the writable SYSTEM hive (cmlib), volatile keys, notification, self-test (regtest)
   ps/        processes and threads, process creation (PEB, TEB, ntdll,
              the first process), information services
@@ -108,6 +109,8 @@ qzkrnl/
              export lookup
   include/   qz.h, qzio.h, qzps.h (private headers); exportstats.h,
              exportnames.h, systable.h (generated)
+  tests/     ldrtest/: qzldrtst.sys and the export driver qzldrdll.sys,
+             loaded from the CD by ldrtest
   exports.spec, qzkrnl.spec (generated), tools/genspec.py, tools/gensys.py
 ```
 
@@ -129,6 +132,7 @@ See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
    `smss.exe`~~ (stage B6, done; see `mm/vm.c`, `mm/section.c`, `ke/user.c`,
    `ke/syscall.c`, `ps/create.c`, `io/isofs.c`).
 7. LPC ports, tokens and keyed events, so smss initializes (stage B7
-   milestone 1, done; see `lpc/`, `se/token.c`, `ex/keyed.c`); then drivers
-   loaded from disk (win32k.sys), paging, the cache manager and real file
-   systems, and csrss (the rest of B7).
+   milestone 1, done; see `lpc/`, `se/token.c`, `ex/keyed.c`); drivers
+   loaded from disk (milestone 2, done; see `mm/sysload.c`, `io/driver.c`,
+   `io/ldrtest.c`); then paging, the cache manager and real file systems,
+   and win32k.sys and csrss (the rest of B7).
