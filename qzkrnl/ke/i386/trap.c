@@ -1,59 +1,138 @@
 /*
  * PROJECT:     QuarziteOS Kernel (qzkrnl)
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
- * PURPOSE:     i386 trap/interrupt entry stubs and dispatcher
+ * PURPOSE:     i386 trap/interrupt entry, KTRAP_FRAME handling, KiEoiHelper
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  *
- * Every IDT vector gets a 16-byte stub that normalises the stack (pushes a
- * dummy error code where the CPU does not supply one, then the vector
- * number) and jumps to a common path building a QZ_TRAP_FRAME. The C
- * dispatcher returns the frame to resume -- which is how the scheduler
- * switches threads: it simply returns another thread's saved frame.
+ * Every IDT vector gets a 32-byte stub. The common path builds a genuine NT
+ * KTRAP_FRAME (the same layout the HAL's own entry code builds), because
+ * the HAL ends interrupts by tail-jumping into its software-interrupt
+ * handlers with the trap frame and leaves through the kernel's KiEoiHelper.
+ * Every interrupt and trap therefore exits through KiEoiHelper below.
+ *
+ * Vectors the HAL takes over (the clock at 0x30, the RTC at 0x38) are
+ * re-pointed by the HAL itself through PCR->IDT (KeRegisterInterruptHandler).
  */
 
 #include "qz.h"
 
+/* KTRAP_FRAME offsets, checked against the SDK definition */
+#define TF_DBGEBP   0x00
+#define TF_DBGEIP   0x04
+#define TF_DR7      0x2C
+#define TF_GS       0x30
+#define TF_ES       0x34
+#define TF_DS       0x38
+#define TF_EDX      0x3C
+#define TF_ECX      0x40
+#define TF_EAX      0x44
+#define TF_EXLIST   0x4C
+#define TF_FS       0x50
+#define TF_EDI      0x54
+#define TF_ESI      0x58
+#define TF_EBX      0x5C
+#define TF_EBP      0x60
+#define TF_ERRCODE  0x64
+#define TF_EIP      0x68
+#define TF_ESP      0x74
+
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, DbgEbp) == TF_DBGEBP);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, DbgEip) == TF_DBGEIP);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Dr7) == TF_DR7);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, SegGs) == TF_GS);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, SegEs) == TF_ES);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, SegDs) == TF_DS);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Edx) == TF_EDX);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Ecx) == TF_ECX);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Eax) == TF_EAX);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, ExceptionList) == TF_EXLIST);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, SegFs) == TF_FS);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Edi) == TF_EDI);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Esi) == TF_ESI);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Ebx) == TF_EBX);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Ebp) == TF_EBP);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, ErrCode) == TF_ERRCODE);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Eip) == TF_EIP);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, HardwareEsp) == TF_ESP);
+
+#define STR2(x) #x
+#define STR(x) STR2(x)
+
 extern UCHAR QzTrapStubTable[];
+VOID FASTCALL QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector);
 
 __asm__(
     ".text\n"
-    ".balign 16\n"
+    ".balign 32\n"
     ".globl _QzTrapStubTable\n"
     "_QzTrapStubTable:\n"
     ".set qzvec, 0\n"
     ".rept 256\n"
-    "    .balign 16\n"
+    "    .balign 32\n"
     "    .if (qzvec == 8) || ((qzvec >= 10) && (qzvec <= 14)) || (qzvec == 17) || (qzvec == 21) || (qzvec == 29) || (qzvec == 30)\n"
     "    .else\n"
-    "        pushl $0\n"
+    "        pushl $0\n"                         /* fake error code */
     "    .endif\n"
-    "    pushl $qzvec\n"
+    "    subl $" STR(TF_ERRCODE) ", %esp\n"       /* rest of the KTRAP_FRAME */
+    "    movl %eax, " STR(TF_EAX) "(%esp)\n"
+    "    movl $qzvec, %eax\n"
     "    jmp QzTrapCommon\n"
     "    .set qzvec, qzvec + 1\n"
     ".endr\n"
     "\n"
+    /* esp = KTRAP_FRAME, eax = vector */
     "QzTrapCommon:\n"
-    "    pushl %ds\n"
-    "    pushl %es\n"
-    "    pushl %fs\n"
-    "    pushl %gs\n"
-    "    pushal\n"
+    "    movl %ebp, " STR(TF_EBP) "(%esp)\n"
+    "    movl %ebx, " STR(TF_EBX) "(%esp)\n"
+    "    movl %esi, " STR(TF_ESI) "(%esp)\n"
+    "    movl %edi, " STR(TF_EDI) "(%esp)\n"
+    "    movl %ecx, " STR(TF_ECX) "(%esp)\n"
+    "    movl %edx, " STR(TF_EDX) "(%esp)\n"
+    "    xorl %ecx, %ecx\n"
+    "    movw %ds, %cx\n"
+    "    movl %ecx, " STR(TF_DS) "(%esp)\n"
+    "    movw %es, %cx\n"
+    "    movl %ecx, " STR(TF_ES) "(%esp)\n"
+    "    movw %fs, %cx\n"
+    "    movl %ecx, " STR(TF_FS) "(%esp)\n"
+    "    movw %gs, %cx\n"
+    "    movl %ecx, " STR(TF_GS) "(%esp)\n"
+    "    movw $0x23, %cx\n"                      /* KGDT_R3_DATA | RPL 3, as NT */
+    "    movw %cx, %ds\n"
+    "    movw %cx, %es\n"
+    "    movw $0x30, %cx\n"                      /* KGDT_R0_PCR */
+    "    movw %cx, %fs\n"
+    "    movl %fs:0, %ecx\n"
+    "    movl %ecx, " STR(TF_EXLIST) "(%esp)\n"
+    "    movl $0, " STR(TF_DR7) "(%esp)\n"
+    "    movl " STR(TF_EIP) "(%esp), %ecx\n"     /* keep the frame chain */
+    "    movl %ecx, " STR(TF_DBGEIP) "(%esp)\n"
+    "    movl %ebp, " STR(TF_DBGEBP) "(%esp)\n"
+    "    movl %esp, %ebp\n"
     "    cld\n"
-    "    movw $0x10, %ax\n"
-    "    movw %ax, %ds\n"
-    "    movw %ax, %es\n"
-    "    movw $0x30, %ax\n"
-    "    movw %ax, %fs\n"
-    "    movl %esp, %eax\n"
-    "    pushl %eax\n"
-    "    call _QzTrapDispatch\n"
-    "    movl %eax, %esp\n"          /* resume the (possibly different) frame */
-    "    popal\n"
-    "    popl %gs\n"
-    "    popl %fs\n"
-    "    popl %es\n"
-    "    popl %ds\n"
-    "    addl $8, %esp\n"            /* vector + error code */
+    "    movl %esp, %ecx\n"
+    "    movl %eax, %edx\n"
+    "    call @QzTrapDispatch@8\n"
+    "    movl %ebp, %ecx\n"
+    "    jmp @KiEoiHelper@4\n"
+    "\n"
+    /*
+     * KiEoiHelper(TrapFrame): leave a kernel-mode trap frame. Exported:
+     * the HAL ends its clock and software interrupts with it.
+     */
+    ".globl @KiEoiHelper@4\n"
+    "@KiEoiHelper@4:\n"
+    "    movl %ecx, %esp\n"
+    "    movl " STR(TF_EXLIST) "(%esp), %eax\n"
+    "    movl %eax, %fs:0\n"
+    "    movl " STR(TF_EDX) "(%esp), %edx\n"
+    "    movl " STR(TF_ECX) "(%esp), %ecx\n"
+    "    movl " STR(TF_EAX) "(%esp), %eax\n"
+    "    movl " STR(TF_EDI) "(%esp), %edi\n"
+    "    movl " STR(TF_ESI) "(%esp), %esi\n"
+    "    movl " STR(TF_EBX) "(%esp), %ebx\n"
+    "    movl " STR(TF_EBP) "(%esp), %ebp\n"
+    "    addl $" STR(TF_EIP) ", %esp\n"
     "    iretl\n"
 );
 
@@ -62,7 +141,7 @@ QzInstallTrapStubs(VOID)
 {
     ULONG Vector;
     for (Vector = 0; Vector < 256; Vector++)
-        QzSetIdtGate(Vector, &QzTrapStubTable[Vector * 16]);
+        QzSetIdtGate(Vector, &QzTrapStubTable[Vector * 32]);
 }
 
 static PCSTR QzExceptionNames[32] =
@@ -77,125 +156,94 @@ static PCSTR QzExceptionNames[32] =
     "VMM Communication", "Security", "Reserved"
 };
 
-static VOID
-QzDumpFrame(PQZ_TRAP_FRAME Frame)
+VOID
+QzDumpTrapFrame(PKTRAP_FRAME TrapFrame)
 {
     DbgPrint("  EAX=%08lx EBX=%08lx ECX=%08lx EDX=%08lx\n",
-             Frame->Eax, Frame->Ebx, Frame->Ecx, Frame->Edx);
+             TrapFrame->Eax, TrapFrame->Ebx, TrapFrame->Ecx, TrapFrame->Edx);
     DbgPrint("  ESI=%08lx EDI=%08lx EBP=%08lx ESP=%08lx\n",
-             Frame->Esi, Frame->Edi, Frame->Ebp,
-             (ULONG)(ULONG_PTR)&Frame->EFlags + sizeof(ULONG));
-    DbgPrint("  EIP=%08lx CS=%04lx EFLAGS=%08lx ERR=%08lx CR2=%08lx CR3=%08lx\n",
-             Frame->Eip, Frame->Cs, Frame->EFlags, Frame->ErrorCode,
-             QzReadCr2(), QzReadCr3());
+             TrapFrame->Esi, TrapFrame->Edi, TrapFrame->Ebp,
+             (ULONG)(ULONG_PTR)&TrapFrame->HardwareEsp);
+    DbgPrint("  EIP=%08lx CS=%04lx EFLAGS=%08lx ERR=%08lx CR2=%08lx CR3=%08lx IRQL=%u\n",
+             TrapFrame->Eip, TrapFrame->SegCs, TrapFrame->EFlags, TrapFrame->ErrCode,
+             QzReadCr2(), QzReadCr3(), QzPcr.Irql);
 }
 
 static DECLSPEC_NORETURN VOID
-QzUnhandledException(PQZ_TRAP_FRAME Frame)
+QzUnhandledException(PKTRAP_FRAME TrapFrame, ULONG Vector)
 {
     CHAR Text[96];
-    ULONG Vector = Frame->Vector;
 
     QzSnprintf(Text, sizeof(Text), "%s (vector %lu) at EIP %08lx",
-               QzExceptionNames[Vector], Vector, Frame->Eip);
+               QzExceptionNames[Vector], Vector, TrapFrame->Eip);
     DbgPrint("\n*** qzkrnl: unhandled kernel exception: %s\n", Text);
-    QzDumpFrame(Frame);
+    QzDumpTrapFrame(TrapFrame);
 
     switch (Vector)
     {
         case 14: /* #PF: faulting address, write?, EIP, error code */
             QzBugCheckWithText(PAGE_FAULT_IN_NONPAGED_AREA, QzReadCr2(),
-                               (Frame->ErrorCode & 2) ? 1 : 0, Frame->Eip,
-                               Frame->ErrorCode, Text);
+                               (TrapFrame->ErrCode & 2) ? 1 : 0, TrapFrame->Eip,
+                               TrapFrame->ErrCode, Text);
         case 8:
             QzBugCheckWithText(UNEXPECTED_KERNEL_MODE_TRAP, 8, 0, 0, 0, Text);
         case 0:
             QzBugCheckWithText(KMODE_EXCEPTION_NOT_HANDLED,
                                (ULONG_PTR)STATUS_INTEGER_DIVIDE_BY_ZERO,
-                               Frame->Eip, 0, 0, Text);
+                               TrapFrame->Eip, 0, 0, Text);
         case 6:
             QzBugCheckWithText(KMODE_EXCEPTION_NOT_HANDLED,
                                (ULONG_PTR)STATUS_ILLEGAL_INSTRUCTION,
-                               Frame->Eip, 0, 0, Text);
+                               TrapFrame->Eip, 0, 0, Text);
         case 13:
             QzBugCheckWithText(KMODE_EXCEPTION_NOT_HANDLED,
                                (ULONG_PTR)STATUS_ACCESS_VIOLATION,
-                               Frame->Eip, Frame->ErrorCode, 0, Text);
+                               TrapFrame->Eip, TrapFrame->ErrCode, 0, Text);
         default:
             QzBugCheckWithText(UNEXPECTED_KERNEL_MODE_TRAP, Vector,
-                               Frame->Eip, Frame->ErrorCode, 0, Text);
+                               TrapFrame->Eip, TrapFrame->ErrCode, 0, Text);
     }
 }
 
-PQZ_TRAP_FRAME __cdecl
-QzTrapDispatch(PQZ_TRAP_FRAME Frame)
+/* Called by the common stub with interrupts disabled */
+VOID
+FASTCALL
+QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector)
 {
-    ULONG Vector = Frame->Vector;
-    KIRQL OldIrql = QzPcr.Pcr.Irql;
-
     if (Vector < 32)
     {
         if (Vector == 3)
         {
             /* int3: report and continue, like a debugger-less breakpoint */
-            DbgPrint("qzkrnl: breakpoint at %08lx (continuing)\n", Frame->Eip - 1);
-            return Frame;
+            DbgPrint("qzkrnl: breakpoint at %08lx (continuing)\n", TrapFrame->Eip - 1);
+            return;
         }
-        QzUnhandledException(Frame);
+        QzUnhandledException(TrapFrame, Vector);
     }
 
-    if (Vector >= QZ_VECTOR_IRQ_BASE && Vector < QZ_VECTOR_IRQ_BASE + 16)
-    {
-        ULONG Irq = Vector - QZ_VECTOR_IRQ_BASE;
+    /* Device interrupts (and HAL-replayed lazy interrupts) */
+    if (Vector >= PRIMARY_VECTOR_BASE && Vector < PRIMARY_VECTOR_BASE + 16)
+        QzDispatchDeviceInterrupt(TrapFrame, Vector);   /* does not return */
 
-        /* Spurious IRQ 7/15: the PIC's in-service bit is not set */
-        if (Irq == 7 || Irq == 15)
-        {
-            QzOutB(Irq == 7 ? 0x20 : 0xA0, 0x0B);
-            if (!(QzInB(Irq == 7 ? 0x20 : 0xA0) & 0x80))
-            {
-                if (Irq == 15) QzPicEoi(2);
-                return Frame;
-            }
-        }
+    DbgPrint("qzkrnl: unexpected interrupt 0x%02lx at %08lx\n", Vector, TrapFrame->Eip);
+}
 
-        /* Run the ISR at its device IRQL (interrupts stay disabled) */
-        QzPcr.Pcr.Irql = (Irq == QZ_IRQ_TIMER) ? CLOCK2_LEVEL : (KIRQL)(PROFILE_LEVEL - 1 - Irq);
-        switch (Irq)
-        {
-            case QZ_IRQ_TIMER:
-            {
-                extern VOID QzClockTick(VOID);
-                QzClockTick();
-                break;
-            }
-            case QZ_IRQ_KEYBOARD:
-                QzKbdIsr();
-                break;
-            case QZ_IRQ_COM1:
-                QzSerialIsr();
-                break;
-            default:
-                break;
-        }
-        QzPicEoi(Irq);
-        QzPcr.Pcr.Irql = OldIrql;
+/* ---------------------------------------------------------------------- */
+/* Exports used by the HAL                                                 */
+/* ---------------------------------------------------------------------- */
 
-        /* Deliver the DISPATCH software interrupt if it can run now */
-        if (OldIrql < DISPATCH_LEVEL)
-            return QzDispatchSoftwareInterrupt(Frame, OldIrql);
-        return Frame;
-    }
+/* Old (NT 5.0) HAL exit helper: not used by HALs built for this kernel */
+VOID
+NTAPI
+Kei386EoiHelper(VOID)
+{
+    KeBugCheckEx(MISMATCHED_HAL, 0, 0, 0, 0);
+}
 
-    if (Vector == QZ_VECTOR_SWAP)
-    {
-        /* Voluntary switch: yield, or block in a wait (at DISPATCH_LEVEL) */
-        Frame = QzSelectNextThread(Frame, OldIrql);
-        if (QzPcr.Pcr.Irql < DISPATCH_LEVEL)
-            Frame = QzDispatchSoftwareInterrupt(Frame, QzPcr.Pcr.Irql);
-        return Frame;
-    }
-
-    DbgPrint("qzkrnl: unexpected interrupt 0x%02lx at %08lx\n", Vector, Frame->Eip);
-    return Frame;
+/* The HAL found a software interrupt with no handler */
+VOID
+__cdecl
+KiUnexpectedInterrupt(VOID)
+{
+    DbgPrint("qzkrnl: KiUnexpectedInterrupt from the HAL (IRR=%08lx)\n", QzPcr.IRR);
 }

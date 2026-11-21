@@ -103,6 +103,49 @@
 @ stdcall -version=0x600+ KeQueryMaximumProcessorCount() QzKeQueryMaximumProcessorCount
 @ stdcall -version=0x601+ KeQueryMaximumProcessorCountEx(long) QzKeQueryProcessorCountEx
 @ stdcall -version=0x601+ KeGetCurrentProcessorNumberEx(ptr) QzKeGetCurrentProcessorNumberEx
+@ fastcall KeUpdateSystemTime(ptr long long)
+@ stdcall KeSetTimeIncrement(long long)
+@ stdcall -arch=i386 Kei386EoiHelper()
+@ fastcall -arch=i386 KiEoiHelper(ptr)
+@ stdcall -arch=i386,arm KiDeliverApc(long ptr ptr)
+@ stdcall -arch=i386 KiDispatchInterrupt()
+@ cdecl -arch=i386,arm KiUnexpectedInterrupt()
+@ stdcall -arch=i386,arm KeProfileInterrupt(ptr)
+@ extern HalDispatchTable
+@ extern HalPrivateDispatchTable
+@ extern KdDebuggerEnabled
+@ extern KdDebuggerNotPresent
+@ extern KiBugCheckData
+@ extern KeServiceDescriptorTable
+@ extern -arch=i386,arm KiEnableTimerWatchdog
+@ stdcall KeInitializeInterrupt(ptr ptr ptr ptr long long long long long long long)
+@ stdcall KeConnectInterrupt(ptr)
+@ stdcall KeDisconnectInterrupt(ptr)
+@ stdcall KeSynchronizeExecution(ptr ptr ptr)
+@ stdcall IoAllocateMdl(ptr long long long ptr)
+@ stdcall IoFreeMdl(ptr)
+@ stdcall MmBuildMdlForNonPagedPool(ptr)
+@ stdcall MmMapLockedPages(ptr long)
+@ stdcall MmMapLockedPagesSpecifyCache(ptr long long ptr long long)
+@ stdcall MmUnmapLockedPages(ptr ptr)
+@ stdcall RtlInitializeBitMap(ptr ptr long)
+@ stdcall RtlClearAllBits(ptr)
+@ stdcall RtlSetAllBits(ptr)
+@ stdcall RtlClearBit(ptr long)
+@ stdcall RtlSetBit(ptr long)
+@ stdcall RtlTestBit(ptr long)
+@ stdcall RtlClearBits(ptr long long)
+@ stdcall RtlSetBits(ptr long long)
+@ stdcall RtlFindClearBits(ptr long long)
+@ stdcall RtlFindSetBits(ptr long long)
+@ stdcall RtlFindClearBitsAndSet(ptr long long)
+@ stdcall RtlFindSetBitsAndClear(ptr long long)
+@ stdcall RtlNumberOfClearBits(ptr)
+@ stdcall RtlNumberOfSetBits(ptr)
+@ stdcall RtlFindLeastSignificantBit(long long)
+@ stdcall RtlFindMostSignificantBit(long long)
+@ stdcall MmAllocateContiguousMemorySpecifyCache(long long long long long long long long)
+@ stdcall MmFreeContiguousMemorySpecifyCache(ptr long long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -401,9 +444,7 @@
 @ stub FsRtlUninitializeLargeMcb
 @ stub FsRtlUninitializeMcb
 @ stub FsRtlUninitializeOplock
-@ extern HalDispatchTable QzUnimplementedData
 @ stub HalExamineMBR
-@ extern HalPrivateDispatchTable QzUnimplementedData
 @ stub HeadlessDispatch
 @ stub InbvAcquireDisplayOwnership
 @ stub InbvCheckDisplayOwnership
@@ -437,7 +478,6 @@
 @ stub IoAllocateDriverObjectExtension
 @ stub IoAllocateErrorLogEntry
 @ stub IoAllocateIrp
-@ stub IoAllocateMdl
 @ stub IoAllocateWorkItem
 @ stub IoAssignDriveLetters
 @ stub IoAssignResources
@@ -502,7 +542,6 @@
 @ stub IoFreeController
 @ stub IoFreeErrorLogEntry
 @ stub IoFreeIrp
-@ stub IoFreeMdl
 @ stub IoFreeWorkItem
 @ stub IoGetAttachedDevice
 @ stub IoGetAttachedDeviceReference
@@ -640,8 +679,6 @@
 @ stub IofCallDriver
 @ stub IofCompleteRequest
 @ stub KdChangeOption
-@ extern KdDebuggerEnabled QzUnimplementedData
-@ extern KdDebuggerNotPresent QzUnimplementedData
 @ stub KdDisableDebugger
 @ stub KdEnableDebugger
 @ extern KdEnteredDebugger QzUnimplementedData
@@ -668,12 +705,10 @@
 @ stub KeAreAllApcsDisabled
 @ stub KeAttachProcess
 @ stub KeCapturePersistentThreadState
-@ stub KeConnectInterrupt
 @ stub KeDeregisterBugCheckCallback
 @ stub KeDeregisterBugCheckReasonCallback
 @ stub KeDeregisterNmiCallback
 @ stub KeDetachProcess
-@ stub KeDisconnectInterrupt
 @ stub KeEnterGuardedRegion
 @ stub KeEnterKernelDebugger
 @ stub KeFindConfigurationEntry
@@ -696,7 +731,6 @@
 @ stub KeInitializeCrashDumpHeader
 @ stub KeInitializeDeviceQueue
 @ stub KeInitializeGuardedMutex
-@ stub KeInitializeInterrupt
 @ stub KeInitializeQueue
 @ stub KeInsertByKeyDeviceQueue
 @ stub KeInsertDeviceQueue
@@ -710,7 +744,6 @@
 @ stub KeLeaveGuardedRegion
 @ extern KeLoaderBlock QzUnimplementedData
 @ stub -arch=x86_64 KeLowerIrql
-@ stub -arch=i386,arm KeProfileInterrupt
 @ stub KeProfileInterruptWithSource
 @ stub KeQueryPriorityThread
 @ stub KeQueryRuntimeThread
@@ -741,7 +774,6 @@
 @ stub -arch=i386 KeSaveFloatingPointState
 @ stub -arch=x86_64 KeSaveFloatingPointState
 @ stub KeSaveStateForHibernate
-@ extern KeServiceDescriptorTable QzUnimplementedData
 @ stub KeSetAffinityThread
 @ stub KeSetBasePriorityThread
 @ stub KeSetDmaIoCoherency
@@ -751,33 +783,23 @@
 @ stub KeSetPriorityThread
 @ stub KeSetProfileIrql
 @ stub KeSetSystemAffinityThread
-@ stub KeSetTimeIncrement
 @ stub KeSignalCallDpcDone
 @ stub KeSignalCallDpcSynchronize
 @ stub KeStackAttachProcess
-@ stub KeSynchronizeExecution
 @ stub KeTerminateThread
 @ stub KeTryToAcquireGuardedMutex
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLockRaiseToSynch
 @ stub KeUnstackDetachProcess
 @ stub KeUpdateRunTime
-@ stub KeUpdateSystemTime
 @ stub KeUserModeCallback
-@ stub -arch=i386 Kei386EoiHelper
 @ stub -arch=x86_64 KfRaiseIrql
-@ stub -arch=i386 KiEoiHelper
 @ stub -arch=i386,arm KiAcquireSpinLock
-@ extern KiBugCheckData QzUnimplementedData
 @ stub KiCheckForKernelApcDelivery
 @ stub -arch=i386 KiCheckForSListAddress
 @ stub -arch=i386 KiCoprocessorError
-@ stub -arch=i386,arm KiDeliverApc
-@ stub -arch=i386 KiDispatchInterrupt
-@ extern -arch=i386,arm KiEnableTimerWatchdog QzUnimplementedData
 @ stub -arch=i386,arm KiIpiServiceRoutine
 @ stub -arch=i386,arm KiReleaseSpinLock
-@ stub -arch=i386,arm KiUnexpectedInterrupt
 @ stub -arch=i386 Kii386SpinOnSpinLock
 @ stub LdrAccessResource
 @ stub LdrEnumResources
@@ -798,12 +820,10 @@
 @ stub MmAdjustWorkingSetSize
 @ stub MmAdvanceMdl
 @ stub MmAllocateContiguousMemory
-@ stub MmAllocateContiguousMemorySpecifyCache
 @ stub MmAllocateMappingAddress
 @ stub MmAllocateNonCachedMemory
 @ stub MmAllocatePagesForMdl
 @ stub MmAllocatePagesForMdlEx
-@ stub MmBuildMdlForNonPagedPool
 @ stub MmCanFileBeTruncated
 @ stub MmCommitSessionMappedView
 @ stub MmCreateMdl
@@ -814,7 +834,6 @@
 @ stub MmFlushImageSection
 @ stub MmForceSectionClosed
 @ stub MmFreeContiguousMemory
-@ stub MmFreeContiguousMemorySpecifyCache
 @ stub MmFreeMappingAddress
 @ stub MmFreeNonCachedMemory
 @ stub MmFreePagesFromMdl
@@ -833,8 +852,6 @@
 @ stub MmLockPagableDataSection
 @ stub MmLockPagableImageSection
 @ stub MmLockPagableSectionByHandle
-@ stub MmMapLockedPages
-@ stub MmMapLockedPagesSpecifyCache
 @ stub MmMapLockedPagesWithReservedMapping
 @ stub MmMapMemoryDumpMdl
 @ stub MmMapUserAddressesToPage
@@ -862,7 +879,6 @@
 @ stub MmTrimAllSystemPagableMemory
 @ stub MmUnlockPagableImageSection
 @ stub MmUnlockPages
-@ stub MmUnmapLockedPages
 @ stub MmUnmapReservedMapping
 @ stub MmUnmapVideoDisplay
 @ stub MmUnmapViewInSessionSpace
@@ -1111,9 +1127,6 @@
 @ stub RtlCaptureStackBackTrace
 @ stub RtlCharToInteger
 @ stub RtlCheckRegistryKey
-@ stub RtlClearAllBits
-@ stub RtlClearBit
-@ stub RtlClearBits
 @ stub RtlCmDecodeMemIoResource
 @ stub RtlCmEncodeMemIoResource
 @ stub RtlCompareMemoryUlong
@@ -1172,19 +1185,13 @@
 @ stub -arch=win32 RtlExtendedLargeIntegerDivide
 @ stub -arch=win32 RtlExtendedMagicDivide
 @ stub -arch=i386,arm RtlFillMemoryUlong
-@ stub RtlFindClearBits
-@ stub RtlFindClearBitsAndSet
 @ stub RtlFindClearRuns
 @ stub RtlFindFirstRunClear
 @ stub RtlFindLastBackwardRunClear
-@ stub RtlFindLeastSignificantBit
 @ stub RtlFindLongestRunClear
 @ stub RtlFindMessage
-@ stub RtlFindMostSignificantBit
 @ stub RtlFindNextForwardRunClear
 @ stub RtlFindRange
-@ stub RtlFindSetBits
-@ stub RtlFindSetBitsAndClear
 @ stub RtlFindUnicodePrefix
 @ stub RtlFormatCurrentUserKeyPath
 @ stub RtlFreeAnsiString
@@ -1216,7 +1223,6 @@
 @ stub RtlInitCodePageTable
 @ stub RtlInitString
 @ stub RtlInitUnicodeStringEx
-@ stub RtlInitializeBitMap
 @ stub RtlInitializeGenericTable
 @ stub RtlInitializeGenericTableAvl
 @ stub RtlInitializeRangeList
@@ -1283,8 +1289,6 @@
 @ stub RtlNtStatusToDosErrorNoTeb
 @ stub RtlNumberGenericTableElements
 @ stub RtlNumberGenericTableElementsAvl
-@ stub RtlNumberOfClearBits
-@ stub RtlNumberOfSetBits
 @ stub RtlOemStringToCountedUnicodeString
 @ stub RtlOemStringToUnicodeSize
 @ stub RtlOemStringToUnicodeString
@@ -1308,9 +1312,6 @@
 @ stub RtlSecondsSince1980ToTime
 @ stub RtlSelfRelativeToAbsoluteSD
 @ stub RtlSelfRelativeToAbsoluteSD2
-@ stub RtlSetAllBits
-@ stub RtlSetBit
-@ stub RtlSetBits
 @ stub RtlSetDaclSecurityDescriptor
 @ stub RtlSetGroupSecurityDescriptor
 @ stub RtlSetOwnerSecurityDescriptor
@@ -1323,7 +1324,6 @@
 @ stub RtlSubAuthoritySid
 @ stub RtlSubtreePredecessor
 @ stub RtlSubtreeSuccessor
-@ stub RtlTestBit
 @ stub RtlTimeToElapsedTimeFields
 @ stub RtlTimeToSecondsSince1970
 @ stub RtlTimeToSecondsSince1980

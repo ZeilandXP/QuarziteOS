@@ -57,7 +57,7 @@ QzStatusThread(PVOID Context)
     UNREFERENCED_PARAMETER(Context);
     for (;;)
     {
-        Seconds = QzTicks / QZ_TIMER_HZ;
+        Seconds = (ULONG)(QzInterruptTime / 10000000);
         QzMmGetStats(&Total, &Free);
         QzSnprintf(Line, sizeof(Line),
                    QZ_PRODUCT_NAME " " QZ_VERSION_STR " | " QZ_KERNEL_NAME
@@ -66,7 +66,7 @@ QzStatusThread(PVOID Context)
                    Seconds / 3600, (Seconds / 60) % 60, Seconds % 60,
                    QzThreadCount(), Free / 256);
         QzVgaSetStatus(Line);
-        QzSleepTicks(QZ_TIMER_HZ / 2);
+        QzDelay(-5000000);   /* 500 ms */
     }
 }
 
@@ -136,15 +136,25 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
              LoaderBlock);
 
     QzCpuInit();
-    DbgPrint(QZ_KERNEL_NAME ": GDT/IDT/TSS initialized\n");
+    DbgPrint(QZ_KERNEL_NAME ": GDT/IDT/TSS/PCR initialized (IRQL HIGH_LEVEL)\n");
+
+    /*
+     * HAL phase 0, as NT does it: before memory management, at HIGH_LEVEL.
+     * The HAL checks our PRCB, programs the PICs, calibrates the stall
+     * loop, sets up the clock (and reports its tick length to us through
+     * KeSetTimeIncrement) and may claim low physical pages from the
+     * loader's memory descriptors -- so our page allocator comes after.
+     */
+    HalInitializeProcessor(0, LoaderBlock);
+    if (!HalInitSystem(0, LoaderBlock))
+        KeBugCheckEx(HAL_INITIALIZATION_FAILED, 0, 0, 0, 0);
+    DbgPrint(QZ_KERNEL_NAME ": HAL phase 0 done (stall factor %lu, clock tick %lu.%04lu ms)\n",
+             QzPcr.StallScaleFactor, QzTimeIncrement / 10000, QzTimeIncrement % 10000);
 
     QzMmInit(LoaderBlock);
     QzVgaInit();
     QzPoolInit();
-    {
-        extern VOID QzSharedUserDataInit(VOID);
-        QzSharedUserDataInit();
-    }
+    QzSharedUserDataInit();
     QzTimerObjInit();
 
     QzSetConsoleColor(0x0B);
@@ -167,16 +177,27 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzPrint("  Exports:  %u implemented, %u function stubs, %u data stubs\n\n",
             QZ_EXPORTS_IMPLEMENTED, QZ_EXPORTS_STUB_FUNCS, QZ_EXPORTS_STUB_DATA);
 
-    QzPicInit();
-    QzTimerInit();
-    QzKbdInit();
-    QzSerialEnableRxInterrupt();
     QzSchedInit();
     QzCreateThread("status", QzStatusThread, NULL);
 
+    /* Leave HIGH_LEVEL through the HAL and turn interrupts on */
+    QzLowerIrql(PASSIVE_LEVEL);
+    DbgPrint(QZ_KERNEL_NAME ": IRQL now %u (IRR %08lx, IDR %08lx)\n", QzPcr.Irql, QzPcr.IRR, QzPcr.IDR);
+    _enable();
+    DbgPrint(QZ_KERNEL_NAME ": interrupts enabled, IRQL %u\n", QzPcr.Irql);
+
+    /* HAL phase 1: bus handlers, the clock and RTC interrupts, x86 BIOS */
+    if (!HalInitSystem(1, LoaderBlock))
+        KeBugCheckEx(HAL_INITIALIZATION_FAILED, 1, 0, 0, 0);
+    DbgPrint(QZ_KERNEL_NAME ": HAL phase 1 done, clock running\n");
+
+    /* Device interrupts through interrupt objects and the HAL */
+    QzKbdInit();
+    QzSerialConnectInterrupt();
+
     DbgPrint(QZ_KERNEL_NAME ": interrupts on, scheduler running\n");
-    QzPcr.Pcr.Irql = PASSIVE_LEVEL;
-    __asm__ __volatile__("sti");
+    QzPrint("  HAL:      hal.dll -- PIC, PIT clock (%lu.%04lu ms tick), stall factor %lu\n\n",
+            QzTimeIncrement / 10000, QzTimeIncrement % 10000, QzPcr.StallScaleFactor);
 
     QzShell();
 }

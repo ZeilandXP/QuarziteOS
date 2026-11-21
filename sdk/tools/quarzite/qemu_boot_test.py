@@ -197,6 +197,8 @@ def run_qzkrnl(iso, out):
             chk.check("banner shows QuarziteOS 0.1.0", "QuarziteOS 0.1.0" in text)
             chk.check("reports the Windows 7 SP1 target",
                       "NT 6.1 build 7601" in text)
+            chk.check("runs on HAL.DLL (phase 0 and phase 1 initialized)",
+                      "HAL phase 0 done" in text and "HAL phase 1 done" in text)
             m = re.search(r"Loader:\s+(\d+) modules, (\d+) boot drivers", text)
             chk.check("FreeLoader bound HAL/KD/boot drivers to qzkrnl exports",
                       m and int(m.group(1)) >= 4 and int(m.group(2)) >= 1,
@@ -212,14 +214,17 @@ def run_qzkrnl(iso, out):
                 ("drivers", [r"boot drivers \(loaded and bound"]),
                 ("pooltest", [r"pooltest: 512 allocations, 0 errors -> PASS"]),
                 ("spawn 3", []),
-                ("sleep 1000", [r"slept 1000 ms \((9[5-9]|10[0-9]|11[0-9]) ticks"]),
+                ("sleep 1000", [r"slept 1000 ms \((99\d|10[0-4]\d) ms elapsed"]),
                 ("threads", [r"idle", r"status", r"main"]),
                 ("uptime", [r"KeTickCount = \d+"]),
                 ("cpu", [r"\w+"]),
                 ("exports", [r"\d+ implemented by qzkrnl"]),
                 ("time", [r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (19|20)\d\d-\d\d-\d\d \d\d:\d\d:\d\d"]),
                 ("synctest", [r"synctest: \d+ passed, 0 failed"]),
-                ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0\), \d+ DPCs retired"]),
+                ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0, HAL KeGetCurrentIrql = 0\), \d+ DPCs retired"]),
+                ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
+                         r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
+                         r"[1-9]\d* interrupt objects connected"]),
             ]
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())

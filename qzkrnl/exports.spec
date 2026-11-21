@@ -124,3 +124,54 @@
 @ stdcall -version=0x600+ KeQueryMaximumProcessorCount() QzKeQueryMaximumProcessorCount
 @ stdcall -version=0x601+ KeQueryMaximumProcessorCountEx(long) QzKeQueryProcessorCountEx
 @ stdcall -version=0x601+ KeGetCurrentProcessorNumberEx(ptr) QzKeGetCurrentProcessorNumberEx
+
+# HAL interface (stage B2): clock, interrupt exit, software interrupts, tables
+@ fastcall KeUpdateSystemTime(ptr long long)
+@ stdcall KeSetTimeIncrement(long long)
+@ stdcall -arch=i386 Kei386EoiHelper()
+@ fastcall -arch=i386 KiEoiHelper(ptr)
+@ stdcall -arch=i386,arm KiDeliverApc(long ptr ptr)
+@ stdcall -arch=i386 KiDispatchInterrupt()
+@ cdecl -arch=i386,arm KiUnexpectedInterrupt()
+@ stdcall -arch=i386,arm KeProfileInterrupt(ptr)
+@ extern HalDispatchTable
+@ extern HalPrivateDispatchTable
+@ extern KdDebuggerEnabled
+@ extern KdDebuggerNotPresent
+@ extern KiBugCheckData
+@ extern KeServiceDescriptorTable
+@ extern -arch=i386,arm KiEnableTimerWatchdog
+
+# Interrupt objects
+@ stdcall KeInitializeInterrupt(ptr ptr ptr ptr long long long long long long long)
+@ stdcall KeConnectInterrupt(ptr)
+@ stdcall KeDisconnectInterrupt(ptr)
+@ stdcall KeSynchronizeExecution(ptr ptr ptr)
+
+# MDLs
+@ stdcall IoAllocateMdl(ptr long long long ptr)
+@ stdcall IoFreeMdl(ptr)
+@ stdcall MmBuildMdlForNonPagedPool(ptr)
+@ stdcall MmMapLockedPages(ptr long)
+@ stdcall MmMapLockedPagesSpecifyCache(ptr long long ptr long long)
+@ stdcall MmUnmapLockedPages(ptr ptr)
+
+# RTL bitmaps, contiguous memory (needed by HAL phase 1)
+@ stdcall RtlInitializeBitMap(ptr ptr long)
+@ stdcall RtlClearAllBits(ptr)
+@ stdcall RtlSetAllBits(ptr)
+@ stdcall RtlClearBit(ptr long)
+@ stdcall RtlSetBit(ptr long)
+@ stdcall RtlTestBit(ptr long)
+@ stdcall RtlClearBits(ptr long long)
+@ stdcall RtlSetBits(ptr long long)
+@ stdcall RtlFindClearBits(ptr long long)
+@ stdcall RtlFindSetBits(ptr long long)
+@ stdcall RtlFindClearBitsAndSet(ptr long long)
+@ stdcall RtlFindSetBitsAndClear(ptr long long)
+@ stdcall RtlNumberOfClearBits(ptr)
+@ stdcall RtlNumberOfSetBits(ptr)
+@ stdcall RtlFindLeastSignificantBit(long long)
+@ stdcall RtlFindMostSignificantBit(long long)
+@ stdcall MmAllocateContiguousMemorySpecifyCache(long long long long long long long long)
+@ stdcall MmFreeContiguousMemorySpecifyCache(ptr long long)

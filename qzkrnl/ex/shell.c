@@ -54,6 +54,7 @@ QzCmdHelp(VOID)
             "  synctest          self-test: IRQL, DPCs, spinlocks, events, mutexes,\n"
             "                    semaphores, waits, timers, system time\n"
             "  irql              current IRQL, DPC and timer statistics\n"
+            "  hal               HAL clock and interrupt statistics\n"
             "  time              date and time (CMOS clock + KeQuerySystemTime)\n"
             "  call <export>     call a kernel export by name (stubs bug check)\n"
             "  bugcheck          KeBugCheckEx(MANUALLY_INITIATED_CRASH)\n"
@@ -185,18 +186,29 @@ QzExecute(PCHAR Line)
     else if (!strcmp(Cmd, "sleep"))
     {
         LARGE_INTEGER Delay;
-        ULONG Ms = QzParseUlong(Arg), Start = QzTicks;
+        ULONG Ms = QzParseUlong(Arg), StartTicks = QzTicks;
+        ULONGLONG Start = KeQueryInterruptTime();
         Delay.QuadPart = -(LONGLONG)Ms * 10000;
         KeDelayExecutionThread(KernelMode, FALSE, &Delay);
-        QzPrint("  slept %lu ms (%lu ticks elapsed)\n", Ms, QzTicks - Start);
+        QzPrint("  slept %lu ms (%lu ms elapsed, %lu clock ticks)\n", Ms,
+                (ULONG)((KeQueryInterruptTime() - Start) / 10000), QzTicks - StartTicks);
     }
     else if (!strcmp(Cmd, "uptime"))
     {
         LARGE_INTEGER Ticks;
+        ULONG Ms = (ULONG)(KeQueryInterruptTime() / 10000);
         KeQueryTickCount(&Ticks);
-        QzPrint("  KeTickCount = %I64u, increment %lu00ns, uptime %lu.%02lu s\n",
-                Ticks.QuadPart, KeQueryTimeIncrement() / 100,
-                QzTicks / QZ_TIMER_HZ, QzTicks % QZ_TIMER_HZ);
+        QzPrint("  KeTickCount = %I64u, increment %lu x 100ns, uptime %lu.%03lu s\n",
+                Ticks.QuadPart, KeQueryTimeIncrement(), Ms / 1000, Ms % 1000);
+    }
+    else if (!strcmp(Cmd, "hal"))
+    {
+        QzPrint("  HAL: clock tick %lu x 100ns, stall factor %lu, IDR %08lx, IRR %08lx\n"
+                "  %lu clock interrupts, %lu device interrupts, %lu dispatch interrupts,\n"
+                "  %lu interrupt objects connected\n",
+                QzTimeIncrement, QzPcr.StallScaleFactor, QzPcr.IDR, QzPcr.IRR,
+                QzPrcb->ClockInterrupts, QzPrcb->InterruptCount,
+                QzPrcb->DispatchInterrupts, QzConnectedInterruptCount());
     }
     else if (!strcmp(Cmd, "cpu"))
     {
@@ -214,8 +226,8 @@ QzExecute(PCHAR Line)
         QzRunSyncTests();
     else if (!strcmp(Cmd, "irql"))
     {
-        QzPrint("  IRQL %u (PCR FS:0x24 = %u), %lu DPCs retired, %lu queued, %lu active timers\n",
-                QzGetCurrentIrql(), __readfsbyte(0x24), QzPrcb->DpcCount,
+        QzPrint("  IRQL %u (PCR FS:0x24 = %u, HAL KeGetCurrentIrql = %u), %lu DPCs retired, %lu queued, %lu active timers\n",
+                QzGetCurrentIrql(), __readfsbyte(0x24), KeGetCurrentIrql(), QzPrcb->DpcCount,
                 QzPrcb->DpcQueueDepth, QzActiveTimerCount());
     }
     else if (!strcmp(Cmd, "time"))
@@ -248,8 +260,7 @@ QzExecute(PCHAR Line)
     else if (!strcmp(Cmd, "reboot"))
     {
         QzPrint("  Resetting...\n");
-        QzOutB(0x64, 0xFE);
-        for (;;) QzHalt();
+        HalReturnToFirmware(HalRebootRoutine);
     }
     else
         QzPrint("  unknown command '%s' -- try 'help'\n", Cmd);

@@ -27,6 +27,35 @@ static const CHAR QzKeymapShift[0x3A] =
 
 static BOOLEAN QzShift, QzCaps, QzExtended;
 
+static KINTERRUPT QzKbdInterrupt;
+static BOOLEAN NTAPI QzKbdIsr(PKINTERRUPT Interrupt, PVOID Context);
+
+/* Connect an ISA IRQ through the HAL's bus handler and an interrupt object */
+BOOLEAN
+QzConnectIsaInterrupt(PKINTERRUPT Interrupt, ULONG Irq,
+                      PKSERVICE_ROUTINE Isr, PVOID Context)
+{
+    KIRQL Irql;
+    KAFFINITY Affinity;
+    ULONG Vector;
+
+    Vector = HalGetInterruptVector(Isa, 0, Irq, Irq, &Irql, &Affinity);
+    if (Vector == 0)
+    {
+        /* No bus handler: use the PIC HAL's fixed mapping */
+        Vector = PRIMARY_VECTOR_BASE + Irq;
+        Irql = (KIRQL)(PROFILE_LEVEL - Irq);
+    }
+
+    KeInitializeInterrupt(Interrupt, Isr, Context, NULL, Vector, Irql, Irql,
+                          Latched, FALSE, 0, FALSE);
+    if (!KeConnectInterrupt(Interrupt))
+        return FALSE;
+
+    DbgPrint("qzkrnl: IRQ %lu connected: vector 0x%02lx, IRQL %u\n", Irq, Vector, Irql);
+    return TRUE;
+}
+
 VOID
 QzKbdInit(VOID)
 {
@@ -35,24 +64,27 @@ QzKbdInit(VOID)
     /* Drain anything left in the controller's output buffer */
     for (Spin = 0; Spin < 32 && (QzInB(0x64) & 1); Spin++)
         (VOID)QzInB(0x60);
-    QzPicUnmask(QZ_IRQ_KEYBOARD);
+    QzConnectIsaInterrupt(&QzKbdInterrupt, QZ_IRQ_KEYBOARD, QzKbdIsr, NULL);
 }
 
-VOID
-QzKbdIsr(VOID)
+static BOOLEAN NTAPI
+QzKbdIsr(PKINTERRUPT Interrupt, PVOID Context)
 {
     UCHAR Scan;
     BOOLEAN Release;
     CHAR c;
 
+    UNREFERENCED_PARAMETER(Interrupt);
+    UNREFERENCED_PARAMETER(Context);
+
     if (!(QzInB(0x64) & 1))
-        return;
+        return FALSE;
     Scan = QzInB(0x60);
 
     if (Scan == 0xE0)
     {
         QzExtended = TRUE;
-        return;
+        return TRUE;
     }
 
     Release = (Scan & 0x80) != 0;
@@ -63,27 +95,28 @@ QzKbdIsr(VOID)
         QzExtended = FALSE;
         if (!Release && Scan == 0x1C)       /* keypad Enter */
             QzInputPush('\n');
-        return;
+        return TRUE;
     }
 
     if (Scan == 0x2A || Scan == 0x36)
     {
         QzShift = !Release;
-        return;
+        return TRUE;
     }
     if (Release)
-        return;
+        return TRUE;
     if (Scan == 0x3A)
     {
         QzCaps = !QzCaps;
-        return;
+        return TRUE;
     }
     if (Scan >= sizeof(QzKeymap))
-        return;
+        return TRUE;
 
     c = QzShift ? QzKeymapShift[Scan] : QzKeymap[Scan];
     if (QzCaps && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))
         c ^= 0x20;
     if (c)
         QzInputPush(c);
+    return TRUE;
 }

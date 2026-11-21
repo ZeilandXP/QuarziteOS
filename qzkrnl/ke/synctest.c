@@ -468,7 +468,7 @@ QzTestTime(VOID)
     Shared = ((ULONGLONG)SharedUserData->InterruptTime.High1Time << 32) |
              SharedUserData->InterruptTime.LowPart;
     QzCheck("KUSER_SHARED_DATA interrupt time and NT 6.1 version are published",
-            (LONGLONG)(KeQueryInterruptTime() - Shared) <= 2 * QZ_TIME_INCREMENT &&
+            (LONGLONG)(KeQueryInterruptTime() - Shared) <= 2 * (LONGLONG)QzTimeIncrement &&
             SharedUserData->NtMajorVersion == 6 && SharedUserData->NtMinorVersion == 1);
 }
 

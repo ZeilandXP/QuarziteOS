@@ -15,6 +15,10 @@
 #include <ntifs.h>
 #include <arc/arc.h>
 #include <bugcodes.h>
+#include <ndk/asm.h>
+#include <ndk/ketypes.h>
+#include <ndk/haltypes.h>
+#include <ndk/halfuncs.h>
 #include "exportstats.h"
 
 /* ---------------------------------------------------------------------- */
@@ -60,28 +64,10 @@
 #define QZ_SEL_TSS             0x28
 #define QZ_SEL_R0_PCR          0x30
 
-/* Interrupt vectors -- the 8259 PIC is remapped to the NT vector base */
+/* Interrupt vectors: the HAL maps IRQ n to PRIMARY_VECTOR_BASE (0x30) + n */
 #define QZ_VECTOR_IRQ_BASE     0x30
-#define QZ_VECTOR_SWAP         0x2F    /* reschedule now (yield / block) */
-#define QZ_IRQ_TIMER           0
 #define QZ_IRQ_KEYBOARD        1
 #define QZ_IRQ_COM1            4
-
-#define QZ_TIMER_HZ            100
-#define QZ_TIME_INCREMENT      (10000000UL / QZ_TIMER_HZ)  /* 100ns units */
-
-/* ---------------------------------------------------------------------- */
-/* Trap frame (layout fixed by the assembly stubs in ke/i386/trap.c)       */
-/* ---------------------------------------------------------------------- */
-
-typedef struct _QZ_TRAP_FRAME
-{
-    ULONG Edi, Esi, Ebp, EspDummy, Ebx, Edx, Ecx, Eax;   /* pushal */
-    ULONG Gs, Fs, Es, Ds;
-    ULONG Vector;
-    ULONG ErrorCode;
-    ULONG Eip, Cs, EFlags;                              /* pushed by CPU */
-} QZ_TRAP_FRAME, *PQZ_TRAP_FRAME;
 
 /* ---------------------------------------------------------------------- */
 /* Threads                                                                 */
@@ -100,12 +86,11 @@ typedef enum _QZ_THREAD_STATE
 
 typedef struct _QZ_THREAD
 {
-    PQZ_TRAP_FRAME Frame;          /* saved context while not running */
+    ULONG_PTR SavedEsp;            /* kernel stack pointer while switched out */
     PVOID StackBase;               /* lowest address of the stack */
     ULONG StackSize;
     ULONG Id;
     QZ_THREAD_STATE State;
-    KIRQL SavedIrql;               /* IRQL to restore when switched back in */
     ULONG Switches;
     CHAR Name[16];
     struct _QZ_THREAD *Next;       /* circular run list */
@@ -124,41 +109,37 @@ typedef struct _QZ_THREAD
 } QZ_THREAD, *PQZ_THREAD;
 
 /* ---------------------------------------------------------------------- */
-/* Processor control region: binary compatible with the NT x86 KIPCR for   */
-/* the fields drivers and the HAL read directly (Irql at FS:0x24, Number   */
-/* at FS:0x51, PRCB at FS:0x120 with CurrentThread at FS:0x124).           */
+/* Processor control region: the genuine NT x86 KIPCR (with its KPRCB at   */
+/* 0x120), because the HAL and drivers read it directly through FS.        */
+/* qzkrnl's own per-processor state lives next to it in QZ_PRCB_EXT.       */
 /* ---------------------------------------------------------------------- */
 
-typedef struct _QZ_PRCB
+typedef struct _QZ_PRCB_EXT
 {
-    USHORT MinorVersion;
-    USHORT MajorVersion;
-    PQZ_THREAD CurrentThread;
-    PQZ_THREAD NextThread;
-    PQZ_THREAD IdleThread;
-    CCHAR Number;
-
-    /* qzkrnl private */
     LIST_ENTRY DpcListHead;
     ULONG DpcQueueDepth;
     ULONG DpcCount;
-    volatile BOOLEAN DpcPending;      /* DISPATCH_LEVEL software interrupt: DPCs */
+    volatile BOOLEAN DpcPending;      /* DPCs queued */
     volatile BOOLEAN TimerPending;    /* clock tick wants timer expiration */
     volatile BOOLEAN DispatchPending; /* reschedule requested */
     volatile BOOLEAN DpcRoutineActive;
-} QZ_PRCB, *PQZ_PRCB;
+    ULONG InterruptCount;
+    ULONG ClockInterrupts;
+    ULONG DispatchInterrupts;
+} QZ_PRCB_EXT, *PQZ_PRCB_EXT;
 
-typedef struct _QZ_PCR
-{
-    KPCR Pcr;                       /* 0x000 */
-    ULONG InterruptMode;            /* 0x0D4 */
-    UCHAR Spare1;                   /* 0x0D8 */
-    ULONG KernelReserved2[17];      /* 0x0DC */
-    QZ_PRCB Prcb;                   /* 0x120 */
-} QZ_PCR, *PQZ_PCR;
+/*
+ * On uniprocessor NT 5.x x86, KeGetPcr() is the fixed address KIP0PCRADDRESS
+ * (0xFFDFF000), which FreeLoader maps for the kernel; the HAL is compiled
+ * that way. The PCR must live there (FS points at the same page).
+ */
+#define QzPcr (*(PKIPCR)KIP0PCRADDRESS)
+extern QZ_PRCB_EXT QzPrcbExt;
+#define QzPrcb (&QzPrcbExt)
 
-extern QZ_PCR QzPcr;
-#define QzPrcb (&QzPcr.Prcb)
+#ifndef EXCEPTION_CHAIN_END
+#define EXCEPTION_CHAIN_END ((PEXCEPTION_REGISTRATION_RECORD)-1)
+#endif
 
 /* ---------------------------------------------------------------------- */
 /* Globals                                                                 */
@@ -166,9 +147,10 @@ extern QZ_PCR QzPcr;
 
 extern PLOADER_PARAMETER_BLOCK QzLoaderBlock;
 extern volatile ULONG QzTicks;
-#define QzCurrentThread (QzPcr.Prcb.CurrentThread)
+#define QzCurrentThread (*(PQZ_THREAD *)&QzPcr.PrcbData.CurrentThread)
 extern ULONG NtBuildNumber;
 extern volatile ULONGLONG QzInterruptTime;   /* 100ns since boot */
+extern ULONG QzTimeIncrement;                /* 100ns per clock tick, set by the HAL */
 
 /* ---------------------------------------------------------------------- */
 /* CPU helpers                                                             */
@@ -238,19 +220,23 @@ VOID QzSetIdtGate(ULONG Vector, PVOID Handler);
 VOID QzCpuGetVendor(PCHAR Vendor13, PCHAR Brand49);
 
 /* ke/i386/trap.c */
-PQZ_TRAP_FRAME __cdecl QzTrapDispatch(PQZ_TRAP_FRAME Frame);
 VOID QzInstallTrapStubs(VOID);
+VOID QzDumpTrapFrame(PKTRAP_FRAME TrapFrame);
+DECLSPEC_NORETURN VOID FASTCALL KiEoiHelper(PKTRAP_FRAME TrapFrame);
 
-/* ke/irq.c */
-VOID QzPicInit(VOID);
-VOID QzPicUnmask(ULONG Irq);
-VOID QzPicEoi(ULONG Irq);
-VOID QzTimerInit(VOID);
+/* ke/clock.c -- the kernel side of the HAL clock */
+VOID QzSharedUserDataInit(VOID);
+
+/* ke/intobj.c -- interrupt objects */
+VOID FASTCALL QzDispatchDeviceInterrupt(PKTRAP_FRAME TrapFrame, ULONG Vector);
+ULONG QzConnectedInterruptCount(VOID);
+
+/* ke/halif.c -- data the HAL expects from the kernel */
+VOID QzHalInterfaceInit(VOID);
 
 /* ke/sched.c */
 VOID QzSchedInit(VOID);
 PQZ_THREAD QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context);
-PQZ_TRAP_FRAME QzSelectNextThread(PQZ_TRAP_FRAME Frame, KIRQL CurrentIrql);
 VOID QzReadyThread(PQZ_THREAD Thread);
 VOID QzSwapThread(VOID);
 VOID QzYield(VOID);
@@ -258,12 +244,13 @@ VOID QzSleepTicks(ULONG Ticks);
 VOID QzDumpThreads(VOID);
 ULONG QzThreadCount(VOID);
 PQZ_THREAD QzFirstThread(VOID);
+VOID QzRequestDispatch(VOID);
+VOID QzRequestSoftwareInterrupt(VOID);
 
-/* ke/irql.c -- IRQL, software interrupts and DPCs */
+/* ke/irql.c -- IRQL (through the HAL), the DISPATCH software interrupt, DPCs */
 KIRQL QzGetCurrentIrql(VOID);
 KIRQL QzRaiseIrql(KIRQL NewIrql);
 VOID QzLowerIrql(KIRQL NewIrql);
-PQZ_TRAP_FRAME QzDispatchSoftwareInterrupt(PQZ_TRAP_FRAME Frame, KIRQL Irql);
 VOID QzRetireDpcs(VOID);
 KIRQL QzAcquireSpinLock(PKSPIN_LOCK SpinLock);
 VOID QzReleaseSpinLock(PKSPIN_LOCK SpinLock, KIRQL OldIrql);
@@ -278,6 +265,15 @@ NTSTATUS QzDelay(LONGLONG Interval100ns);
 VOID QzTimerObjInit(VOID);
 VOID QzExpireTimers(VOID);
 ULONG QzActiveTimerCount(VOID);
+
+/* Interrupt object exports (declared by the NDK, not the DDK) */
+VOID NTAPI KeInitializeInterrupt(PKINTERRUPT Interrupt, PKSERVICE_ROUTINE ServiceRoutine,
+                                 PVOID ServiceContext, PKSPIN_LOCK SpinLock, ULONG Vector,
+                                 KIRQL Irql, KIRQL SynchronizeIrql,
+                                 KINTERRUPT_MODE InterruptMode, BOOLEAN ShareVector,
+                                 CHAR ProcessorNumber, BOOLEAN FloatingSave);
+BOOLEAN NTAPI KeConnectInterrupt(PKINTERRUPT Interrupt);
+BOOLEAN NTAPI KeDisconnectInterrupt(PKINTERRUPT Interrupt);
 
 /* Exports implemented under internal names (see exports.spec) */
 BOOLEAN NTAPI KeIsExecutingDpc(VOID);
@@ -303,18 +299,17 @@ PVOID QzMapPhysical(ULONG PhysicalAddress, ULONG Size, BOOLEAN Uncached);
 VOID QzMmDumpInfo(VOID);
 VOID QzMmGetStats(PULONG TotalPages, PULONG FreePages);
 
+/* mm/mdl.c */
+PVOID QzMapPages(PPFN_NUMBER Pages, ULONG Count, BOOLEAN Uncached);
+
 /* mm/pool.c */
 VOID QzPoolInit(VOID);
 VOID QzPoolDumpInfo(VOID);
 
-/* drv/rtc.c */
-VOID QzReadRtc(PTIME_FIELDS TimeFields);
-
 /* drv/serial.c */
 VOID QzSerialInit(VOID);
 VOID QzSerialPutChar(CHAR c);
-VOID QzSerialEnableRxInterrupt(VOID);
-VOID QzSerialIsr(VOID);
+VOID QzSerialConnectInterrupt(VOID);
 
 /* drv/vga.c */
 VOID QzVgaInit(VOID);
@@ -325,7 +320,6 @@ BOOLEAN QzVgaAvailable(VOID);
 
 /* drv/kbd.c */
 VOID QzKbdInit(VOID);
-VOID QzKbdIsr(VOID);
 
 /* drv/input.c */
 VOID QzInputPush(CHAR c);

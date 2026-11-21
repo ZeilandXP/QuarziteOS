@@ -4,16 +4,16 @@
  * PURPOSE:     Preemptive round-robin scheduler for kernel threads
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  *
- * Context switching is done entirely through trap frames: every interrupt
- * saves the full register state on the current thread's stack, and the
- * dispatcher may return a different thread's frame to resume.
- *
- * A switch happens in exactly two places:
- *  - the DISPATCH_LEVEL software interrupt (ke/irql.c), when a reschedule is
- *    pending and the interrupted code ran below DISPATCH_LEVEL (preemption);
- *  - the swap vector (int 0x2F), used by a thread to give up the processor
- *    voluntarily -- to yield, or to block in a wait (at DISPATCH_LEVEL).
- * Each thread keeps its own IRQL across switches (SavedIrql).
+ * Context switching swaps kernel stacks: QzSwapContext saves the callee-
+ * saved registers, EFLAGS and the SEH chain head on the old thread's stack
+ * and resumes the new one where it last called QzSwapContext. Switches
+ * only happen at DISPATCH_LEVEL:
+ *  - in KiDispatchInterrupt, which the HAL calls for the DISPATCH software
+ *    interrupt (clock quantum end, a thread became ready);
+ *  - when a thread blocks in a wait, yields or exits.
+ * Each thread's previous IRQL is kept by whoever raised it on that thread's
+ * stack (the HAL's interrupt path, or the waiting code), so it comes back
+ * on its own when the thread resumes.
  *
  * Single processor, no priorities yet -- see ROADMAP.md.
  */
@@ -29,20 +29,52 @@ static PQZ_THREAD QzIdleThread;
 static QZ_THREAD QzBootThread;
 static ULONG QzNextThreadId = 1;
 
-extern VOID QzThreadTrampoline(VOID);
+extern VOID QzThreadStartup(VOID);
+VOID FASTCALL QzSwapContext(PQZ_THREAD OldThread, PQZ_THREAD NewThread);
 VOID __cdecl QzExitCurrentThread(VOID);
 
-/* New threads start here at PASSIVE_LEVEL: EBX = routine, ESI = context */
+C_ASSERT(FIELD_OFFSET(QZ_THREAD, SavedEsp) == 0);
+
 __asm__(
     ".text\n"
-    ".globl _QzThreadTrampoline\n"
-    "_QzThreadTrampoline:\n"
+    /* QzSwapContext(Old = ecx, New = edx) */
+    ".globl @QzSwapContext@8\n"
+    "@QzSwapContext@8:\n"
+    "    pushl %ebp\n"
+    "    pushl %ebx\n"
     "    pushl %esi\n"
-    "    call *%ebx\n"            /* NTAPI routine pops its argument */
-    "    call _QzExitCurrentThread\n"
+    "    pushl %edi\n"
+    "    pushfl\n"
+    "    pushl %fs:0\n"
+    "    movl %esp, (%ecx)\n"
+    "    movl (%edx), %esp\n"
+    "    popl %fs:0\n"
+    "    popfl\n"
+    "    popl %edi\n"
+    "    popl %esi\n"
+    "    popl %ebx\n"
+    "    popl %ebp\n"
+    "    ret\n"
+    "\n"
+    /* First switch into a new thread lands here: EBX = routine, ESI = context */
+    ".globl _QzThreadStartup\n"
+    "_QzThreadStartup:\n"
+    "    pushl %esi\n"
+    "    pushl %ebx\n"
+    "    call _QzThreadMain@8\n"
     "1:  hlt\n"
     "    jmp 1b\n"
 );
+
+DECLSPEC_NORETURN VOID NTAPI
+QzThreadMain(PQZ_THREAD_ROUTINE Routine, PVOID Context)
+{
+    /* We arrive at DISPATCH_LEVEL from the switch: drop to PASSIVE_LEVEL */
+    QzLowerIrql(PASSIVE_LEVEL);
+    Routine(Context);
+    QzExitCurrentThread();
+    for (;;);
+}
 
 static VOID NTAPI
 QzIdleRoutine(PVOID Context)
@@ -67,7 +99,6 @@ PQZ_THREAD
 QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
 {
     PQZ_THREAD Thread;
-    PQZ_TRAP_FRAME Frame;
     PUCHAR Stack;
 
     Thread = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Thread), 'dhTQ');
@@ -84,20 +115,20 @@ QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
     Thread->StackSize = QZ_THREAD_STACK_SIZE;
     Thread->Id = QzNextThreadId++;
     Thread->State = QzThreadReady;
-    Thread->SavedIrql = PASSIVE_LEVEL;
     strncpy(Thread->Name, Name, sizeof(Thread->Name) - 1);
 
-    /* Fabricate the frame an interrupt would have left behind */
-    Frame = (PQZ_TRAP_FRAME)(Stack + QZ_THREAD_STACK_SIZE - sizeof(QZ_TRAP_FRAME));
-    RtlZeroMemory(Frame, sizeof(*Frame));
-    Frame->Eip = (ULONG)(ULONG_PTR)QzThreadTrampoline;
-    Frame->Cs = QZ_SEL_R0_CODE;
-    Frame->EFlags = 0x202;  /* IF set */
-    Frame->Ds = Frame->Es = Frame->Gs = QZ_SEL_R0_DATA;
-    Frame->Fs = QZ_SEL_R0_PCR;
-    Frame->Ebx = (ULONG)(ULONG_PTR)Routine;
-    Frame->Esi = (ULONG)(ULONG_PTR)Context;
-    Thread->Frame = Frame;
+    /* Fabricate what QzSwapContext pops: SEH head, EFLAGS, edi, esi, ebx, ebp, ret */
+    {
+        PULONG_PTR Sp = (PULONG_PTR)(Stack + QZ_THREAD_STACK_SIZE);
+        *--Sp = (ULONG_PTR)QzThreadStartup;     /* return address */
+        *--Sp = 0;                              /* ebp */
+        *--Sp = (ULONG_PTR)Routine;             /* ebx */
+        *--Sp = (ULONG_PTR)Context;             /* esi */
+        *--Sp = 0;                              /* edi */
+        *--Sp = 0x202;                          /* EFLAGS: IF */
+        *--Sp = (ULONG_PTR)EXCEPTION_CHAIN_END; /* fs:[0] */
+        Thread->SavedEsp = (ULONG_PTR)Sp;
+    }
 
     QzInsertThread(Thread);
     return Thread;
@@ -113,13 +144,12 @@ QzSchedInit(VOID)
     QzBootThread.StackBase = QzBootStack;
     QzBootThread.StackSize = 16 * 1024;
     QzBootThread.State = QzThreadReady;
-    QzBootThread.SavedIrql = PASSIVE_LEVEL;
     strncpy(QzBootThread.Name, "main", sizeof(QzBootThread.Name) - 1);
     QzBootThread.Next = &QzBootThread;
     QzCurrentThread = &QzBootThread;
 
     QzIdleThread = QzCreateThread("idle", QzIdleRoutine, NULL);
-    QzPrcb->IdleThread = QzIdleThread;
+    QzPcr.PrcbData.IdleThread = (PKTHREAD)QzIdleThread;
 }
 
 PQZ_THREAD
@@ -129,23 +159,53 @@ QzFirstThread(VOID)
 }
 
 /*
- * Pick the thread to run next. Called with interrupts disabled from the
- * swap vector or the dispatch software interrupt; CurrentIrql is the IRQL
- * the current thread must get back when it is resumed.
+ * Request the DISPATCH software interrupt. NT semantics: below
+ * DISPATCH_LEVEL it is delivered at once. The PIC HAL only fires APC
+ * requests immediately (it checks IRR & 3), so -- like ntoskrnl -- raise and
+ * lower around the request and let KfLowerIrql deliver it.
  */
-PQZ_TRAP_FRAME
-QzSelectNextThread(PQZ_TRAP_FRAME Frame, KIRQL CurrentIrql)
+VOID
+QzRequestSoftwareInterrupt(VOID)
+{
+    HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
+    if (QzPcr.Irql < DISPATCH_LEVEL)
+        KfLowerIrql(KfRaiseIrql(DISPATCH_LEVEL));
+}
+
+/* Ask for the DISPATCH software interrupt to reschedule */
+VOID
+QzRequestDispatch(VOID)
+{
+    QzPrcb->DispatchPending = TRUE;
+    QzRequestSoftwareInterrupt();
+}
+
+/* Make a waiting thread runnable again (dispatcher database held) */
+VOID
+QzReadyThread(PQZ_THREAD Thread)
+{
+    Thread->State = QzThreadReady;
+    QzRequestDispatch();
+}
+
+/*
+ * Switch to the next ready thread (round robin), or to the idle thread.
+ * Must be called at DISPATCH_LEVEL. Returns when this thread runs again;
+ * if it is still ready and alone, returns immediately.
+ */
+VOID
+QzSwapThread(VOID)
 {
     PQZ_THREAD Current = QzCurrentThread, Thread, Next = NULL;
+    ULONG Flags;
 
     if (!Current)
-        return Frame;
+        return;
+    if (QzPcr.Irql < DISPATCH_LEVEL)
+        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, QzPcr.Irql, DISPATCH_LEVEL, 0, 1);
 
-    Current->Frame = Frame;
-    Current->SavedIrql = CurrentIrql;
-    QzPrcb->DispatchPending = FALSE;
+    Flags = QzSaveFlagsAndDisable();
 
-    /* Round robin: first ready, non-idle thread after the current one */
     for (Thread = Current->Next; ; Thread = Thread->Next)
     {
         if (Thread->State == QzThreadReady && Thread != QzIdleThread)
@@ -160,31 +220,21 @@ QzSelectNextThread(PQZ_TRAP_FRAME Frame, KIRQL CurrentIrql)
         Next = QzIdleThread;
 
     if (Next != Current)
+    {
         Next->Switches++;
-    QzCurrentThread = Next;
-    QzPcr.Pcr.Irql = Next->SavedIrql;
-    return Next->Frame;
-}
+        QzCurrentThread = Next;
+        QzSwapContext(Current, Next);
+    }
 
-/* Make a waiting thread runnable again (dispatcher database held) */
-VOID
-QzReadyThread(PQZ_THREAD Thread)
-{
-    Thread->State = QzThreadReady;
-    QzPrcb->DispatchPending = TRUE;
-}
-
-/* Give up the processor; returns when this thread is scheduled again */
-VOID
-QzSwapThread(VOID)
-{
-    __asm__ __volatile__("int $0x2F" : : : "memory");
+    QzRestoreFlags(Flags);
 }
 
 VOID
 QzYield(VOID)
 {
+    KIRQL OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
     QzSwapThread();
+    QzLowerIrql(OldIrql);
 }
 
 VOID
@@ -192,7 +242,7 @@ QzSleepTicks(ULONG Ticks)
 {
     if (!QzCurrentThread)
         return;
-    QzDelay(-(LONGLONG)Ticks * QZ_TIME_INCREMENT);
+    QzDelay(-(LONGLONG)Ticks * QzTimeIncrement);
 }
 
 VOID __cdecl
@@ -228,14 +278,12 @@ QzDumpThreads(VOID)
     static PCSTR States[] = { "ready", "waiting", "dead" };
     PQZ_THREAD Thread = QzCurrentThread;
 
-    QzPrint("  TID  NAME            STATE     SWITCHES  IRQL  STACK\n");
+    QzPrint("  TID  NAME            STATE     SWITCHES  STACK\n");
     do
     {
-        QzPrint("  %3lu  %-15s %-8s %9lu  %4u  %p%s\n",
+        QzPrint("  %3lu  %-15s %-8s %9lu  %p%s\n",
                 Thread->Id, Thread->Name, States[Thread->State],
-                Thread->Switches,
-                Thread == QzCurrentThread ? QzGetCurrentIrql() : Thread->SavedIrql,
-                Thread->StackBase,
+                Thread->Switches, Thread->StackBase,
                 Thread == QzCurrentThread ? "  <- running" : "");
         Thread = Thread->Next;
     } while (Thread != QzCurrentThread);

@@ -34,9 +34,12 @@ QzTimerObjInit(VOID)
 
     InitializeListHead(&QzTimerListHead);
 
-    QzReadRtc(&Now);
-    if (!RtlTimeFieldsToTime(&Now, (PLARGE_INTEGER)&QzBootSystemTime))
+    /* The HAL owns the CMOS real-time clock */
+    if (!HalQueryRealTimeClock(&Now) ||
+        !RtlTimeFieldsToTime(&Now, (PLARGE_INTEGER)&QzBootSystemTime))
+    {
         QzBootSystemTime = 0;
+    }
 }
 
 ULONG
@@ -146,6 +149,7 @@ KeSetTimerEx(IN OUT PKTIMER Timer,
     if (Timer->DueTime.QuadPart <= QzInterruptTime)
     {
         QzPrcb->TimerPending = TRUE;
+        HalRequestSoftwareInterrupt(DISPATCH_LEVEL);   /* delivered when we lower */
     }
 
     QzLowerIrql(OldIrql);

@@ -49,19 +49,18 @@ QzSerialPutChar(CHAR c)
     QzOutB(COM1 + UART_THR, (UCHAR)c);
 }
 
-VOID
-QzSerialEnableRxInterrupt(VOID)
-{
-    if (!QzSerialPresent)
-        return;
-    QzOutB(COM1 + UART_IER, 0x01);   /* received data available */
-    QzPicUnmask(QZ_IRQ_COM1);
-}
+static KINTERRUPT QzSerialInterrupt;
+BOOLEAN QzConnectIsaInterrupt(PKINTERRUPT Interrupt, ULONG Irq,
+                              PKSERVICE_ROUTINE Isr, PVOID Context);
 
-VOID
-QzSerialIsr(VOID)
+static BOOLEAN NTAPI
+QzSerialIsr(PKINTERRUPT Interrupt, PVOID Context)
 {
+    BOOLEAN Handled = FALSE;
     CHAR c;
+
+    UNREFERENCED_PARAMETER(Interrupt);
+    UNREFERENCED_PARAMETER(Context);
 
     while (QzInB(COM1 + UART_LSR) & 0x01)
     {
@@ -71,5 +70,16 @@ QzSerialIsr(VOID)
         else if (c == 0x7F)
             c = '\b';
         QzInputPush(c);
+        Handled = TRUE;
     }
+    return Handled;
+}
+
+VOID
+QzSerialConnectInterrupt(VOID)
+{
+    if (!QzSerialPresent)
+        return;
+    if (QzConnectIsaInterrupt(&QzSerialInterrupt, QZ_IRQ_COM1, QzSerialIsr, NULL))
+        QzOutB(COM1 + UART_IER, 0x01);   /* received data available */
 }

@@ -193,6 +193,29 @@ QzUnmapPage(ULONG_PTR Va)
     }
 }
 
+/* Map an arbitrary list of physical pages contiguously in system space */
+PVOID
+QzMapPages(PPFN_NUMBER Pages, ULONG Count, BOOLEAN Uncached)
+{
+    ULONG Flags = QZ_PTE_WRITE | (Uncached ? (QZ_PTE_PCD | QZ_PTE_PWT) : 0);
+    ULONG_PTR Va;
+    ULONG i, IrqFlags;
+
+    IrqFlags = QzSaveFlagsAndDisable();
+    if (QzIoSpaceNext + Count * QZ_PAGE_SIZE > QZ_IOSPACE_BASE + QZ_IOSPACE_SIZE)
+    {
+        QzRestoreFlags(IrqFlags);
+        return NULL;
+    }
+    Va = QzIoSpaceNext;
+    QzIoSpaceNext += Count * QZ_PAGE_SIZE;
+    QzRestoreFlags(IrqFlags);
+
+    for (i = 0; i < Count; i++)
+        QzMapPage(Va + i * QZ_PAGE_SIZE, Pages[i], Flags);
+    return (PVOID)Va;
+}
+
 PVOID
 QzMapPhysical(ULONG PhysicalAddress, ULONG Size, BOOLEAN Uncached)
 {
@@ -296,4 +319,82 @@ MmGetPhysicalAddress(IN PVOID Address)
     if (Pte & QZ_PTE_PRESENT)
         Result.LowPart = (Pte & 0xFFFFF000) | (Va & 0xFFF);
     return Result;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Physically contiguous memory (the HAL's ISA DMA map buffers use it)     */
+/* ---------------------------------------------------------------------- */
+
+PVOID
+NTAPI
+MmAllocateContiguousMemorySpecifyCache(IN SIZE_T NumberOfBytes,
+                                       IN PHYSICAL_ADDRESS LowestAcceptableAddress,
+                                       IN PHYSICAL_ADDRESS HighestAcceptableAddress,
+                                       IN PHYSICAL_ADDRESS BoundaryAddressMultiple,
+                                       IN MEMORY_CACHING_TYPE CacheType)
+{
+    ULONG Pages = (ULONG)((NumberOfBytes + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT);
+    ULONG Low = (ULONG)(LowestAcceptableAddress.QuadPart >> QZ_PAGE_SHIFT);
+    ULONGLONG HighAddress = HighestAcceptableAddress.QuadPart;
+    ULONG High, Boundary, Start, Pfn, Flags;
+    PVOID Va;
+
+    if (Pages == 0)
+        return NULL;
+    if (HighAddress >= ((ULONGLONG)QzHighestPfn << QZ_PAGE_SHIFT))
+        HighAddress = ((ULONGLONG)QzHighestPfn << QZ_PAGE_SHIFT) - 1;
+    High = (ULONG)(HighAddress >> QZ_PAGE_SHIFT);       /* last acceptable PFN */
+    Boundary = (ULONG)(BoundaryAddressMultiple.QuadPart >> QZ_PAGE_SHIFT);
+    if (Low < QZ_LOW_PAGES)
+        Low = QZ_LOW_PAGES;
+
+    Flags = QzSaveFlagsAndDisable();
+    for (Start = Low; Start + Pages - 1 <= High; Start++)
+    {
+        /* The run must not cross a boundary multiple */
+        if (Boundary && (Start / Boundary) != ((Start + Pages - 1) / Boundary))
+            continue;
+        for (Pfn = Start; Pfn < Start + Pages; Pfn++)
+        {
+            if (!(QzFreeBitmap[Pfn >> 5] & (1UL << (Pfn & 31))))
+                break;
+        }
+        if (Pfn == Start + Pages)
+        {
+            for (Pfn = Start; Pfn < Start + Pages; Pfn++)
+                QzClearFree(Pfn);
+            QzFreePages -= Pages;
+            QzRestoreFlags(Flags);
+
+            Va = QzMapPhysical(Start << QZ_PAGE_SHIFT, Pages << QZ_PAGE_SHIFT,
+                               CacheType != MmCached);
+            if (Va)
+                RtlZeroMemory(Va, Pages << QZ_PAGE_SHIFT);
+            return Va;
+        }
+        Start = Pfn;    /* skip past the page that was in use */
+    }
+    QzRestoreFlags(Flags);
+    return NULL;
+}
+
+VOID
+NTAPI
+MmFreeContiguousMemorySpecifyCache(IN PVOID BaseAddress,
+                                   IN SIZE_T NumberOfBytes,
+                                   IN MEMORY_CACHING_TYPE CacheType)
+{
+    ULONG_PTR Va = (ULONG_PTR)BaseAddress & ~(QZ_PAGE_SIZE - 1);
+    ULONG Pages = (ULONG)((NumberOfBytes + QZ_PAGE_SIZE - 1) >> QZ_PAGE_SHIFT);
+    ULONG i;
+
+    UNREFERENCED_PARAMETER(CacheType);
+
+    for (i = 0; i < Pages; i++)
+    {
+        PHYSICAL_ADDRESS Pa = MmGetPhysicalAddress((PVOID)(Va + i * QZ_PAGE_SIZE));
+        QzUnmapPage(Va + i * QZ_PAGE_SIZE);
+        if (Pa.QuadPart)
+            QzFreePhysicalPage((ULONG)(Pa.QuadPart >> QZ_PAGE_SHIFT));
+    }
 }

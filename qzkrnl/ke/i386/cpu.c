@@ -42,16 +42,20 @@ typedef struct _QZ_TSS
 } QZ_TSS;
 #include <poppack.h>
 
-/* The processor control region (layout in qz.h), reached through FS */
-QZ_PCR QzPcr;
+/* The processor control region: the real NT KIPCR at KIP0PCRADDRESS */
+QZ_PRCB_EXT QzPrcbExt;
+
+C_ASSERT(sizeof(KIPCR) <= PAGE_SIZE);   /* the loader maps exactly one page */
 
 /* Offsets drivers and the HAL depend on */
-C_ASSERT(FIELD_OFFSET(KPCR, SelfPcr) == 0x1C);
-C_ASSERT(FIELD_OFFSET(KPCR, Prcb) == 0x20);
-C_ASSERT(FIELD_OFFSET(KPCR, Irql) == 0x24);
-C_ASSERT(FIELD_OFFSET(KPCR, Number) == 0x51);
-C_ASSERT(FIELD_OFFSET(QZ_PCR, Prcb) == 0x120);
-C_ASSERT(FIELD_OFFSET(QZ_PCR, Prcb.CurrentThread) == 0x124);
+C_ASSERT(FIELD_OFFSET(KIPCR, SelfPcr) == 0x1C);
+C_ASSERT(FIELD_OFFSET(KIPCR, Prcb) == 0x20);
+C_ASSERT(FIELD_OFFSET(KIPCR, Irql) == 0x24);
+C_ASSERT(FIELD_OFFSET(KIPCR, IRR) == 0x28);
+C_ASSERT(FIELD_OFFSET(KIPCR, IDR) == 0x30);
+C_ASSERT(FIELD_OFFSET(KIPCR, Number) == 0x51);
+C_ASSERT(FIELD_OFFSET(KIPCR, PrcbData) == 0x120);
+C_ASSERT(FIELD_OFFSET(KIPCR, PrcbData.CurrentThread) == 0x124);
 
 static QZ_GDT_ENTRY QzGdt[16] __attribute__((aligned(16)));
 static QZ_IDT_ENTRY QzIdt[256] __attribute__((aligned(16)));
@@ -101,21 +105,33 @@ QzCpuInit(VOID)
 
     /* PCR: FS points at the processor control region, like on NT */
     RtlZeroMemory(&QzPcr, sizeof(QzPcr));
-    QzPcr.Pcr.NtTib.Self = &QzPcr.Pcr.NtTib;
-    QzPcr.Pcr.SelfPcr = &QzPcr.Pcr;
-    QzPcr.Pcr.Prcb = (struct _KPRCB *)&QzPcr.Prcb;
-    QzPcr.Pcr.Irql = HIGH_LEVEL;          /* interrupts are off until init is done */
-    QzPcr.Pcr.MajorVersion = 1;
-    QzPcr.Pcr.MinorVersion = 1;
-    QzPcr.Pcr.SetMember = 1;
-    QzPcr.Pcr.Number = 0;
-    QzPcr.Pcr.TSS = (struct _KTSS *)&QzTss;
-    QzPcr.Pcr.GDT = (struct _KGDTENTRY *)QzGdt;
-    QzPcr.Pcr.IDT = (struct _KIDTENTRY *)QzIdt;
-    QzPcr.Prcb.MajorVersion = 1;
-    QzPcr.Prcb.MinorVersion = 1;
-    InitializeListHead(&QzPcr.Prcb.DpcListHead);
-    QzSetGdtEntry(QZ_SEL_R0_PCR, (ULONG)(ULONG_PTR)&QzPcr, sizeof(QzPcr) - 1, 0x92, 0x40);
+    QzPcr.NtTib.ExceptionList = EXCEPTION_CHAIN_END;
+    QzPcr.NtTib.Self = &QzPcr.NtTib;
+    QzPcr.SelfPcr = (PKPCR)&QzPcr;
+    QzPcr.Prcb = &QzPcr.PrcbData;
+    QzPcr.Irql = HIGH_LEVEL;              /* interrupts stay off until init is done */
+    QzPcr.MajorVersion = 1;
+    QzPcr.MinorVersion = 1;
+    QzPcr.SetMember = 1;
+    QzPcr.Number = 0;
+    QzPcr.TSS = (struct _KTSS *)&QzTss;
+    QzPcr.GDT = (PKGDTENTRY)QzGdt;
+    QzPcr.IDT = (PKIDTENTRY)QzIdt;
+
+    /* The HAL refuses to run on a kernel with a different PRCB/build type */
+    QzPcr.PrcbData.MajorVersion = PRCB_MAJOR_VERSION;
+    QzPcr.PrcbData.MinorVersion = PRCB_MINOR_VERSION;
+    QzPcr.PrcbData.BuildType = PRCB_BUILD_UNIPROCESSOR;
+#if DBG
+    QzPcr.PrcbData.BuildType |= PRCB_BUILD_DEBUG;
+#endif
+    QzPcr.PrcbData.Number = 0;
+    QzPcr.PrcbData.SetMember = 1;
+    QzPcr.PrcbData.CpuID = 1;             /* CPUID is available */
+
+    RtlZeroMemory(&QzPrcbExt, sizeof(QzPrcbExt));
+    InitializeListHead(&QzPrcbExt.DpcListHead);
+    QzSetGdtEntry(QZ_SEL_R0_PCR, KIP0PCRADDRESS, sizeof(KIPCR) - 1, 0x92, 0x40);
 
     Gdtr.Limit = sizeof(QzGdt) - 1;
     Gdtr.Base = (ULONG)(ULONG_PTR)QzGdt;

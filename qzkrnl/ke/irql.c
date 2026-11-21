@@ -1,26 +1,22 @@
 /*
  * PROJECT:     QuarziteOS Kernel (qzkrnl)
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
- * PURPOSE:     IRQL, the DISPATCH_LEVEL software interrupt, DPCs, spinlocks
+ * PURPOSE:     IRQL (through the HAL), the DISPATCH software interrupt,
+ *              DPCs and spinlocks
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  *
- * IRQL model (single processor):
- *  - The current IRQL lives in the PCR (FS:0x24), where drivers and the HAL
- *    expect it.
- *  - Above DISPATCH_LEVEL, hardware interrupts are masked (IF=0).
- *  - At DISPATCH_LEVEL and above, the "DISPATCH software interrupt" is held
- *    pending: no DPC runs and no thread switch happens. Lowering the IRQL
- *    below DISPATCH_LEVEL delivers it -- pending timers and DPCs are retired
- *    and a pending reschedule takes place -- exactly like NT's KiDispatch-
- *    Interrupt, but without a hardware software-interrupt controller.
- *  - Hardware interrupts (ke/i386/trap.c) deliver it on their way out when
- *    the interrupted code ran below DISPATCH_LEVEL.
- *
- * NOTE: on x86 NT, KeRaiseIrql/KeLowerIrql/KeAcquireSpinLock are HAL.DLL
- * exports. qzkrnl keeps these internal until it hosts the HAL (stage B2).
+ * IRQL belongs to the HAL, as on NT x86: KfRaiseIrql/KfLowerIrql keep it
+ * in the PCR (FS:0x24) and, on the PIC HAL, mask device interrupts lazily.
+ * The kernel asks for the DISPATCH_LEVEL software interrupt with
+ * HalRequestSoftwareInterrupt; the HAL delivers it -- immediately if the
+ * IRQL is low enough, otherwise when it drops -- by calling the kernel's
+ * KiDispatchInterrupt at DISPATCH_LEVEL with interrupts enabled. That is
+ * where timers expire, DPCs run and threads are switched.
  */
 
 #include "qz.h"
+
+#pragma GCC diagnostic ignored "-Wframe-address"
 
 #define QZ_DPC_OBJECT           0x13
 #define QZ_THREADED_DPC_OBJECT  0x18
@@ -29,108 +25,66 @@
 #undef KeReleaseSpinLockFromDpcLevel
 #undef KeInitializeSpinLock
 #undef KeTestSpinLock
-
-#define QZ_IF 0x200
+#undef KeGetCurrentIrql
 
 KIRQL
 QzGetCurrentIrql(VOID)
 {
-    return QzPcr.Pcr.Irql;
+    return QzPcr.Irql;
 }
 
 KIRQL
 QzRaiseIrql(KIRQL NewIrql)
 {
-    KIRQL OldIrql = QzPcr.Pcr.Irql;
-
-    if (NewIrql < OldIrql)
-        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, OldIrql, NewIrql, 0, 0);
-
-    if (NewIrql > DISPATCH_LEVEL && OldIrql <= DISPATCH_LEVEL)
-        __asm__ __volatile__("cli" : : : "memory");
-
-    QzPcr.Pcr.Irql = NewIrql;
-    return OldIrql;
-}
-
-static BOOLEAN
-QzSoftwareInterruptPending(VOID)
-{
-    return QzPrcb->DpcPending || QzPrcb->TimerPending;
+    if (NewIrql < QzPcr.Irql)
+    {
+        DbgPrint("qzkrnl: raise %u -> %u on thread '%s' from %p <- %p\n",
+                 QzPcr.Irql, NewIrql, QzCurrentThread ? QzCurrentThread->Name : "?",
+                 __builtin_return_address(0), __builtin_return_address(1));
+        KeBugCheckEx(IRQL_NOT_GREATER_OR_EQUAL, QzPcr.Irql, NewIrql,
+                     (ULONG_PTR)__builtin_return_address(0), 0);
+    }
+    return KfRaiseIrql(NewIrql);
 }
 
 VOID
 QzLowerIrql(KIRQL NewIrql)
 {
-    KIRQL OldIrql = QzPcr.Pcr.Irql;
-    ULONG Flags;
-
-    if (NewIrql > OldIrql)
-        KeBugCheckEx(IRQL_NOT_LESS_OR_EQUAL, OldIrql, NewIrql, 0, 0);
-
-    /* Leaving the device levels re-enables hardware interrupts */
-    if (OldIrql > DISPATCH_LEVEL && NewIrql <= DISPATCH_LEVEL)
-    {
-        QzPcr.Pcr.Irql = (NewIrql < DISPATCH_LEVEL) ? DISPATCH_LEVEL : NewIrql;
-        __asm__ __volatile__("sti" : : : "memory");
-    }
-
-    if (NewIrql >= DISPATCH_LEVEL)
-    {
-        QzPcr.Pcr.Irql = NewIrql;
-        return;
-    }
-
-    /* Deliver the DISPATCH software interrupt: retire timers and DPCs... */
-    Flags = QzSaveFlagsAndDisable();
-    while (QzSoftwareInterruptPending())
-    {
-        QzPcr.Pcr.Irql = DISPATCH_LEVEL;
-        QzRestoreFlags(Flags);
-        QzRetireDpcs();
-        Flags = QzSaveFlagsAndDisable();
-    }
-    QzPcr.Pcr.Irql = NewIrql;
-
-    /* ...then reschedule if asked to (needs interrupts on: it's an int) */
-    if (QzPrcb->DispatchPending && QzCurrentThread && (Flags & QZ_IF))
-    {
-        QzRestoreFlags(Flags);
-        QzSwapThread();
-        return;
-    }
-    QzRestoreFlags(Flags);
+    if (NewIrql > QzPcr.Irql)
+        KeBugCheckEx(IRQL_NOT_LESS_OR_EQUAL, QzPcr.Irql, NewIrql,
+                     (ULONG_PTR)__builtin_return_address(0), 0);
+    KfLowerIrql(NewIrql);
 }
 
 /*
- * Interrupt epilogue: the interrupted context ran at Irql < DISPATCH_LEVEL.
- * Called with interrupts disabled; returns the frame to resume.
+ * The DISPATCH_LEVEL software interrupt, called by the HAL at
+ * DISPATCH_LEVEL with interrupts enabled: retire timers and DPCs, then
+ * switch threads if a reschedule is pending.
  */
-PQZ_TRAP_FRAME
-QzDispatchSoftwareInterrupt(PQZ_TRAP_FRAME Frame, KIRQL Irql)
+VOID
+NTAPI
+KiDispatchInterrupt(VOID)
 {
-    for (;;)
+    QzPrcb->DispatchInterrupts++;
+    QzRetireDpcs();
+
+    if (QzPrcb->DispatchPending)
     {
-        if (QzSoftwareInterruptPending())
-        {
-            QzPcr.Pcr.Irql = DISPATCH_LEVEL;
-            __asm__ __volatile__("sti" : : : "memory");
-            QzRetireDpcs();
-            __asm__ __volatile__("cli" : : : "memory");
-            continue;
-        }
-        if (QzPrcb->DispatchPending && QzCurrentThread)
-        {
-            Frame = QzSelectNextThread(Frame, Irql);
-            Irql = QzPcr.Pcr.Irql;
-            if (Irql >= DISPATCH_LEVEL)
-                return Frame;      /* resumed a thread blocked at DISPATCH */
-            continue;
-        }
-        break;
+        QzPrcb->DispatchPending = FALSE;
+        QzSwapThread();
     }
-    QzPcr.Pcr.Irql = Irql;
-    return Frame;
+}
+
+/* APC software interrupt: no APCs yet (they arrive with processes, B6) */
+VOID
+NTAPI
+KiDeliverApc(IN KPROCESSOR_MODE DeliveryMode,
+             IN PKEXCEPTION_FRAME ExceptionFrame,
+             IN PKTRAP_FRAME TrapFrame)
+{
+    UNREFERENCED_PARAMETER(DeliveryMode);
+    UNREFERENCED_PARAMETER(ExceptionFrame);
+    UNREFERENCED_PARAMETER(TrapFrame);
 }
 
 /* Run expired timers and queued DPCs. Called at DISPATCH_LEVEL. */
@@ -178,8 +132,8 @@ QzRetireDpcs(VOID)
         QzPrcb->DpcRoutineActive = FALSE;
         QzPrcb->DpcCount++;
 
-        if (QzPcr.Pcr.Irql != DISPATCH_LEVEL)
-            KeBugCheckEx(IRQL_UNEXPECTED_VALUE, QzPcr.Pcr.Irql, DISPATCH_LEVEL,
+        if (QzPcr.Irql != DISPATCH_LEVEL)
+            KeBugCheckEx(IRQL_UNEXPECTED_VALUE, QzPcr.Irql, DISPATCH_LEVEL,
                          (ULONG_PTR)Routine, 0);
     }
 }
@@ -253,10 +207,8 @@ KeInsertQueueDpc(IN PKDPC Dpc,
     QzPrcb->DpcPending = TRUE;
     QzRestoreFlags(Flags);
 
-    /* Below DISPATCH_LEVEL the software interrupt fires right away */
-    if (QzGetCurrentIrql() < DISPATCH_LEVEL)
-        QzLowerIrql(QzRaiseIrql(DISPATCH_LEVEL));
-
+    /* Runs right away below DISPATCH_LEVEL, otherwise when the IRQL drops */
+    QzRequestSoftwareInterrupt();
     return TRUE;
 }
 
@@ -306,7 +258,7 @@ NTAPI
 KeFlushQueuedDpcs(VOID)
 {
     if (QzPrcb->DpcPending && QzGetCurrentIrql() < DISPATCH_LEVEL)
-        QzLowerIrql(QzRaiseIrql(DISPATCH_LEVEL));
+        QzRequestSoftwareInterrupt();
 }
 
 /* ---------------------------------------------------------------------- */
