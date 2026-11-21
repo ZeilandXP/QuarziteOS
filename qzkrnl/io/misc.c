@@ -219,21 +219,15 @@ IoWMIRegistrationControl(IN PDEVICE_OBJECT DeviceObject,
 }
 
 /* ---------------------------------------------------------------------- */
-/* Process and thread queries (one "System" process until stage B6)        */
+/* Requestor and stack queries (processes are in ps/process.c)            */
 /* ---------------------------------------------------------------------- */
-
-PEPROCESS
-NTAPI
-IoGetCurrentProcess(VOID)
-{
-    return PsInitialSystemProcess;   /* the System process object (ps/thread.c) */
-}
 
 PEPROCESS
 NTAPI
 IoGetRequestorProcess(IN PIRP Irp)
 {
-    UNREFERENCED_PARAMETER(Irp);
+    if (Irp->Tail.Overlay.Thread)
+        return PsGetThreadProcess(Irp->Tail.Overlay.Thread);
     return IoGetCurrentProcess();
 }
 
@@ -241,22 +235,7 @@ ULONG
 NTAPI
 IoGetRequestorProcessId(IN PIRP Irp)
 {
-    UNREFERENCED_PARAMETER(Irp);
-    return 4;
-}
-
-HANDLE
-NTAPI
-PsGetCurrentProcessId(VOID)
-{
-    return (HANDLE)4;   /* the System process */
-}
-
-HANDLE
-NTAPI
-PsGetCurrentThreadId(VOID)
-{
-    return (HANDLE)(ULONG_PTR)(QzCurrentThread->Id * 4);
+    return (ULONG)(ULONG_PTR)PsGetProcessId(IoGetRequestorProcess(Irp));
 }
 
 VOID

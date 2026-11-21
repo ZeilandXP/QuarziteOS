@@ -4,30 +4,21 @@
  * PURPOSE:     System threads and the System process as objects
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  *
- * Processes are stage B6. Until then a system thread created by a driver
- * is a scheduler thread plus a "Thread" object: its body starts with a
- * notification event (in the place of KTHREAD's dispatcher header) that
- * is signaled when the thread exits, so drivers can wait for their
- * threads by handle or by object as on NT. The System process is a
- * "Process" object with a zeroed body.
+ A thread is a scheduler thread plus a "Thread" object (QZ_PS_THREAD):
+ * its body starts with a notification event (in the place of KTHREAD's
+ * dispatcher header) that is signaled when the thread exits, so threads
+ * can be waited for by handle or by object as on NT. Processes are in
+ * ps/process.c.
  */
 
 #include "qzio.h"
-
-typedef struct _QZ_PS_THREAD
-{
-    KEVENT Terminated;             /* must be first: waits use it */
-    PQZ_THREAD Thread;
-    PKSTART_ROUTINE StartRoutine;
-    PVOID StartContext;
-    NTSTATUS ExitStatus;
-} QZ_PS_THREAD, *PQZ_PS_THREAD;
+#include "qzps.h"
 
 POBJECT_TYPE PsThreadType;
 POBJECT_TYPE PsProcessType;
 PEPROCESS PsInitialSystemProcess;
 
-#define QZ_PROCESS_BODY 0x400
+VOID NTAPI QzPsDeleteProcess(PVOID Object);   /* ps/process.c */
 
 static GENERIC_MAPPING QzThreadMapping =
 {
@@ -56,7 +47,10 @@ PsTerminateSystemThread(IN NTSTATUS ExitStatus)
     if (!PsThread)
         return STATUS_INVALID_PARAMETER;   /* not a thread made by PsCreateSystemThread */
     PsThread->ExitStatus = ExitStatus;
+    KeQuerySystemTime(&PsThread->ExitTime);
     KeSetEvent(&PsThread->Terminated, IO_NO_INCREMENT, FALSE);
+    if (PsThread->Process)
+        InterlockedDecrement((PLONG)&PsThread->Process->ActiveThreads);
     QzCurrentThread->PsThread = NULL;
     ObDereferenceObject(PsThread);   /* the thread's own reference */
     QzExitCurrentThread();
@@ -83,9 +77,19 @@ PsCreateSystemThread(OUT PHANDLE ThreadHandle,
 {
     PQZ_PS_THREAD PsThread;
     PQZ_THREAD Thread;
+    PQZ_PROCESS Process = QzSystemProcess;
     NTSTATUS Status;
 
-    UNREFERENCED_PARAMETER(ProcessHandle);   /* everything runs in System */
+    /* A system thread may run in another process (drivers do this to own
+       handles in that process); it is still a kernel-mode thread */
+    if (ProcessHandle)
+    {
+        Status = ObReferenceObjectByHandle(ProcessHandle, PROCESS_CREATE_THREAD, PsProcessType,
+                                           KernelMode, (PVOID *)&Process, NULL);
+        if (!NT_SUCCESS(Status))
+            return Status;
+        ObDereferenceObject(Process);   /* the thread's reference is taken below */
+    }
 
     Status = ObCreateObject(KernelMode, PsThreadType, ObjectAttributes, KernelMode, NULL,
                             sizeof(QZ_PS_THREAD), 0, 0, (PVOID *)&PsThread);
@@ -96,6 +100,10 @@ PsCreateSystemThread(OUT PHANDLE ThreadHandle,
     PsThread->StartRoutine = StartRoutine;
     PsThread->StartContext = StartContext;
     PsThread->ExitStatus = STATUS_PENDING;
+    PsThread->Process = Process;
+    ObReferenceObject(Process);
+    KeQuerySystemTime(&PsThread->CreateTime);
+    PsThread->UniqueId = QzPsAllocateId(PsThread);
 
     /* One reference for the handle (the creation one), one for the thread */
     ObReferenceObject(PsThread);
@@ -106,7 +114,7 @@ PsCreateSystemThread(OUT PHANDLE ThreadHandle,
         return Status;
     }
 
-    Thread = QzCreateThread("system", QzPsThreadStart, PsThread);
+    Thread = QzCreateThreadEx("system", QzPsThreadStart, PsThread, Process, FALSE);
     if (!Thread)
     {
         ZwClose(*ThreadHandle);
@@ -114,11 +122,16 @@ PsCreateSystemThread(OUT PHANDLE ThreadHandle,
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     PsThread->Thread = Thread;
+    ExAcquireFastMutex(&Process->AddressLock);
+    InsertTailList(&Process->ThreadList, &PsThread->ProcessLink);
+    ExReleaseFastMutex(&Process->AddressLock);
+    InterlockedIncrement((PLONG)&Process->ActiveThreads);
     if (ClientId)
     {
-        ClientId->UniqueProcess = (HANDLE)4;
-        ClientId->UniqueThread = (HANDLE)(ULONG_PTR)(Thread->Id * 4);
+        ClientId->UniqueProcess = (HANDLE)(ULONG_PTR)Process->UniqueId;
+        ClientId->UniqueThread = (HANDLE)(ULONG_PTR)PsThread->UniqueId;
     }
+    QzReadyNewThread(Thread);
     return STATUS_SUCCESS;
 }
 
@@ -138,8 +151,27 @@ PsSetThreadHardErrorsAreDisabled(IN PETHREAD Thread, IN BOOLEAN HardErrorsAreDis
     UNREFERENCED_PARAMETER(HardErrorsAreDisabled);
 }
 
+static VOID NTAPI
+QzPsDeleteThread(PVOID Object)
+{
+    PQZ_PS_THREAD PsThread = Object;
+
+    if (PsThread->UniqueId)
+        QzPsFreeId(PsThread->UniqueId);
+    if (PsThread->Process)
+    {
+        if (PsThread->ProcessLink.Flink)
+        {
+            ExAcquireFastMutex(&PsThread->Process->AddressLock);
+            RemoveEntryList(&PsThread->ProcessLink);
+            ExReleaseFastMutex(&PsThread->Process->AddressLock);
+        }
+        ObDereferenceObject(PsThread->Process);
+    }
+}
+
 static POBJECT_TYPE
-QzPsCreateType(PCWSTR Name, PGENERIC_MAPPING Mapping, ULONG ValidAccess)
+QzPsCreateType(PCWSTR Name, PGENERIC_MAPPING Mapping, ULONG ValidAccess, OB_DELETE_METHOD Delete)
 {
     OBJECT_TYPE_INITIALIZER Init;
     UNICODE_STRING TypeName;
@@ -151,6 +183,7 @@ QzPsCreateType(PCWSTR Name, PGENERIC_MAPPING Mapping, ULONG ValidAccess)
     Init.ValidAccessMask = ValidAccess;
     Init.PoolType = NonPagedPool;
     Init.CaseInsensitive = TRUE;
+    Init.DeleteProcedure = Delete;
     RtlInitUnicodeString(&TypeName, Name);
     if (!NT_SUCCESS(ObCreateObjectType(&TypeName, &Init, NULL, &Type)))
         KeBugCheckEx(PROCESS_INITIALIZATION_FAILED, 1, 0, 0, 0);
@@ -160,15 +193,7 @@ QzPsCreateType(PCWSTR Name, PGENERIC_MAPPING Mapping, ULONG ValidAccess)
 VOID
 QzPsInit(VOID)
 {
-    PVOID Process;
-
-    PsThreadType = QzPsCreateType(L"Thread", &QzThreadMapping, THREAD_ALL_ACCESS);
-    PsProcessType = QzPsCreateType(L"Process", &QzProcessMapping, PROCESS_ALL_ACCESS);
-
-    if (!NT_SUCCESS(ObCreateObject(KernelMode, PsProcessType, NULL, KernelMode, NULL,
-                                   QZ_PROCESS_BODY, 0, 0, &Process)))
-        KeBugCheckEx(PROCESS_INITIALIZATION_FAILED, 2, 0, 0, 0);
-    RtlZeroMemory(Process, QZ_PROCESS_BODY);
-    ObInsertObject(Process, NULL, 0, 0, NULL, NULL);
-    PsInitialSystemProcess = Process;
+    PsThreadType = QzPsCreateType(L"Thread", &QzThreadMapping, THREAD_ALL_ACCESS, QzPsDeleteThread);
+    PsProcessType = QzPsCreateType(L"Process", &QzProcessMapping, PROCESS_ALL_ACCESS, QzPsDeleteProcess);
+    QzPsInitProcesses();
 }

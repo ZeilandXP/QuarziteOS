@@ -85,7 +85,8 @@ typedef enum _QZ_THREAD_STATE
 {
     QzThreadReady,
     QzThreadWaiting,
-    QzThreadTerminated
+    QzThreadTerminated,
+    QzThreadNew                    /* created, not yet made ready */
 } QZ_THREAD_STATE;
 
 #define QZ_THREAD_WAIT_BLOCKS  THREAD_WAIT_OBJECTS   /* 3, as on NT */
@@ -113,6 +114,17 @@ typedef struct _QZ_THREAD
 
     SHORT KernelApcDisable;        /* KeEnter/LeaveCriticalRegion */
     PVOID PsThread;                /* ps/thread.c: the Thread object, if any */
+
+    /* Processes and user mode (stage B6) */
+    struct _QZ_PROCESS *Process;   /* the owning process */
+    struct _QZ_PROCESS *ApcProcess;/* whose address space is loaded (attach) */
+    struct _QZ_PROCESS *SavedApcProcess; /* KeAttachProcess */
+    ULONG_PTR InitialStack;        /* top of the kernel stack, TSS.Esp0 */
+    PKTRAP_FRAME TrapFrame;        /* the user-mode frame at the top of the stack */
+    KPROCESSOR_MODE PreviousMode;  /* of the system call being served */
+    ULONG_PTR FaultRecovery;       /* EIP to resume at on a bad user access */
+    PVOID FxSaveArea;              /* user threads: FPU/SSE state, 512 bytes, 16-aligned */
+    BOOLEAN Alerted;
 } QZ_THREAD, *PQZ_THREAD;
 
 /* ---------------------------------------------------------------------- */
@@ -244,6 +256,9 @@ VOID QzHalInterfaceInit(VOID);
 /* ke/sched.c */
 VOID QzSchedInit(VOID);
 PQZ_THREAD QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context);
+PQZ_THREAD QzCreateThreadEx(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context,
+                            struct _QZ_PROCESS *Process, BOOLEAN Ready);
+VOID QzReadyNewThread(PQZ_THREAD Thread);
 VOID QzReadyThread(PQZ_THREAD Thread);
 VOID QzSwapThread(VOID);
 VOID QzYield(VOID);

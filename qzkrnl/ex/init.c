@@ -6,6 +6,7 @@
  */
 
 #include "qzio.h"
+#include "qzps.h"
 
 #define QZ_BOOT_STACK_SIZE (16 * 1024)
 
@@ -142,6 +143,7 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzMmInit(LoaderBlock);
     QzVgaInit();
     QzPoolInit();
+    QzVmInit();
     QzSharedUserDataInit();
     QzTimerObjInit();
 

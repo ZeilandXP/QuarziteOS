@@ -9,6 +9,9 @@
  */
 
 #include "qzio.h"
+#include "qzps.h"
+
+unsigned long __cdecl strtoul(const char *s, char **End, int Base);
 #include <ntdddisk.h>
 #include <ntddcdrm.h>
 
@@ -64,6 +67,10 @@ QzCmdHelp(VOID)
             "  devtree           the device tree with resources\n"
             "  start <service>   start a boot driver (DriverEntry)\n"
             "  reg [path]        list a registry key (default \\Registry\\Machine\\System)\n"
+            "  vmtest            self-test: process address spaces (reserve, commit,\n"
+            "                    protect, guard pages, isolation, handles)\n"
+            "  ps                list the processes\n"
+            "  vm [pid]          a process's address space (VADs)\n"
             "  regtest           self-test: registry (keys, values, volatile keys, links,\n"
             "                    deletion, change notification, Rtl helpers)\n"
             "  pcicfg            PCI bus 0 configuration space through the HAL\n"
@@ -233,6 +240,22 @@ QzExecute(PCHAR Line)
         QzRunIoTests();
     else if (!strcmp(Cmd, "regtest"))
         QzRunRegistryTests();
+    else if (!strcmp(Cmd, "vmtest"))
+        QzRunVmTests();
+    else if (!strcmp(Cmd, "ps"))
+        QzPsDumpProcesses();
+    else if (!strcmp(Cmd, "vm"))
+    {
+        ULONG Pid = Arg ? strtoul(Arg, NULL, 0) : 4;
+        PQZ_PROCESS Process = QzPsLookupProcess(Pid);
+        if (Process)
+        {
+            QzMmDumpAddressSpace(Process);
+            ObDereferenceObject(Process);
+        }
+        else
+            QzPrint("  vm: no process %lu\n", Pid);
+    }
     else if (!strcmp(Cmd, "pnp"))
     {
         NTSTATUS Status = QzPnpStart();

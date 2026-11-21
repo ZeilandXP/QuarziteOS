@@ -15,6 +15,7 @@
  */
 
 #include "qz.h"
+#include "qzps.h"
 
 /* KTRAP_FRAME offsets, checked against the SDK definition */
 #define TF_DBGEBP   0x00
@@ -34,6 +35,7 @@
 #define TF_EBP      0x60
 #define TF_ERRCODE  0x64
 #define TF_EIP      0x68
+#define TF_CS       0x6C
 #define TF_ESP      0x74
 
 C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, DbgEbp) == TF_DBGEBP);
@@ -53,6 +55,7 @@ C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Ebx) == TF_EBX);
 C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Ebp) == TF_EBP);
 C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, ErrCode) == TF_ERRCODE);
 C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Eip) == TF_EIP);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, SegCs) == TF_CS);
 C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, HardwareEsp) == TF_ESP);
 
 #define STR2(x) #x
@@ -125,6 +128,19 @@ __asm__(
     "    movl %ecx, %esp\n"
     "    movl " STR(TF_EXLIST) "(%esp), %eax\n"
     "    movl %eax, %fs:0\n"
+    "    testb $1, " STR(TF_CS) "(%esp)\n"       /* back to ring 3? */
+    "    jz 1f\n"
+    "    movl %esp, %ecx\n"
+    "    call @QzExitToUserMode@4\n"              /* pending work for the thread */
+    "    movl " STR(TF_DS) "(%esp), %eax\n"
+    "    movw %ax, %ds\n"
+    "    movl " STR(TF_ES) "(%esp), %eax\n"
+    "    movw %ax, %es\n"
+    "    movl " STR(TF_FS) "(%esp), %eax\n"
+    "    movw %ax, %fs\n"
+    "    movl " STR(TF_GS) "(%esp), %eax\n"
+    "    movw %ax, %gs\n"
+    "1:\n"
     "    movl " STR(TF_EDX) "(%esp), %edx\n"
     "    movl " STR(TF_ECX) "(%esp), %ecx\n"
     "    movl " STR(TF_EAX) "(%esp), %eax\n"
@@ -210,6 +226,48 @@ VOID
 FASTCALL
 QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector)
 {
+    if (Vector == 14)
+    {
+        /* Page fault: demand-zero and guard pages of the address space */
+        ULONG_PTR Address = QzReadCr2();
+        BOOLEAN FromUser = (TrapFrame->SegCs & 1) != 0;
+        NTSTATUS Status = QzMmAccessFault(Address, TrapFrame->ErrCode, FromUser ? UserMode : KernelMode);
+
+        if (NT_SUCCESS(Status))
+            return;
+        if (FromUser)
+        {
+            QzUserException(TrapFrame, Status, Address, (TrapFrame->ErrCode & 2) ? 1 : 0);
+            return;
+        }
+        if (Status == STATUS_GUARD_PAGE_VIOLATION)
+            return;   /* the kernel touched a guard page for the user: it is a page now */
+        if (Address < QZ_SYSTEM_RANGE_START && QzCurrentThread && QzCurrentThread->FaultRecovery)
+        {
+            TrapFrame->Eip = QzCurrentThread->FaultRecovery;
+            return;
+        }
+    }
+    if (Vector < 32 && (TrapFrame->SegCs & 1))
+    {
+        /* Exceptions in user mode go to the thread, not the system */
+        static const NTSTATUS Codes[20] =
+        {
+            STATUS_INTEGER_DIVIDE_BY_ZERO, STATUS_SINGLE_STEP, 0, STATUS_BREAKPOINT,
+            STATUS_INTEGER_OVERFLOW, STATUS_ARRAY_BOUNDS_EXCEEDED, STATUS_ILLEGAL_INSTRUCTION,
+            STATUS_ILLEGAL_INSTRUCTION, 0, 0, 0, STATUS_ACCESS_VIOLATION, STATUS_STACK_OVERFLOW,
+            STATUS_ACCESS_VIOLATION, STATUS_ACCESS_VIOLATION, 0, STATUS_FLOAT_INVALID_OPERATION,
+            STATUS_DATATYPE_MISALIGNMENT, 0, STATUS_FLOAT_MULTIPLE_TRAPS
+        };
+        NTSTATUS Code = Vector < 20 ? Codes[Vector] : 0;
+        if (Code)
+        {
+            if (Vector == 3)
+                TrapFrame->Eip--;   /* int3: the exception address is the instruction */
+            QzUserException(TrapFrame, Code, Vector == 13 ? 0 : (ULONG_PTR)-1, 0);
+            return;
+        }
+    }
     if (Vector < 32)
     {
         if (Vector == 3)

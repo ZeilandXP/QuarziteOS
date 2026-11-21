@@ -578,6 +578,39 @@
 @ stdcall PsIsThreadTerminating(ptr)
 @ stdcall ZwPowerInformation(long ptr long ptr long)
 @ stdcall ZwNotifyChangeKey(ptr ptr ptr ptr ptr long long ptr long long)
+@ stdcall PsLookupProcessByProcessId(ptr ptr)
+@ stdcall PsLookupThreadByThreadId(ptr ptr)
+@ stdcall PsGetProcessId(ptr)
+@ stdcall PsGetThreadId(ptr)
+@ stdcall PsGetThreadProcessId(ptr)
+@ stdcall PsGetProcessImageFileName(ptr)
+@ stdcall PsGetProcessPeb(ptr)
+@ stdcall PsGetCurrentProcessSessionId()
+@ stdcall PsIsSystemThread(ptr)
+@ stdcall PsGetThreadProcess(ptr)
+@ stdcall PsGetCurrentThreadProcess()
+@ stdcall PsGetCurrentThreadProcessId()
+@ stdcall PsGetProcessExitStatus(ptr)
+@ stdcall PsGetProcessSessionId(ptr)
+@ stdcall KeStackAttachProcess(ptr ptr)
+@ stdcall KeUnstackDetachProcess(ptr)
+@ stdcall KeAttachProcess(ptr)
+@ stdcall KeDetachProcess()
+@ stdcall PsGetProcessInheritedFromUniqueProcessId(ptr)
+@ stdcall PsGetThreadTeb(ptr)
+@ stdcall PsGetCurrentThreadTeb()
+@ stdcall PsGetProcessWin32Process(ptr)
+@ stdcall PsGetThreadWin32Thread(ptr)
+@ stdcall PsGetCurrentProcessWin32Process()
+@ stdcall PsGetCurrentThreadWin32Thread()
+@ stdcall PsGetProcessCreateTimeQuadPart(ptr)
+@ stdcall PsIsProcessBeingDebugged(ptr)
+@ stdcall PsGetProcessDebugPort(ptr)
+@ extern MmUserProbeAddress
+@ extern MmHighestUserAddress
+@ extern MmSystemRangeStart
+@ stdcall ZwAllocateVirtualMemory(ptr ptr long ptr long long)
+@ stdcall ZwFreeVirtualMemory(ptr ptr ptr long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -924,12 +957,10 @@
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToDpc
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToSynch
 @ stub KeAddSystemServiceTable
-@ stub KeAttachProcess
 @ stub KeCapturePersistentThreadState
 @ stub KeDeregisterBugCheckCallback
 @ stub KeDeregisterBugCheckReasonCallback
 @ stub KeDeregisterNmiCallback
-@ stub KeDetachProcess
 @ stub KeEnterKernelDebugger
 @ stub KeFindConfigurationEntry
 @ stub KeFindConfigurationNextEntry
@@ -993,11 +1024,9 @@
 @ stub KeSetSystemAffinityThread
 @ stub KeSignalCallDpcDone
 @ stub KeSignalCallDpcSynchronize
-@ stub KeStackAttachProcess
 @ stub KeTerminateThread
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLock
 @ stub -arch=x86_64 KeTryToAcquireQueuedSpinLockRaiseToSynch
-@ stub KeUnstackDetachProcess
 @ stub KeUpdateRunTime
 @ stub KeUserModeCallback
 @ stub -arch=x86_64 KfRaiseIrql
@@ -1045,7 +1074,6 @@
 @ stub MmGetPhysicalMemoryRanges
 @ stub MmGetVirtualForPhysical
 @ stub MmGrowKernelStack
-@ extern MmHighestUserAddress QzUnimplementedData
 @ stub MmIsIoSpaceActive
 @ stub MmIsNonPagedSystemAddressValid
 @ stub MmIsRecursiveIoFault
@@ -1070,14 +1098,12 @@
 @ stub MmSecureVirtualMemory
 @ stub MmSetAddressRangeModified
 @ stub MmSetBankedSection
-@ extern MmSystemRangeStart QzUnimplementedData
 @ stub MmTrimAllSystemPagableMemory
 @ stub MmUnmapVideoDisplay
 @ stub MmUnmapViewInSessionSpace
 @ stub MmUnmapViewInSystemSpace
 @ stub MmUnmapViewOfSection
 @ stub MmUnsecureVirtualMemory
-@ extern MmUserProbeAddress QzUnimplementedData
 @ extern NlsAnsiCodePage QzUnimplementedData
 @ extern NlsLeadByteInfo QzUnimplementedData
 @ extern NlsMbCodePageTag QzUnimplementedData
@@ -1178,52 +1204,28 @@
 @ stub PsDisableImpersonation
 @ stub PsEstablishWin32Callouts
 @ stub PsGetContextThread
-@ stub PsGetCurrentProcessSessionId
-@ stub PsGetCurrentProcessWin32Process
 @ stub PsGetCurrentThreadPreviousMode
-@ stub PsGetCurrentThreadProcess
-@ stub PsGetCurrentThreadProcessId
 @ stub PsGetCurrentThreadStackBase
 @ stub PsGetCurrentThreadStackLimit
-@ stub PsGetCurrentThreadTeb
-@ stub PsGetCurrentThreadWin32Thread
 @ stub PsGetCurrentThreadWin32ThreadAndEnterCriticalRegion
 @ stub PsGetJobLock
 @ stub PsGetJobSessionId
 @ stub PsGetJobUIRestrictionsClass
-@ stub PsGetProcessCreateTimeQuadPart
-@ stub PsGetProcessDebugPort
 @ stub PsGetProcessExitProcessCalled
-@ stub PsGetProcessExitStatus
 @ stub PsGetProcessExitTime
-@ stub PsGetProcessId
-@ stub PsGetProcessImageFileName
-@ stub PsGetProcessInheritedFromUniqueProcessId
 @ stub PsGetProcessJob
-@ stub PsGetProcessPeb
 @ stub PsGetProcessPriorityClass
 @ stub PsGetProcessSectionBaseAddress
 @ stub PsGetProcessSecurityPort
-@ stub PsGetProcessSessionId
 @ stub PsGetProcessSessionIdEx
-@ stub PsGetProcessWin32Process
 @ stub PsGetProcessWin32WindowStation
 @ stub PsGetThreadFreezeCount
-@ stub PsGetThreadId
-@ stub PsGetThreadProcess
-@ stub PsGetThreadProcessId
 @ stub PsGetThreadSessionId
-@ stub PsGetThreadTeb
-@ stub PsGetThreadWin32Thread
 @ stub PsImpersonateClient
-@ stub PsIsProcessBeingDebugged
 @ stub PsIsSystemProcess
-@ stub PsIsSystemThread
 @ stub PsIsThreadImpersonating
 @ extern PsJobType QzUnimplementedData
-@ stub PsLookupProcessByProcessId
 @ stub PsLookupProcessThreadByCid
-@ stub PsLookupThreadByThreadId
 @ stub PsReferenceImpersonationToken
 @ stub PsReferencePrimaryToken
 @ stub PsRemoveCreateThreadNotifyRoutine
@@ -1540,7 +1542,6 @@
 @ stub ZwAddDriverEntry
 @ stub ZwAdjustPrivilegesToken
 @ stub ZwAlertThread
-@ stub ZwAllocateVirtualMemory
 @ stub ZwAssignProcessToJobObject
 @ stub ZwCancelIoFile
 @ stub ZwCloseObjectAuditAlarm
@@ -1556,7 +1557,6 @@
 @ stub ZwEnumerateDriverEntries
 @ stub ZwFlushInstructionCache
 @ stub ZwFlushVirtualMemory
-@ stub ZwFreeVirtualMemory
 @ stub ZwInitiatePowerAction
 @ stub ZwIsProcessInJob
 @ stub ZwLoadKey

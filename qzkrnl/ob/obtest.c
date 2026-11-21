@@ -151,11 +151,18 @@ QzTestHandles(VOID)
     QzCheck("last ObDereferenceObject deletes the object",
             ExEventObjectType->TotalNumberOfObjects == Objects);
 
-    Status = ObReferenceObjectByHandle(NtCurrentProcess(), 0, NULL, KernelMode, &Object, NULL);
+    Status = ObReferenceObjectByHandle(NtCurrentProcess(), 0, PsProcessType, KernelMode, &Object, NULL);
+    if (NT_SUCCESS(Status))
+    {
+        Ok = (Object == (PVOID)PsGetCurrentProcess());
+        ObDereferenceObject(Object);
+    }
+    else
+        Ok = FALSE;
     Status2 = ObReferenceObjectByHandle((HANDLE)(ULONG_PTR)0x80000ffc, 0, NULL, KernelMode,
                                         &Object, NULL);
-    QzCheck("pseudo and unknown handles are STATUS_INVALID_HANDLE",
-            Status == STATUS_INVALID_HANDLE && Status2 == STATUS_INVALID_HANDLE);
+    QzCheck("NtCurrentProcess() is the process; unknown handles are STATUS_INVALID_HANDLE",
+            Ok && Status2 == STATUS_INVALID_HANDLE);
 }
 
 /* ---- Names ---- */

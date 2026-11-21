@@ -19,6 +19,7 @@
  */
 
 #include "qz.h"
+#include "qzps.h"
 
 #define QZ_THREAD_STACK_SIZE   (16 * 1024)
 
@@ -98,6 +99,14 @@ QzInsertThread(PQZ_THREAD Thread)
 PQZ_THREAD
 QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
 {
+    return QzCreateThreadEx(Name, Routine, Context, NULL, TRUE);
+}
+
+/* Process NULL: the System process (or none yet, early in boot) */
+PQZ_THREAD
+QzCreateThreadEx(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context,
+                 struct _QZ_PROCESS *Process, BOOLEAN Ready)
+{
     PQZ_THREAD Thread;
     PUCHAR Stack;
 
@@ -114,7 +123,11 @@ QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
     Thread->StackBase = Stack;
     Thread->StackSize = QZ_THREAD_STACK_SIZE;
     Thread->Id = QzNextThreadId++;
-    Thread->State = QzThreadReady;
+    Thread->State = Ready ? QzThreadReady : QzThreadNew;
+    Thread->InitialStack = (ULONG_PTR)Stack + QZ_THREAD_STACK_SIZE;
+    if (!Process)
+        Process = QzSystemProcess;   /* NULL until the System process exists */
+    Thread->Process = Thread->ApcProcess = Process;
     strncpy(Thread->Name, Name, sizeof(Thread->Name) - 1);
 
     /* Fabricate what QzSwapContext pops: SEH head, EFLAGS, edi, esi, ebx, ebp, ret */
@@ -132,6 +145,15 @@ QzCreateThread(PCSTR Name, PQZ_THREAD_ROUTINE Routine, PVOID Context)
 
     QzInsertThread(Thread);
     return Thread;
+}
+
+VOID
+QzReadyNewThread(PQZ_THREAD Thread)
+{
+    KIRQL OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
+    Thread->State = QzThreadReady;
+    QzRequestDispatch();
+    QzLowerIrql(OldIrql);
 }
 
 VOID
@@ -223,6 +245,15 @@ QzSwapThread(VOID)
     {
         Next->Switches++;
         QzCurrentThread = Next;
+        /* The next thread's address space, and its stack for ring 3 -> 0 */
+        if (Next->ApcProcess)
+            QzMmSwitchAddressSpace(Next->ApcProcess);
+        if (Next->InitialStack)
+            ((PULONG)QzPcr.TSS)[1] = (ULONG)Next->InitialStack;
+        if (Current->FxSaveArea)
+            __asm__ __volatile__("fxsave (%0)" : : "r"(Current->FxSaveArea) : "memory");
+        if (Next->FxSaveArea)
+            __asm__ __volatile__("fxrstor (%0)" : : "r"(Next->FxSaveArea) : "memory");
         QzSwapContext(Current, Next);
     }
 
@@ -275,7 +306,7 @@ QzThreadCount(VOID)
 VOID
 QzDumpThreads(VOID)
 {
-    static PCSTR States[] = { "ready", "waiting", "dead" };
+    static PCSTR States[] = { "ready", "waiting", "dead", "new" };
     PQZ_THREAD Thread = QzCurrentThread;
 
     QzPrint("  TID  NAME            STATE     SWITCHES  STACK\n");
@@ -303,19 +334,19 @@ KeGetCurrentThread(VOID)
     return (PKTHREAD)QzCurrentThread;
 }
 
+/* UserMode while serving a system call made from ring 3 */
 KPROCESSOR_MODE
 NTAPI
 KeGetPreviousMode(VOID)
 {
-    /* No user mode yet */
-    return KernelMode;
+    return QzCurrentThread ? QzCurrentThread->PreviousMode : KernelMode;
 }
 
 KPROCESSOR_MODE
 NTAPI
 ExGetPreviousMode(VOID)
 {
-    return KernelMode;
+    return QzCurrentThread ? QzCurrentThread->PreviousMode : KernelMode;
 }
 
 VOID
