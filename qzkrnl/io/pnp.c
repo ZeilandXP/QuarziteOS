@@ -603,7 +603,7 @@ QzPnpAddDrivers(PQZ_DEVICE_NODE Node)
 
 /* Choose one descriptor from each group of the first alternative list */
 static PCM_RESOURCE_LIST
-QzPnpChooseResources(PIO_RESOURCE_REQUIREMENTS_LIST Requirements)
+QzPnpChooseResources(PIO_RESOURCE_REQUIREMENTS_LIST Requirements, PCM_RESOURCE_LIST Boot)
 {
     PIO_RESOURCE_LIST Alternative = &Requirements->List[0];
     PCM_RESOURCE_LIST List;
@@ -648,10 +648,31 @@ QzPnpChooseResources(PIO_RESOURCE_REQUIREMENTS_LIST Requirements)
                 Desc->u.Port.Length = In->u.Port.Length;
                 break;
             case CmResourceTypeInterrupt:
-                Desc->u.Interrupt.Level = In->u.Interrupt.MinimumVector;
-                Desc->u.Interrupt.Vector = In->u.Interrupt.MinimumVector;
+            {
+                /* A range (PCI asks for 0-255): the line the device was
+                   given at boot, as an arbiter would choose */
+                ULONG Line = In->u.Interrupt.MinimumVector;
+                if (In->u.Interrupt.MaximumVector != In->u.Interrupt.MinimumVector && Boot && Boot->Count)
+                {
+                    PCM_PARTIAL_RESOURCE_LIST Partial = &Boot->List[0].PartialResourceList;
+                    ULONG k;
+                    for (k = 0; k < Partial->Count; k++)
+                    {
+                        PCM_PARTIAL_RESOURCE_DESCRIPTOR B = &Partial->PartialDescriptors[k];
+                        if (B->Type == CmResourceTypeInterrupt &&
+                            B->u.Interrupt.Vector >= In->u.Interrupt.MinimumVector &&
+                            B->u.Interrupt.Vector <= In->u.Interrupt.MaximumVector)
+                        {
+                            Line = B->u.Interrupt.Vector;
+                            break;
+                        }
+                    }
+                }
+                Desc->u.Interrupt.Level = Line;
+                Desc->u.Interrupt.Vector = Line;
                 Desc->u.Interrupt.Affinity = (KAFFINITY)-1;
                 break;
+            }
             case CmResourceTypeDma:
                 Desc->u.Dma.Channel = In->u.Dma.MinimumChannel;
                 break;
@@ -777,7 +798,7 @@ QzPnpStartNode(PQZ_DEVICE_NODE Node)
     if (!Node->RawResources)
     {
         if (Requirements)
-            Node->RawResources = QzPnpChooseResources(Requirements);
+            Node->RawResources = QzPnpChooseResources(Requirements, Node->BootResources);
         else if (Node->BootResources)
         {
             ULONG Size = QzPnpResourceListSize(Node->BootResources);

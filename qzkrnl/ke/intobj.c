@@ -134,6 +134,8 @@ KeConnectInterrupt(IN PKINTERRUPT Interrupt)
         Irq >= 16 || Interrupt->Irql > HIGH_LEVEL ||
         Interrupt->SynchronizeIrql < Interrupt->Irql)
     {
+        DbgPrint(QZ_KERNEL_NAME ": KeConnectInterrupt: vector 0x%lx IRQL %u/%u refused\n", Interrupt->Vector,
+                 Interrupt->Irql, Interrupt->SynchronizeIrql);
         return FALSE;
     }
 
@@ -146,6 +148,8 @@ KeConnectInterrupt(IN PKINTERRUPT Interrupt)
         First = CONTAINING_RECORD(Head->Flink, KINTERRUPT, InterruptListEntry);
         if (!First->ShareVector || !Interrupt->ShareVector || First->Mode != Interrupt->Mode)
         {
+            DbgPrint(QZ_KERNEL_NAME ": KeConnectInterrupt: vector 0x%lx in use (share %u/%u, mode %u/%u)\n",
+                     Interrupt->Vector, First->ShareVector, Interrupt->ShareVector, First->Mode, Interrupt->Mode);
             QzRestoreFlags(Flags);
             return FALSE;
         }

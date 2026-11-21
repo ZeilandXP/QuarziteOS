@@ -122,7 +122,11 @@ IoConnectInterrupt(OUT PKINTERRUPT *InterruptObject,
 
     *InterruptObject = NULL;
     if (!(ProcessorEnableMask & 1) || SynchronizeIrql < Irql)
+    {
+        DbgPrint(QZ_KERNEL_NAME ": IoConnectInterrupt: vector 0x%lx IRQL %u/%u affinity %lx refused\n", Vector, Irql,
+                 SynchronizeIrql, ProcessorEnableMask);
         return STATUS_INVALID_PARAMETER;
+    }
 
     Interrupt = ExAllocatePoolWithTag(NonPagedPool, sizeof(KINTERRUPT), QZ_IO_TAG);
     if (!Interrupt)
@@ -245,4 +249,126 @@ IoGetStackLimits(OUT PULONG_PTR LowLimit,
 {
     *LowLimit = (ULONG_PTR)QzCurrentThread->StackBase;
     *HighLimit = (ULONG_PTR)QzCurrentThread->StackBase + QzCurrentThread->StackSize;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Odds and ends boot drivers import                                       */
+/* ---------------------------------------------------------------------- */
+
+/* The device's wait context block goes to the HAL (whose DMA_OPERATIONS
+   AllocateAdapterChannel is this very routine) */
+NTSTATUS
+NTAPI
+IoAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
+                         IN PDEVICE_OBJECT DeviceObject,
+                         IN ULONG NumberOfMapRegisters,
+                         IN PDRIVER_CONTROL ExecutionRoutine,
+                         IN PVOID Context)
+{
+    PWAIT_CONTEXT_BLOCK Wcb = &DeviceObject->Queue.Wcb;
+
+    Wcb->DeviceObject = DeviceObject;
+    Wcb->DeviceContext = Context;
+    Wcb->CurrentIrp = DeviceObject->CurrentIrp;
+    return HalAllocateAdapterChannel(AdapterObject, Wcb, NumberOfMapRegisters, ExecutionRoutine);
+}
+
+/* Legacy (non-PnP) controller detection through HARDWARE\DESCRIPTION:
+   nothing is reported there for buses we would have to search */
+NTSTATUS
+NTAPI
+IoQueryDeviceDescription(IN PINTERFACE_TYPE BusType OPTIONAL,
+                         IN PULONG BusNumber OPTIONAL,
+                         IN PCONFIGURATION_TYPE ControllerType OPTIONAL,
+                         IN PULONG ControllerNumber OPTIONAL,
+                         IN PCONFIGURATION_TYPE PeripheralType OPTIONAL,
+                         IN PULONG PeripheralNumber OPTIONAL,
+                         IN PIO_QUERY_DEVICE_ROUTINE CalloutRoutine,
+                         IN PVOID Context)
+{
+    UNREFERENCED_PARAMETER(BusType);
+    UNREFERENCED_PARAMETER(BusNumber);
+    UNREFERENCED_PARAMETER(ControllerType);
+    UNREFERENCED_PARAMETER(ControllerNumber);
+    UNREFERENCED_PARAMETER(PeripheralType);
+    UNREFERENCED_PARAMETER(PeripheralNumber);
+    UNREFERENCED_PARAMETER(CalloutRoutine);
+    UNREFERENCED_PARAMETER(Context);
+    return STATUS_OBJECT_NAME_NOT_FOUND;
+}
+
+/* No tokens yet: everything runs as the system */
+BOOLEAN
+NTAPI
+SeTokenIsAdmin(IN PACCESS_TOKEN Token)
+{
+    UNREFERENCED_PARAMETER(Token);
+    return TRUE;
+}
+
+BOOLEAN
+NTAPI
+ExIsProcessorFeaturePresent(IN ULONG ProcessorFeature)
+{
+    return ProcessorFeature < PROCESSOR_FEATURE_MAX && SharedUserData->ProcessorFeatures[ProcessorFeature];
+}
+
+VOID
+NTAPI
+ProbeForRead(IN CONST VOID *Address,
+             IN SIZE_T Length,
+             IN ULONG Alignment)
+{
+    ULONG_PTR Start = (ULONG_PTR)Address;
+    if (!Length)
+        return;
+    if (Start & (Alignment - 1))
+        ExRaiseStatus(STATUS_DATATYPE_MISALIGNMENT);
+    if (Start + Length < Start || Start + Length > (ULONG_PTR)MmUserProbeAddress)
+        ExRaiseStatus(STATUS_ACCESS_VIOLATION);
+}
+
+VOID
+NTAPI
+ProbeForWrite(IN PVOID Address,
+              IN SIZE_T Length,
+              IN ULONG Alignment)
+{
+    ProbeForRead(Address, Length, Alignment);
+}
+
+/* Bug check callbacks: there is no crash dump to add data to yet */
+BOOLEAN
+NTAPI
+KeRegisterBugCheckCallback(IN PKBUGCHECK_CALLBACK_RECORD CallbackRecord,
+                           IN PKBUGCHECK_CALLBACK_ROUTINE CallbackRoutine,
+                           IN PVOID Buffer,
+                           IN ULONG Length,
+                           IN PUCHAR Component)
+{
+    CallbackRecord->CallbackRoutine = CallbackRoutine;
+    CallbackRecord->Buffer = Buffer;
+    CallbackRecord->Length = Length;
+    CallbackRecord->Component = Component;
+    CallbackRecord->State = BufferInserted;
+    return TRUE;
+}
+
+BOOLEAN
+NTAPI
+KeDeregisterBugCheckCallback(IN PKBUGCHECK_CALLBACK_RECORD CallbackRecord)
+{
+    BOOLEAN Was = CallbackRecord->State == BufferInserted;
+    CallbackRecord->State = BufferEmpty;
+    return Was;
+}
+
+KPRIORITY
+NTAPI
+KeSetPriorityThread(IN PKTHREAD Thread,
+                    IN KPRIORITY Priority)
+{
+    UNREFERENCED_PARAMETER(Thread);
+    UNREFERENCED_PARAMETER(Priority);
+    return 8;   /* no priorities yet */
 }

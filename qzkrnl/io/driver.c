@@ -341,6 +341,33 @@ QzIoInitializeImports(PVOID ImageBase, ULONG Depth)
  * pulls in) that qzkrnl only has stubs for. Calling a stub stops the
  * system, so such a driver is refused up front with a clear message.
  */
+static PUCHAR QzKernelBase;
+static ULONG QzKernelSize;
+
+/* The name of the kernel export at Address (an implemented alias if there is one) */
+static PCSTR
+QzKernelExportNameAt(PVOID Address)
+{
+    PIMAGE_NT_HEADERS Nt = (PIMAGE_NT_HEADERS)(QzKernelBase + ((PIMAGE_DOS_HEADER)QzKernelBase)->e_lfanew);
+    PIMAGE_EXPORT_DIRECTORY Exports = (PIMAGE_EXPORT_DIRECTORY)(QzKernelBase +
+        Nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+    PULONG Names = (PULONG)(QzKernelBase + Exports->AddressOfNames);
+    PULONG Functions = (PULONG)(QzKernelBase + Exports->AddressOfFunctions);
+    PUSHORT Ordinals = (PUSHORT)(QzKernelBase + Exports->AddressOfNameOrdinals);
+    PCSTR Found = NULL;
+    ULONG i;
+
+    for (i = 0; i < Exports->NumberOfNames; i++)
+    {
+        if (QzKernelBase + Functions[Ordinals[i]] != (PUCHAR)Address)
+            continue;
+        Found = (PCSTR)(QzKernelBase + Names[i]);
+        if (QzIsExportImplemented(Found))
+            break;
+    }
+    return Found;
+}
+
 ULONG
 QzIoCheckImports(PVOID ImageBase, PCSTR *FirstMissing, ULONG Depth)
 {
@@ -352,6 +379,13 @@ QzIoCheckImports(PVOID ImageBase, PCSTR *FirstMissing, ULONG Depth)
 
     if (!Directory->Size || Depth > 8)
         return 0;
+    if (!QzKernelBase)
+    {
+        PQZ_LDR_ENTRY Kernel = CONTAINING_RECORD(QzLoaderBlock->LoadOrderListHead.Flink, QZ_LDR_ENTRY,
+                                                 InLoadOrderLinks);
+        QzKernelBase = Kernel->DllBase;
+        QzKernelSize = Kernel->SizeOfImage;
+    }
     for (Import = (PIMAGE_IMPORT_DESCRIPTOR)(Base + Directory->VirtualAddress); Import->Name; Import++)
     {
         PCSTR DllName = (PCSTR)(Base + Import->Name);
@@ -364,9 +398,29 @@ QzIoCheckImports(PVOID ImageBase, PCSTR *FirstMissing, ULONG Depth)
             for (Thunk = (PIMAGE_THUNK_DATA)(Base + Import->OriginalFirstThunk); Thunk->u1.AddressOfData; Thunk++)
             {
                 PCSTR Name;
-                if (IMAGE_SNAP_BY_ORDINAL(Thunk->u1.Ordinal))
+                if (Thunk->u1.AddressOfData >= (ULONG_PTR)Base &&
+                    Thunk->u1.AddressOfData < (ULONG_PTR)Base + Nt->OptionalHeader.SizeOfImage)
+                {
+                    /* The loader turned this name table's RVAs into addresses
+                       (it does for export drivers): a pointer to the name */
+                    Name = (PCSTR)((PIMAGE_IMPORT_BY_NAME)Thunk->u1.AddressOfData)->Name;
+                }
+                else if (Thunk->u1.AddressOfData >= (ULONG_PTR)QzKernelBase &&
+                         Thunk->u1.AddressOfData < (ULONG_PTR)QzKernelBase + QzKernelSize)
+                {
+                    /* ... or bound it in place: the kernel address itself */
+                    Name = QzKernelExportNameAt((PVOID)Thunk->u1.AddressOfData);
+                    if (!Name)
+                        continue;
+                }
+                else if (IMAGE_SNAP_BY_ORDINAL(Thunk->u1.Ordinal))
+                {
                     continue;
-                Name = (PCSTR)((PIMAGE_IMPORT_BY_NAME)(Base + Thunk->u1.AddressOfData))->Name;
+                }
+                else
+                {
+                    Name = (PCSTR)((PIMAGE_IMPORT_BY_NAME)(Base + Thunk->u1.AddressOfData))->Name;
+                }
                 if (!QzIsExportImplemented(Name))
                 {
                     if (!Missing && FirstMissing)

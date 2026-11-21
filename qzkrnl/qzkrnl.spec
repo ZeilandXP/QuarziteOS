@@ -616,6 +616,26 @@
 @ stdcall ZwUnmapViewOfSection(ptr ptr)
 @ stdcall ZwOpenSection(ptr long ptr)
 @ extern MmSectionObjectType
+@ stdcall IoCsqInitialize(ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall IoCsqInitializeEx(ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall IoCsqInsertIrp(ptr ptr ptr)
+@ stdcall IoCsqInsertIrpEx(ptr ptr ptr ptr)
+@ stdcall IoCsqRemoveIrp(ptr ptr)
+@ stdcall IoCsqRemoveNextIrp(ptr ptr)
+@ stdcall IoAllocateAdapterChannel(ptr ptr long ptr ptr)
+@ stdcall IoQueryDeviceDescription(ptr ptr ptr ptr ptr ptr ptr ptr)
+@ stdcall SeTokenIsAdmin(ptr)
+@ stdcall ExIsProcessorFeaturePresent(long)
+@ stdcall ProbeForRead(ptr long long)
+@ stdcall ProbeForWrite(ptr long long)
+@ stdcall KeRegisterBugCheckCallback(ptr ptr ptr long ptr)
+@ stdcall KeDeregisterBugCheckCallback(ptr)
+@ stdcall KeSetPriorityThread(ptr long)
+@ stdcall MmAllocateContiguousMemory(long long long)
+@ stdcall MmFreeContiguousMemory(ptr)
+@ stdcall MmAllocateNonCachedMemory(long)
+@ stdcall MmFreeNonCachedMemory(ptr long)
+@ cdecl vsprintf(ptr str ptr)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -686,7 +706,6 @@
 @ stub -arch=i386 ExInterlockedExchangeUlong
 @ stub ExInterlockedExtendZone
 @ stub -arch=i386 ExInterlockedIncrementLong
-@ stub ExIsProcessorFeaturePresent
 @ stub ExLocalTimeToSystemTime
 @ stub -arch=x86_64,arm ExQueryDepthSList
 @ stub ExQueryPoolBlockSize
@@ -860,7 +879,6 @@
 @ stub -arch=i386,arm InterlockedIncrement
 @ stub -arch=x86_64 InitializeSListHead
 @ stub IoAcquireVpbSpinLock
-@ stub IoAllocateAdapterChannel
 @ stub IoAssignDriveLetters
 @ stub IoAssignResources
 @ stub IoCancelFileOpen
@@ -873,12 +891,6 @@
 @ stub IoConnectInterruptEx
 @ stub IoCreateNotificationEvent
 @ stub IoCreateSynchronizationEvent
-@ stub IoCsqInitialize
-@ stub IoCsqInitializeEx
-@ stub IoCsqInsertIrp
-@ stub IoCsqInsertIrpEx
-@ stub IoCsqRemoveIrp
-@ stub IoCsqRemoveNextIrp
 @ extern IoDeviceHandlerObjectSize QzUnimplementedData
 @ extern IoDeviceHandlerObjectType QzUnimplementedData
 @ stub IoDisconnectInterruptEx
@@ -900,7 +912,6 @@
 @ stub IoIsValidNameGraftingBuffer
 @ stub IoPageRead
 @ stub IoPnPDeliverServicePowerNotification
-@ stub IoQueryDeviceDescription
 @ stub IoQueryFileDosDeviceName
 @ stub IoQueryFileInformation
 @ stub IoQueryVolumeInformation
@@ -963,7 +974,6 @@
 @ stub -arch=x86_64 KeAcquireSpinLockRaiseToSynch
 @ stub KeAddSystemServiceTable
 @ stub KeCapturePersistentThreadState
-@ stub KeDeregisterBugCheckCallback
 @ stub KeDeregisterBugCheckReasonCallback
 @ stub KeDeregisterNmiCallback
 @ stub KeEnterKernelDebugger
@@ -1001,7 +1011,6 @@
 @ stub -arch=x86_64 KeRaiseIrqlToDpcLevel
 @ stub KeRaiseUserException
 @ stub KeReadStateQueue
-@ stub KeRegisterBugCheckCallback
 @ stub KeRegisterBugCheckReasonCallback
 @ stub KeRegisterNmiCallback
 @ stub -arch=x86_64 KeReleaseInStackQueuedSpinLock
@@ -1024,7 +1033,6 @@
 @ stub KeSetEventBoostPriority
 @ stub KeSetIdealProcessorThread
 @ stub KeSetKernelStackSwapEnable
-@ stub KeSetPriorityThread
 @ stub KeSetProfileIrql
 @ stub KeSetSystemAffinityThread
 @ stub KeSignalCallDpcDone
@@ -1060,8 +1068,6 @@
 @ stub MmAddVerifierThunks
 @ stub MmAdjustWorkingSetSize
 @ stub MmAdvanceMdl
-@ stub MmAllocateContiguousMemory
-@ stub MmAllocateNonCachedMemory
 @ stub MmAllocatePagesForMdl
 @ stub MmAllocatePagesForMdlEx
 @ stub MmCanFileBeTruncated
@@ -1073,8 +1079,6 @@
 @ stub MmDoesFileHaveUserWritableReferences
 @ stub MmFlushImageSection
 @ stub MmForceSectionClosed
-@ stub MmFreeContiguousMemory
-@ stub MmFreeNonCachedMemory
 @ stub MmFreePagesFromMdl
 @ stub MmGetPhysicalMemoryRanges
 @ stub MmGetVirtualForPhysical
@@ -1195,8 +1199,6 @@
 @ stub PoSetSystemState
 @ stub PoShutdownBugCheck
 @ stub PoUnregisterSystemState
-@ stub ProbeForRead
-@ stub ProbeForWrite
 @ stub PsAssignImpersonationToken
 @ stub PsChargePoolQuota
 @ stub PsChargeProcessNonPagedPoolQuota
@@ -1519,7 +1521,6 @@
 @ stub SeSetSecurityDescriptorInfoEx
 @ extern SeSystemDefaultDacl QzUnimplementedData
 @ stub SeTokenImpersonationLevel
-@ stub SeTokenIsAdmin
 @ stub SeTokenIsRestricted
 @ extern SeTokenObjectType QzUnimplementedData
 @ stub SeTokenType
@@ -1655,7 +1656,6 @@
 @ stub srand
 @ stub strncat
 @ stub strspn
-@ stub vsprintf
 @ stub wcscspn
 @ stub wcsspn
 @ stub wcstombs

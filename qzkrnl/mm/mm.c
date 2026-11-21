@@ -549,3 +549,76 @@ MmGetSystemRoutineAddress(IN PUNICODE_STRING SystemRoutineName)
         return QzFindImageExport(CONTAINING_RECORD(Entry, QZ_LDR_ENTRY, InLoadOrderLinks)->DllBase, Name);
     return NULL;
 }
+
+/* The old contiguous and non-cached allocators, on top of the new one.
+   MmFreeContiguousMemory gets no size: remember it */
+static struct { PVOID Base; SIZE_T Bytes; } QzContiguous[64];
+
+PVOID
+NTAPI
+MmAllocateContiguousMemory(IN SIZE_T NumberOfBytes,
+                           IN PHYSICAL_ADDRESS HighestAcceptableAddress)
+{
+    PHYSICAL_ADDRESS Low, Boundary;
+    PVOID Base;
+    ULONG i, Flags;
+
+    Low.QuadPart = 0;
+    Boundary.QuadPart = 0;
+    Base = MmAllocateContiguousMemorySpecifyCache(NumberOfBytes, Low, HighestAcceptableAddress, Boundary,
+                                                  MmCached);
+    if (!Base)
+        return NULL;
+    Flags = QzSaveFlagsAndDisable();
+    for (i = 0; i < RTL_NUMBER_OF(QzContiguous); i++)
+    {
+        if (!QzContiguous[i].Base)
+        {
+            QzContiguous[i].Base = Base;
+            QzContiguous[i].Bytes = NumberOfBytes;
+            break;
+        }
+    }
+    QzRestoreFlags(Flags);
+    return Base;
+}
+
+VOID
+NTAPI
+MmFreeContiguousMemory(IN PVOID BaseAddress)
+{
+    SIZE_T Bytes = 0;
+    ULONG i, Flags = QzSaveFlagsAndDisable();
+
+    for (i = 0; i < RTL_NUMBER_OF(QzContiguous); i++)
+    {
+        if (QzContiguous[i].Base == BaseAddress)
+        {
+            Bytes = QzContiguous[i].Bytes;
+            QzContiguous[i].Base = NULL;
+            break;
+        }
+    }
+    QzRestoreFlags(Flags);
+    if (Bytes)
+        MmFreeContiguousMemorySpecifyCache(BaseAddress, Bytes, MmCached);
+}
+
+PVOID
+NTAPI
+MmAllocateNonCachedMemory(IN SIZE_T NumberOfBytes)
+{
+    PHYSICAL_ADDRESS Low, High, Boundary;
+    Low.QuadPart = 0;
+    High.QuadPart = 0xFFFFFFFF;
+    Boundary.QuadPart = 0;
+    return MmAllocateContiguousMemorySpecifyCache(NumberOfBytes, Low, High, Boundary, MmNonCached);
+}
+
+VOID
+NTAPI
+MmFreeNonCachedMemory(IN PVOID BaseAddress,
+                      IN SIZE_T NumberOfBytes)
+{
+    MmFreeContiguousMemorySpecifyCache(BaseAddress, NumberOfBytes, MmNonCached);
+}

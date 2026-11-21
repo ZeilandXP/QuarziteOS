@@ -410,6 +410,12 @@ _snprintf(char *Buffer, size_t Count, const char *Format, ...)
     return Result;
 }
 
+int __cdecl
+vsprintf(char *Buffer, const char *Format, va_list Args)
+{
+    return _vsnprintf(Buffer, 0x7FFFFFFF, Format, Args);
+}
+
 int
 __cdecl
 sprintf(char *Buffer, const char *Format, ...)

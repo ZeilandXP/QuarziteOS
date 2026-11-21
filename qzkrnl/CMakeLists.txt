@@ -45,6 +45,7 @@ list(APPEND SOURCE
     ke/wait.c
     ke/i386/cpu.c
     ke/i386/trap.c
+    io/csq.c
     io/device.c
     io/driver.c
     io/file.c

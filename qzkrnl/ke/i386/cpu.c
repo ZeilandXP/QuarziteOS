@@ -60,6 +60,8 @@ C_ASSERT(FIELD_OFFSET(KIPCR, PrcbData.CurrentThread) == 0x124);
 static QZ_GDT_ENTRY QzGdt[16] __attribute__((aligned(16)));
 static QZ_IDT_ENTRY QzIdt[256] __attribute__((aligned(16)));
 QZ_TSS QzTss __attribute__((aligned(16)));   /* the sysenter entry reads Esp0 */
+static QZ_TSS QzDoubleFaultTss __attribute__((aligned(16)));
+static UCHAR QzDoubleFaultStack[8192] __attribute__((aligned(16)));
 static UCHAR QzTssStack[8192] __attribute__((aligned(16)));
 
 static VOID
@@ -157,10 +159,31 @@ QzCpuInit(VOID)
           "i"(QZ_SEL_R0_PCR), "i"(QZ_SEL_TSS)
         : "eax", "memory");
 
+    /* Double faults (a kernel stack overflow, mostly) switch to a task of
+       their own, with a fresh stack, so they can still be reported */
+    {
+        extern VOID QzDoubleFaultTask(VOID);
+        RtlZeroMemory(&QzDoubleFaultTss, sizeof(QzDoubleFaultTss));
+        QzDoubleFaultTss.Esp0 = QzDoubleFaultTss.Esp =
+            (ULONG)(ULONG_PTR)&QzDoubleFaultStack[sizeof(QzDoubleFaultStack)];
+        QzDoubleFaultTss.Ss0 = QzDoubleFaultTss.Ss = QZ_SEL_R0_DATA;
+        QzDoubleFaultTss.Eip = (ULONG)(ULONG_PTR)QzDoubleFaultTask;
+        QzDoubleFaultTss.EFlags = 0x2;
+        QzDoubleFaultTss.Cs = QZ_SEL_R0_CODE;
+        QzDoubleFaultTss.Ds = QzDoubleFaultTss.Es = QzDoubleFaultTss.Gs = QZ_SEL_R3_DATA | 3;
+        QzDoubleFaultTss.Fs = QZ_SEL_R0_PCR;
+        QzDoubleFaultTss.Cr3 = QzReadCr3();
+        QzDoubleFaultTss.IoMapBase = sizeof(QZ_TSS);
+        QzSetGdtEntry(KGDT_DF_TSS, (ULONG)(ULONG_PTR)&QzDoubleFaultTss, sizeof(QZ_TSS) - 1, 0x89, 0x00);
+    }
+
     /* IDT: fill every vector with a stub, then load it. Ring 3 may raise
        int3, into, and the system interrupts 2A-2E */
     RtlZeroMemory(QzIdt, sizeof(QzIdt));
     QzInstallTrapStubs();
+    QzIdt[0x08].OffsetLow = QzIdt[0x08].OffsetHigh = 0;   /* a task gate */
+    QzIdt[0x08].Selector = KGDT_DF_TSS;
+    QzIdt[0x08].TypeAttr = 0x85;
     QzIdt[0x03].TypeAttr = 0xEE;
     QzIdt[0x04].TypeAttr = 0xEE;
     QzIdt[0x2A].TypeAttr = 0xEE;
@@ -252,4 +275,37 @@ QzCpuGetVendor(PCHAR Vendor13, PCHAR Brand49)
         }
         Brand49[48] = 0;
     }
+}
+
+/*
+ * The double-fault task: the interrupted context is in QzTss (the CPU saved
+ * it there on the task switch). Show where it was, the stack's return
+ * addresses (a recursion shows as a repeating pattern) and stop.
+ */
+DECLSPEC_NORETURN VOID
+QzDoubleFaultTask(VOID)
+{
+    PULONG Stack = (PULONG)(ULONG_PTR)QzTss.Esp;
+    ULONG i, Shown = 0;
+    CHAR Text[96];
+
+    DbgPrint("\n*** qzkrnl: double fault: EIP %08lx ESP %08lx EBP %08lx CR3 %08lx (thread %p)\n",
+             QzTss.Eip, QzTss.Esp, QzTss.Ebp, QzTss.Cr3, QzCurrentThread);
+    /* The stack above the fault (the faulting page itself is gone) */
+    Stack = (PULONG)(((ULONG_PTR)Stack + 0xFFF) & ~0xFFFUL);
+    for (i = 0; i < 4096 && Shown < 48; i++)
+    {
+        ULONG Value;
+        if (!MmIsAddressValid(&Stack[i]))
+            break;
+        Value = Stack[i];
+        if (Value >= 0x80400000 && Value < 0x81000000)
+        {
+            DbgPrint("  [%08lx] %08lx\n", (ULONG)(ULONG_PTR)&Stack[i], Value);
+            Shown++;
+        }
+    }
+    QzSnprintf(Text, sizeof(Text), "Double fault (kernel stack overflow?) at EIP %08lx, ESP %08lx",
+               QzTss.Eip, QzTss.Esp);
+    QzBugCheckWithText(UNEXPECTED_KERNEL_MODE_TRAP, 8, QzTss.Eip, QzTss.Esp, 0, Text);
 }

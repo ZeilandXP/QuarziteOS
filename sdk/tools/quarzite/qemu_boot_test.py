@@ -209,7 +209,10 @@ def run_qzkrnl(iso, out):
     with tempfile.TemporaryDirectory() as tmp:
         disk = os.path.join(tmp, "disk.img")
         make_test_disk(disk)
-        vm = Qemu(iso, tmp, extra=["-drive", f"file={disk},format=raw,if=ide,index=0"])
+        # A USB 2.0 controller with a tablet, as most VMs have: the USB stack
+        # (usbport, a miniport, usbhub) must come up and enumerate it
+        vm = Qemu(iso, tmp, extra=["-drive", f"file={disk},format=raw,if=ide,index=0",
+                                   "-device", "usb-ehci,id=ehci", "-device", "usb-tablet,bus=ehci.0"])
         try:
             # With a hard disk that has an MBR, isoboot asks before booting the CD
             if vm.wait_screen("Press any key", 60):
@@ -279,7 +282,10 @@ def run_qzkrnl(iso, out):
                              r"PCIIDE\\IDEChannel\S+ \[started, atapi\]",
                              r"IDE\\DiskQEMU_HARDDISK\S+ \[started, disk\]",
                              r"STORAGE\\Partition\S+ \[started\]",
-                             r"IDE\\CdRomQEMU\S+ \[started, cdrom\]"]),
+                             r"IDE\\CdRomQEMU\S+ \[started, cdrom\]",
+                             r"PCI\\VEN_8086&DEV_24CD\S+ \[started, usbehci\]",
+                             r"USB\\ROOT_HUB20\S+ \[started, usbhub\]",
+                             r"USB\\Vid_0627&Pid_0001\S+ \["]),
                 ("read \\Device\\CdRom0 16", [r"2048 bytes read", r"\.CD001\."]),
                 ("read \\Device\\Harddisk0\\Partition0 0", [r"512 bytes read",
                                                          r"last two bytes of the first 512: 55 aa"]),
