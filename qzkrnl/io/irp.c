@@ -187,7 +187,7 @@ QzIoCompletionRundown(PKAPC Apc)
 {
     PIRP Irp = CONTAINING_RECORD(Apc, IRP, Tail.Apc);
     Irp->Tail.Overlay.OriginalFileObject = Apc->SystemArgument1;
-    Irp->Flags &= ~QZ_IRP_USER_REQUEST;
+    Irp->Flags &= ~(QZ_IRP_USER_REQUEST | QZ_IRP_USER_MODE);
     Irp->UserBuffer = NULL;
     if (Irp->UserIosb && (ULONG_PTR)Irp->UserIosb < QZ_SYSTEM_RANGE_START)
         Irp->UserIosb = NULL;
@@ -236,10 +236,12 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
     }
 
     /*
-     * A request from user mode finishes in the thread that made it: the
-     * buffers, the IOSB and the event handle belong to its process, and
-     * this may be a DPC or another process's thread. A special kernel APC
-     * takes it there (NT's IopCompleteRequest).
+     * A request from a thread of a user process (from user mode, or a
+     * kernel-mode one made by its thread inside a service or win32k)
+     * finishes in that thread: the buffers, the IOSB and the event handle
+     * may belong to its process, and this may be a DPC or another
+     * process's thread. A special kernel APC takes it there (NT's
+     * IopCompleteRequest).
      */
     if ((Irp->Flags & QZ_IRP_USER_REQUEST) && !(Irp->Flags & QZ_IRP_IN_REQUESTER))
     {
@@ -254,7 +256,7 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
                 return;
             Irp->Tail.Overlay.OriginalFileObject = FileObject;
             /* The thread is gone: nobody to tell, and its address space may be too */
-            Irp->Flags &= ~(QZ_IRP_USER_REQUEST | QZ_IRP_IN_REQUESTER);
+            Irp->Flags &= ~(QZ_IRP_USER_REQUEST | QZ_IRP_USER_MODE | QZ_IRP_IN_REQUESTER);
             Irp->UserBuffer = NULL;
             if (Irp->UserIosb && (ULONG_PTR)Irp->UserIosb < QZ_SYSTEM_RANGE_START)
                 Irp->UserIosb = NULL;
@@ -307,8 +309,9 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
     {
         PIO_APC_ROUTINE ApcRoutine = Irp->Overlay.AsynchronousParameters.UserApcRoutine;
         PVOID ApcContext = Irp->Overlay.AsynchronousParameters.UserApcContext;
-        BOOLEAN FromUser = (Irp->Flags & QZ_IRP_USER_REQUEST) != 0;
-        PQZ_THREAD Target = FromUser ? QzCurrentThread : QzKeThreadOf(Irp->Tail.Overlay.Thread);
+        BOOLEAN FromUser = (Irp->Flags & QZ_IRP_USER_MODE) != 0;
+        PQZ_THREAD Target = (Irp->Flags & QZ_IRP_USER_REQUEST) ? QzCurrentThread
+                                                                : QzKeThreadOf(Irp->Tail.Overlay.Thread);
 
         if (ApcRoutine && Target)
         {

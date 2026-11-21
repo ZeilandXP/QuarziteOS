@@ -890,6 +890,8 @@ QzIoBeginRequest(PQZ_FILE_REQUEST Request, HANDLE FileHandle, ACCESS_MASK Access
     Request->Irp->Overlay.AsynchronousParameters.UserApcRoutine = ApcRoutine;
     Request->Irp->Overlay.AsynchronousParameters.UserApcContext = ApcContext;
     if (ExGetPreviousMode() == UserMode)
+        Request->Irp->Flags |= QZ_IRP_USER_REQUEST | QZ_IRP_USER_MODE;
+    else if (QzCurrentThread->Process != QzSystemProcess)
         Request->Irp->Flags |= QZ_IRP_USER_REQUEST;
     KeClearEvent(&Request->FileObject->Event);
     return STATUS_SUCCESS;

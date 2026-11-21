@@ -68,8 +68,13 @@ VOID QzCcMmSetDirty(PVOID Map, LONGLONG Offset);
 PSECTION_OBJECT_POINTERS QzCcMmSop(PVOID Map);
 extern VOID (*QzMmCollectFileDirty)(PSECTION_OBJECT_POINTERS Sop);
 
-/* io/file.c, io/irp.c: an IRP for a request from user mode (I/O manager's own flag) */
+/* io/file.c, io/irp.c (the I/O manager's own IRP flags):
+   the last stage runs in the requesting thread (its buffers, IOSB and
+   event may live in its process: any request from a thread of a user
+   process, kernel-mode ones included, as NT's threaded IRPs) */
 #define QZ_IRP_USER_REQUEST     0x40000000UL
+/* the request came from user mode: its APC routine is a user APC */
+#define QZ_IRP_USER_MODE        0x10000000UL
 
 /* ex/iocomp.c */
 NTSTATUS QzIoQueueCompletion(PVOID Port, PVOID KeyContext, PVOID ApcContext, NTSTATUS Status,
