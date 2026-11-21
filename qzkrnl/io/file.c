@@ -730,9 +730,9 @@ ZwCreateFile(OUT PHANDLE FileHandle,
              IN PVOID EaBuffer OPTIONAL,
              IN ULONG EaLength)
 {
-    return IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize,
+    return QZ_AS_KERNEL(IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, AllocationSize,
                         FileAttributes, ShareAccess, CreateDisposition, CreateOptions, EaBuffer,
-                        EaLength, CreateFileTypeNone, NULL, 0);
+                        EaLength, CreateFileTypeNone, NULL, 0));
 }
 
 NTSTATUS
@@ -813,8 +813,8 @@ ZwOpenFile(OUT PHANDLE FileHandle,
            IN ULONG ShareAccess,
            IN ULONG OpenOptions)
 {
-    return IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, NULL, 0,
-                        ShareAccess, FILE_OPEN, OpenOptions, NULL, 0, CreateFileTypeNone, NULL, 0);
+    return QZ_AS_KERNEL(IoCreateFile(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, NULL, 0,
+                        ShareAccess, FILE_OPEN, OpenOptions, NULL, 0, CreateFileTypeNone, NULL, 0));
 }
 
 NTSTATUS
@@ -1022,8 +1022,8 @@ ZwReadFile(IN HANDLE FileHandle,
            IN PLARGE_INTEGER ByteOffset OPTIONAL,
            IN PULONG Key OPTIONAL)
 {
-    return QzIoReadWrite(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
-                         ByteOffset, Key, FALSE);
+    return QZ_AS_KERNEL(QzIoReadWrite(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
+                         ByteOffset, Key, FALSE));
 }
 
 NTSTATUS
@@ -1038,8 +1038,8 @@ ZwWriteFile(IN HANDLE FileHandle,
             IN PLARGE_INTEGER ByteOffset OPTIONAL,
             IN PULONG Key OPTIONAL)
 {
-    return QzIoReadWrite(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
-                         ByteOffset, Key, TRUE);
+    return QZ_AS_KERNEL(QzIoReadWrite(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
+                         ByteOffset, Key, TRUE));
 }
 
 NTSTATUS
@@ -1172,8 +1172,8 @@ ZwDeviceIoControlFile(IN HANDLE FileHandle,
                       OUT PVOID OutputBuffer OPTIONAL,
                       IN ULONG OutputBufferLength)
 {
-    return QzIoControl(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, IoControlCode, InputBuffer,
-                       InputBufferLength, OutputBuffer, OutputBufferLength, FALSE);
+    return QZ_AS_KERNEL(QzIoControl(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, IoControlCode, InputBuffer,
+                       InputBufferLength, OutputBuffer, OutputBufferLength, FALSE));
 }
 
 NTSTATUS
@@ -1202,8 +1202,8 @@ ZwFsControlFile(IN HANDLE FileHandle,
                 OUT PVOID OutputBuffer OPTIONAL,
                 IN ULONG OutputBufferLength)
 {
-    return QzIoControl(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, FsControlCode, InputBuffer,
-                       InputBufferLength, OutputBuffer, OutputBufferLength, TRUE);
+    return QZ_AS_KERNEL(QzIoControl(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, FsControlCode, InputBuffer,
+                       InputBufferLength, OutputBuffer, OutputBufferLength, TRUE));
 }
 
 NTSTATUS
@@ -1328,8 +1328,8 @@ ZwQueryInformationFile(IN HANDLE FileHandle,
                        IN ULONG Length,
                        IN FILE_INFORMATION_CLASS FileInformationClass)
 {
-    return QzIoInformation(FileHandle, IoStatusBlock, FileInformation, Length,
-                           FileInformationClass, IRP_MJ_QUERY_INFORMATION);
+    return QZ_AS_KERNEL(QzIoInformation(FileHandle, IoStatusBlock, FileInformation, Length,
+                           FileInformationClass, IRP_MJ_QUERY_INFORMATION));
 }
 
 NTSTATUS
@@ -1340,8 +1340,8 @@ ZwSetInformationFile(IN HANDLE FileHandle,
                      IN ULONG Length,
                      IN FILE_INFORMATION_CLASS FileInformationClass)
 {
-    return QzIoInformation(FileHandle, IoStatusBlock, FileInformation, Length,
-                           FileInformationClass, IRP_MJ_SET_INFORMATION);
+    return QZ_AS_KERNEL(QzIoInformation(FileHandle, IoStatusBlock, FileInformation, Length,
+                           FileInformationClass, IRP_MJ_SET_INFORMATION));
 }
 
 NTSTATUS
@@ -1352,8 +1352,8 @@ ZwQueryVolumeInformationFile(IN HANDLE FileHandle,
                              IN ULONG Length,
                              IN FS_INFORMATION_CLASS FsInformationClass)
 {
-    return QzIoInformation(FileHandle, IoStatusBlock, FsInformation, Length,
-                           FsInformationClass, IRP_MJ_QUERY_VOLUME_INFORMATION);
+    return QZ_AS_KERNEL(QzIoInformation(FileHandle, IoStatusBlock, FsInformation, Length,
+                           FsInformationClass, IRP_MJ_QUERY_VOLUME_INFORMATION));
 }
 
 NTSTATUS
@@ -1365,13 +1365,13 @@ ZwFlushBuffersFile(IN HANDLE FileHandle,
     PIO_STACK_LOCATION Stack;
     NTSTATUS Status;
 
-    Status = QzIoBeginRequest(&Request, FileHandle, 0, NULL, NULL, NULL, TRUE);
+    Status = QZ_AS_KERNEL(QzIoBeginRequest(&Request, FileHandle, 0, NULL, NULL, NULL, TRUE));
     if (!NT_SUCCESS(Status))
         return Status;
     Stack = IoGetNextIrpStackLocation(Request.Irp);
     Stack->MajorFunction = IRP_MJ_FLUSH_BUFFERS;
     Stack->FileObject = Request.FileObject;
-    return QzIoCallRequest(&Request, IoStatusBlock, FALSE);
+    return QZ_AS_KERNEL(QzIoCallRequest(&Request, IoStatusBlock, FALSE));
 }
 
 BOOLEAN

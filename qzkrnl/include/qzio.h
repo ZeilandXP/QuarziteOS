@@ -50,6 +50,7 @@ NTSTATUS QzIoUnloadDriver(PCUNICODE_STRING ServiceName);
 BOOLEAN QzIoIsBootService(PCUNICODE_STRING ServiceName);
 VOID QzIoStartBootFileSystems(VOID);
 VOID QzIoStartBootDrivers(VOID);
+VOID QzPnpStartLegacyInput(VOID);
 VOID QzIoStartSystemFileSystems(VOID);
 NTSTATUS QzIoInitializeImports(PVOID ImageBase, ULONG Depth);
 VOID QzIoForgetDll(PVOID ImageBase);

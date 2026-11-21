@@ -67,6 +67,22 @@ QzKbdInit(VOID)
     QzConnectIsaInterrupt(&QzKbdInterrupt, QZ_IRQ_KEYBOARD, QzKbdIsr, NULL);
 }
 
+/*
+ * The PS/2 controller goes to i8042prt (the GUI's keyboard and mouse):
+ * the console's own handler lets go of IRQ 1. The shell stays on the
+ * serial port.
+ */
+VOID
+QzKbdRelease(VOID)
+{
+    static BOOLEAN Released;
+    if (Released)
+        return;
+    Released = TRUE;
+    KeDisconnectInterrupt(&QzKbdInterrupt);
+    DbgPrint("qzkrnl: the console keyboard handed IRQ 1 to i8042prt\n");
+}
+
 static BOOLEAN NTAPI
 QzKbdIsr(PKINTERRUPT Interrupt, PVOID Context)
 {

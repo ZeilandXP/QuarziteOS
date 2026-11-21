@@ -577,8 +577,8 @@ ZwDuplicateObject(IN HANDLE SourceProcessHandle,
                   IN ULONG HandleAttributes,
                   IN ULONG Options)
 {
-    return NtDuplicateObject(SourceProcessHandle, SourceHandle, TargetProcessHandle,
-                             TargetHandle, DesiredAccess, HandleAttributes, Options);
+    return QZ_AS_KERNEL(NtDuplicateObject(SourceProcessHandle, SourceHandle, TargetProcessHandle,
+                             TargetHandle, DesiredAccess, HandleAttributes, Options));
 }
 
 NTSTATUS

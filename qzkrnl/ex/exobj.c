@@ -11,6 +11,7 @@
  */
 
 #include "qz.h"
+#include "qzps.h"
 
 #define QZ_WAIT_TAG 'tiWQ'
 
@@ -133,7 +134,7 @@ ZwCreateEvent(OUT PHANDLE EventHandle,
               IN EVENT_TYPE EventType,
               IN BOOLEAN InitialState)
 {
-    return NtCreateEvent(EventHandle, DesiredAccess, ObjectAttributes, EventType, InitialState);
+    return QZ_AS_KERNEL(NtCreateEvent(EventHandle, DesiredAccess, ObjectAttributes, EventType, InitialState));
 }
 
 NTSTATUS
@@ -380,7 +381,7 @@ ZwWaitForSingleObject(IN HANDLE Handle,
                       IN BOOLEAN Alertable,
                       IN PLARGE_INTEGER Timeout OPTIONAL)
 {
-    return NtWaitForSingleObject(Handle, Alertable, Timeout);
+    return QZ_AS_KERNEL(NtWaitForSingleObject(Handle, Alertable, Timeout));
 }
 
 NTSTATUS

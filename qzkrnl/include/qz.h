@@ -268,6 +268,8 @@ VOID QzSharedUserDataInit(VOID);
 /* ke/intobj.c -- interrupt objects */
 VOID FASTCALL QzDispatchDeviceInterrupt(PKTRAP_FRAME TrapFrame, ULONG Vector);
 ULONG QzConnectedInterruptCount(VOID);
+extern ULONG QzIrqCounts[16];             /* interrupts per IRQ line */
+ULONG QzIrqObjects(ULONG Irq);             /* interrupt objects on an IRQ line */
 
 /* ke/halif.c -- data the HAL expects from the kernel */
 VOID QzHalInterfaceInit(VOID);
@@ -411,6 +413,7 @@ BOOLEAN QzVgaAvailable(VOID);
 
 /* drv/kbd.c */
 VOID QzKbdInit(VOID);
+VOID QzKbdRelease(VOID);                   /* hand the PS/2 keyboard to i8042prt */
 
 /* drv/input.c */
 VOID QzInputPush(CHAR c);

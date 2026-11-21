@@ -265,6 +265,14 @@ QzExecute(PCHAR Line)
                 QzTimeIncrement, QzPcr.StallScaleFactor, QzPcr.IDR, QzPcr.IRR,
                 QzPrcb->ClockInterrupts, QzPrcb->InterruptCount,
                 QzPrcb->DispatchInterrupts, QzConnectedInterruptCount());
+        {
+            ULONG Irq;
+            QzPrint("  by IRQ (interrupts, objects):");
+            for (Irq = 0; Irq < 16; Irq++)
+                if (QzIrqCounts[Irq] || QzIrqObjects(Irq))
+                    QzPrint(" %lu:%lu/%lu", Irq, QzIrqCounts[Irq], QzIrqObjects(Irq));
+            QzPrint("\n");
+        }
     }
     else if (!strcmp(Cmd, "cpu"))
     {
@@ -337,6 +345,7 @@ QzExecute(PCHAR Line)
         PQZ_PROCESS Process;
         NTSTATUS Status;
         QzNeedDevices();
+        QzPnpStartLegacyInput();        /* the GUI's keyboard and mouse: the console keeps the serial port */
         Status = QzPsStartSmss(&Process);
         if (NT_SUCCESS(Status))
         {
@@ -630,6 +639,7 @@ QzShell(VOID)
         NTSTATUS Status;
         QzPrint("  Starting the native subsystem (/QZAUTOSTART)\n");
         QzNeedDevices();
+        QzPnpStartLegacyInput();        /* the GUI's keyboard and mouse */
         Status = QzPsStartSmss(&Process);
         if (NT_SUCCESS(Status))
             ObDereferenceObject(Process);

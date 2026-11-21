@@ -297,24 +297,31 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
             ObDereferenceObject(Irp->UserEvent);
     }
 
-    /* Asynchronous requests from user mode: the caller's APC, or its completion port */
-    if ((Irp->Flags & QZ_IRP_USER_REQUEST) && !(Irp->Flags & IRP_SYNCHRONOUS_API))
+    /*
+     * Asynchronous requests: the caller's APC routine, or its completion
+     * port. From user mode it is a user APC (this is the requesting thread);
+     * from kernel mode a normal kernel APC to the thread that asked
+     * (win32k's raw input thread reads the keyboard and mouse that way).
+     */
+    if (!(Irp->Flags & (IRP_SYNCHRONOUS_API | IRP_CREATE_OPERATION | IRP_CLOSE_OPERATION)) && FileObject)
     {
         PIO_APC_ROUTINE ApcRoutine = Irp->Overlay.AsynchronousParameters.UserApcRoutine;
         PVOID ApcContext = Irp->Overlay.AsynchronousParameters.UserApcContext;
+        BOOLEAN FromUser = (Irp->Flags & QZ_IRP_USER_REQUEST) != 0;
+        PQZ_THREAD Target = FromUser ? QzCurrentThread : QzKeThreadOf(Irp->Tail.Overlay.Thread);
 
-        if (ApcRoutine)
+        if (ApcRoutine && Target)
         {
             PKAPC Apc = ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), 'pAzQ');
             if (Apc)
             {
-                KeInitializeApc(Apc, (PRKTHREAD)QzCurrentThread, OriginalApcEnvironment, QzIoUserApcKernelRoutine,
-                                NULL, (PKNORMAL_ROUTINE)ApcRoutine, UserMode, ApcContext);
+                KeInitializeApc(Apc, (PRKTHREAD)Target, OriginalApcEnvironment, QzIoUserApcKernelRoutine,
+                                NULL, (PKNORMAL_ROUTINE)ApcRoutine, FromUser ? UserMode : KernelMode, ApcContext);
                 if (!KeInsertQueueApc(Apc, Irp->UserIosb, NULL, PriorityBoost))
                     ExFreePool(Apc);
             }
         }
-        else if (FileObject && FileObject->CompletionContext && !((ULONG_PTR)ApcContext & 1))
+        else if (!ApcRoutine && FileObject->CompletionContext && !((ULONG_PTR)ApcContext & 1))
         {
             QzIoQueueCompletion(FileObject->CompletionContext->Port, FileObject->CompletionContext->Key,
                                 ApcContext, Irp->IoStatus.Status, Irp->IoStatus.Information);

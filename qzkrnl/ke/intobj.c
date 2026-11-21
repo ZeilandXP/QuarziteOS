@@ -41,6 +41,22 @@ QzConnectedInterruptCount(VOID)
     return QzConnectedCount;
 }
 
+/* Interrupts per IRQ line (the shell's "hal") */
+ULONG QzIrqCounts[16];
+
+/* Interrupt objects connected to an IRQ line */
+ULONG
+QzIrqObjects(ULONG Irq)
+{
+    PLIST_ENTRY Entry;
+    ULONG Count = 0;
+    if (!QzInterruptLists[Irq].Flink)
+        return 0;
+    for (Entry = QzInterruptLists[Irq].Flink; Entry != &QzInterruptLists[Irq]; Entry = Entry->Flink)
+        Count++;
+    return Count;
+}
+
 /* Called from the trap stub, interrupts disabled. Does not return. */
 VOID
 FASTCALL
@@ -53,6 +69,8 @@ QzDispatchDeviceInterrupt(PKTRAP_FRAME TrapFrame, ULONG Vector)
 
     QzInitLists();
     QzPrcb->InterruptCount++;
+    if (Irq < RTL_NUMBER_OF(QzIrqCounts))
+        QzIrqCounts[Irq]++;
 
     /* Interrupts never nest SEH registrations: terminate the chain */
     QzPcr.NtTib.ExceptionList = EXCEPTION_CHAIN_END;
