@@ -132,7 +132,7 @@ ULONG QzPnpDeviceCount(PULONG Started);
 extern POBJECT_TYPE CmKeyObjectType;
 VOID QzCmInit(PLOADER_PARAMETER_BLOCK LoaderBlock);
 BOOLEAN QzCmHiveReady(VOID);
-ULONG QzCmDroppedWrites(VOID);
+ULONG QzCmNotificationsFired(VOID);
 NTSTATUS QzCmReadValue(PCWSTR KeyPath, PCWSTR ValueName, PVOID Buffer, ULONG Length,
                        PULONG Type, PULONG DataLength);
 VOID QzCmDumpKey(PCWSTR Path);
@@ -149,3 +149,4 @@ VOID QzPsInit(VOID);
 /* ---------------------------------------------------------------------- */
 
 VOID QzRunIoTests(VOID);
+VOID QzRunRegistryTests(VOID);   /* cm/regtest.c */

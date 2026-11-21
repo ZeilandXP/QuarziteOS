@@ -64,6 +64,8 @@ QzCmdHelp(VOID)
             "  devtree           the device tree with resources\n"
             "  start <service>   start a boot driver (DriverEntry)\n"
             "  reg [path]        list a registry key (default \\Registry\\Machine\\System)\n"
+            "  regtest           self-test: registry (keys, values, volatile keys, links,\n"
+            "                    deletion, change notification, Rtl helpers)\n"
             "  pcicfg            PCI bus 0 configuration space through the HAL\n"
             "  read <dev> <sec>  read a sector through a device stack (hex dump)\n"
             "  irptrace [off]    log every IRP dispatch to the debug output\n"
@@ -229,6 +231,8 @@ QzExecute(PCHAR Line)
         QzRunObjectTests();
     else if (!strcmp(Cmd, "iotest"))
         QzRunIoTests();
+    else if (!strcmp(Cmd, "regtest"))
+        QzRunRegistryTests();
     else if (!strcmp(Cmd, "pnp"))
     {
         NTSTATUS Status = QzPnpStart();

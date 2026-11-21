@@ -22,6 +22,7 @@ spec2def(qzkrnl.exe qzkrnl.spec)
 
 list(APPEND SOURCE
     cm/registry.c
+    cm/regtest.c
     ex/exmore.c
     ex/exobj.c
     ex/init.c

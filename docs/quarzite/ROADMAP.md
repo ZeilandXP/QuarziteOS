@@ -26,6 +26,10 @@ QuarziteOS has two tracks that eventually meet:
 - [x] qzkrnl stage B4: I/O and PnP managers; the unmodified ReactOS boot
       drivers bring up PCI, IDE, the CD-ROM (on KMDF) and the hard disk
       with its partitions (boot test 38/38).
+- [x] qzkrnl stage B5: writable SYSTEM hive, `CurrentControlSet` link,
+      registry change notification; `mountmgr` assigns drive letters and
+      the PnP manager records devices under `Enum` (`regtest`: 40/40,
+      boot test 43/43).
 
 ## 0.2.0 (next release, after 0.1.0 is done)
 
@@ -129,9 +133,9 @@ so this comes first.
 | B2 ✔ | Host `HAL.DLL`: PCR at `KIP0PCRADDRESS`, `KTRAP_FRAME` traps and `KiEoiHelper`, `KeUpdateSystemTime`, `KiDispatchInterrupt`, dispatch tables, interrupt objects, MDLs, contiguous memory, RTL bitmaps; private PIC/PIT/CMOS code removed. | Done: HAL phases 0 and 1 complete, clock and devices run through the HAL, boot test 26/26, `synctest` 27/27. |
 | B3 ✔ | Object manager (NT object header/type/directory layouts, types, namespace with symbolic links and parse hooks, system handle table, deferred deletion), standard directories and links, security stubs with a real `SeExports`, executive objects (event, semaphore, timer) and handle waits, counted-string RTL. | Done: `obtest` 31/31, boot test 29/29, export set still identical to ntoskrnl (1600 names, 218 implemented). |
 | B4 ✔ | I/O manager (driver/device/file objects, IRPs and completion, cancellation, StartIo, volume mounting, work items), PnP manager (HAL root, enumeration, `CriticalDeviceDatabase` matching, resources, interfaces, notifications), read-only registry over the loader's SYSTEM hive plus a volatile `HARDWARE` tree from the ARC configuration data, and the executive pieces the drivers need (ERESOURCE, lookaside lists, rundown protection, system threads, ...). | Done: `pci`, `pciide`, `atapi`, `disk`/`classpnp`, `partmgr`, `cdrom` (KMDF) and `mountmgr` run unmodified and read sectors from QEMU's CD and disk; `iotest` 25/25 (including a file system mount); boot test 38/38. Real file system mounts (`cdfs`, `fastfat`) need the cache manager and move to B7. |
-| B5 | Configuration manager proper: writable, persistent hives, `CurrentControlSet` as a link, registry notifications. | Drive letters (`mountmgr` stores them in `MountedDevices`); service keys written by drivers survive. |
+| B5 ✔ | Configuration manager proper: the SYSTEM hive copied into writable bins (`cmlib`), keys and values created, replaced and deleted (stable and volatile storage), `CurrentControlSet` as a volatile symbolic link key, `ZwNotifyChangeKey`, real `RtlWriteRegistryValue`/`RtlDeleteRegistryValue`, PnP recording in `Enum\<instance>` and `Control\Class\{guid}\NNNN`. | Done: `mountmgr` stores its database in `MountedDevices` and gives the volumes drive letters (`C:`, `D:`, the CD-ROM next); `regtest` 40/40; boot test 43/43; export set still identical to ntoskrnl (574 implemented). Writing dirty hive cells back to `SYSTEM` on disk needs a file system and moves to B7. |
 | B6 | Processes, user-mode address spaces, sections and image loading, system calls (`int 2e`/`sysenter`), `ntdll.dll`. | `smss.exe` starts. |
-| B7 | Paging, file cache (`Cc*`), memory-mapped files, file systems (`cdfs`, `fastfat`) and loading drivers from disk. | The live environment boots on qzkrnl. |
+| B7 | Paging, file cache (`Cc*`), memory-mapped files, file systems (`cdfs`, `fastfat`), loading drivers from disk, flushing registry hives to disk. | The live environment boots on qzkrnl. |
 | B8 | Default kernel; ntoskrnl retired. | |
 
 Each stage moves names from `qzkrnl.spec`'s stub section into `exports.spec`.

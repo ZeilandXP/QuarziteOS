@@ -21,6 +21,7 @@
 #include "qzio.h"
 #include <initguid.h>
 #include <wdmguid.h>
+#include <mountmgr.h>
 
 #define QZ_DN_REPORTED     0x0001
 #define QZ_DN_IDS          0x0002
@@ -30,6 +31,17 @@
 #define QZ_DN_NO_DRIVER    0x0020
 #define QZ_DN_RAW          0x0040
 #define QZ_DN_REENUMERATE  0x0080
+#define QZ_DN_RECORDED     0x0100
+
+/* Enum\...\Capabilities bits (cfgmgr32.h's CM_DEVCAP_*) */
+#define CM_DEVCAP_LOCKSUPPORTED      0x0001
+#define CM_DEVCAP_EJECTSUPPORTED     0x0002
+#define CM_DEVCAP_REMOVABLE          0x0004
+#define CM_DEVCAP_DOCKDEVICE         0x0008
+#define CM_DEVCAP_UNIQUEID           0x0010
+#define CM_DEVCAP_SILENTINSTALL      0x0020
+#define CM_DEVCAP_RAWDEVICEOK        0x0040
+#define CM_DEVCAP_SURPRISEREMOVALOK  0x0080
 
 typedef struct _QZ_DEVICE_NODE
 {
@@ -47,6 +59,7 @@ typedef struct _QZ_DEVICE_NODE
     PWSTR Description;
     PWSTR Location;
     WCHAR ClassGuid[40];
+    WCHAR DriverKey[48];              /* "{class guid}\NNNN" below Control\Class */
     PCM_RESOURCE_LIST BootResources;
     PCM_RESOURCE_LIST RawResources;
     PCM_RESOURCE_LIST TranslatedResources;
@@ -389,6 +402,121 @@ QzPnpFindService(PQZ_DEVICE_NODE Node)
     return FALSE;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Recording devices in the registry (Enum and Control\Class)              */
+/* ---------------------------------------------------------------------- */
+
+static NTSTATUS QzPnpOpenKey(PCWSTR Path, ACCESS_MASK DesiredAccess, PHANDLE Handle);
+
+static VOID
+QzPnpSetValue(HANDLE Key, PCWSTR Name, ULONG Type, const VOID *Data, ULONG Length)
+{
+    UNICODE_STRING ValueName;
+    RtlInitUnicodeString(&ValueName, Name);
+    ZwSetValueKey(Key, &ValueName, 0, Type, (PVOID)Data, Length);
+}
+
+static VOID
+QzPnpSetText(HANDLE Key, PCWSTR Name, PCWSTR Text)
+{
+    if (Text && *Text)
+        QzPnpSetValue(Key, Name, REG_SZ, Text, (ULONG)(wcslen(Text) + 1) * sizeof(WCHAR));
+}
+
+/* The device's software key: the Driver value already recorded for this
+   instance, or the first free Control\Class\{guid}\NNNN */
+static VOID
+QzPnpAssignDriverKey(PQZ_DEVICE_NODE Node, PCWSTR EnumPath)
+{
+    WCHAR Path[160];
+    ULONG Index;
+    HANDLE Key;
+
+    if (!Node->ClassGuid[0])
+        return;
+    if (NT_SUCCESS(QzCmReadValue(EnumPath, L"Driver", Node->DriverKey,
+                                 sizeof(Node->DriverKey) - sizeof(WCHAR), NULL, NULL)) &&
+        Node->DriverKey[0])
+        return;
+    for (Index = 0; Index < 10000; Index++)
+    {
+        UNICODE_STRING Name;
+        OBJECT_ATTRIBUTES Attributes;
+        ULONG Disposition = 0;
+
+        _snwprintf(Path, RTL_NUMBER_OF(Path), L"%sControl\\Class\\%s\\%04lu", QzControlSet,
+                   Node->ClassGuid, Index);
+        Path[RTL_NUMBER_OF(Path) - 1] = UNICODE_NULL;
+        RtlInitUnicodeString(&Name, Path);
+        InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                   NULL, NULL);
+        if (!NT_SUCCESS(ZwCreateKey(&Key, KEY_ALL_ACCESS, &Attributes, 0, NULL, 0, &Disposition)))
+            return;
+        if (Disposition == REG_CREATED_NEW_KEY)
+        {
+            QzPnpSetText(Key, L"DriverDesc", Node->Description);
+            ZwClose(Key);
+            _snwprintf(Node->DriverKey, RTL_NUMBER_OF(Node->DriverKey), L"%s\\%04lu",
+                       Node->ClassGuid, Index);
+            Node->DriverKey[RTL_NUMBER_OF(Node->DriverKey) - 1] = UNICODE_NULL;
+            return;
+        }
+        ZwClose(Key);
+    }
+}
+
+/* CurrentControlSet\Enum\<instance path>, as the NT PnP manager keeps it */
+static VOID
+QzPnpRecordNode(PQZ_DEVICE_NODE Node)
+{
+    WCHAR Path[320];
+    ULONG Capabilities = 0, ConfigFlags = 0;
+    HANDLE Key;
+
+    if ((Node->Flags & QZ_DN_RECORDED) || !Node->InstancePath.Length)
+        return;
+    Node->Flags |= QZ_DN_RECORDED;
+    _snwprintf(Path, RTL_NUMBER_OF(Path), L"%sEnum\\%wZ", QzControlSet, &Node->InstancePath);
+    Path[RTL_NUMBER_OF(Path) - 1] = UNICODE_NULL;
+    QzPnpAssignDriverKey(Node, Path);
+    if (!NT_SUCCESS(QzPnpOpenKey(Path, KEY_ALL_ACCESS, &Key)))
+        return;
+
+    if (Node->HardwareIds)
+        QzPnpSetValue(Key, L"HardwareID", REG_MULTI_SZ, Node->HardwareIds,
+                      QzPnpMultiSzBytes(Node->HardwareIds));
+    if (Node->CompatibleIds)
+        QzPnpSetValue(Key, L"CompatibleIDs", REG_MULTI_SZ, Node->CompatibleIds,
+                      QzPnpMultiSzBytes(Node->CompatibleIds));
+    QzPnpSetText(Key, L"DeviceDesc", Node->Description);
+    QzPnpSetText(Key, L"LocationInformation", Node->Location);
+    if (Node->ServiceName.Length)
+        QzPnpSetText(Key, L"Service", Node->ServiceName.Buffer);
+    QzPnpSetText(Key, L"ClassGUID", Node->ClassGuid);
+    QzPnpSetText(Key, L"Driver", Node->DriverKey);
+
+    if (Node->Capabilities.LockSupported)      Capabilities |= CM_DEVCAP_LOCKSUPPORTED;
+    if (Node->Capabilities.EjectSupported)     Capabilities |= CM_DEVCAP_EJECTSUPPORTED;
+    if (Node->Capabilities.Removable)          Capabilities |= CM_DEVCAP_REMOVABLE;
+    if (Node->Capabilities.DockDevice)         Capabilities |= CM_DEVCAP_DOCKDEVICE;
+    if (Node->Capabilities.UniqueID)           Capabilities |= CM_DEVCAP_UNIQUEID;
+    if (Node->Capabilities.SilentInstall)      Capabilities |= CM_DEVCAP_SILENTINSTALL;
+    if (Node->Capabilities.RawDeviceOK)        Capabilities |= CM_DEVCAP_RAWDEVICEOK;
+    if (Node->Capabilities.SurpriseRemovalOK)  Capabilities |= CM_DEVCAP_SURPRISEREMOVALOK;
+    QzPnpSetValue(Key, L"Capabilities", REG_DWORD, &Capabilities, sizeof(Capabilities));
+    if (Node->Capabilities.UINumber != (ULONG)-1)
+        QzPnpSetValue(Key, L"UINumber", REG_DWORD, &Node->Capabilities.UINumber, sizeof(ULONG));
+    {
+        UNICODE_STRING ConfigFlagsName = RTL_CONSTANT_STRING(L"ConfigFlags");
+        UCHAR Buffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG)];
+        ULONG Result;
+        if (!NT_SUCCESS(ZwQueryValueKey(Key, &ConfigFlagsName, KeyValuePartialInformation, Buffer,
+                                        sizeof(Buffer), &Result)))
+            QzPnpSetValue(Key, L"ConfigFlags", REG_DWORD, &ConfigFlags, sizeof(ConfigFlags));
+    }
+    ZwClose(Key);
+}
+
 /* Start one driver and call its AddDevice for this PDO */
 static NTSTATUS
 QzPnpAddDriver(PQZ_DEVICE_NODE Node, PCWSTR Service, BOOLEAN Function)
@@ -444,7 +572,10 @@ QzPnpAddFilters(PQZ_DEVICE_NODE Node, PCWSTR ValueName)
 static VOID
 QzPnpAddDrivers(PQZ_DEVICE_NODE Node)
 {
-    if (!QzPnpFindService(Node))
+    BOOLEAN Found = QzPnpFindService(Node);
+
+    QzPnpRecordNode(Node);
+    if (!Found)
     {
         if (Node->Capabilities.RawDeviceOK)
         {
@@ -1196,8 +1327,11 @@ IoOpenDeviceRegistryKey(IN PDEVICE_OBJECT DeviceObject,
     if (!Node || !Node->InstancePath.Length)
         return STATUS_INVALID_DEVICE_REQUEST;
     if (DevInstKeyType & PLUGPLAY_REGKEY_DRIVER)
-        _snwprintf(Path, RTL_NUMBER_OF(Path), L"%sControl\\Class\\%s\\0000", QzControlSet,
-                   Node->ClassGuid[0] ? Node->ClassGuid : L"{00000000-0000-0000-0000-000000000000}");
+    {
+        if (!Node->DriverKey[0])
+            return STATUS_OBJECT_NAME_NOT_FOUND;   /* no class, no software key */
+        _snwprintf(Path, RTL_NUMBER_OF(Path), L"%sControl\\Class\\%s", QzControlSet, Node->DriverKey);
+    }
     else
         _snwprintf(Path, RTL_NUMBER_OF(Path), L"%sEnum\\%wZ\\Device Parameters", QzControlSet,
                    &Node->InstancePath);
@@ -1665,6 +1799,45 @@ QzPnpInit(VOID)
 #undef HalInitPnpDriver
 
 /* Bring up the device tree: the HAL's PnP driver, then everything below */
+/* What the session manager does once the volumes are up: ask the mount
+   manager to give every volume without one a drive letter */
+static VOID
+QzPnpAssignDriveLetters(VOID)
+{
+    UNICODE_STRING Name = RTL_CONSTANT_STRING(MOUNTMGR_DEVICE_NAME);
+    PFILE_OBJECT FileObject;
+    PDEVICE_OBJECT Device;
+    IO_STATUS_BLOCK IoStatus;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    Status = IoGetDeviceObjectPointer(&Name, FILE_READ_ATTRIBUTES, &FileObject, &Device);
+    if (!NT_SUCCESS(Status))
+    {
+        DbgPrint(QZ_KERNEL_NAME ": PnP: no mount manager (0x%08lx)\n", Status);
+        return;
+    }
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    Irp = IoBuildDeviceIoControlRequest(IOCTL_MOUNTMGR_AUTO_DL_ASSIGNMENTS, Device, NULL, 0, NULL, 0,
+                                        FALSE, &Event, &IoStatus);
+    if (Irp)
+    {
+        Status = IoCallDriver(Device, Irp);
+        if (Status == STATUS_PENDING)
+        {
+            KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+            Status = IoStatus.Status;
+        }
+    }
+    else
+    {
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    }
+    DbgPrint(QZ_KERNEL_NAME ": PnP: drive letter assignment 0x%08lx\n", Status);
+    ObDereferenceObject(FileObject);
+}
+
 NTSTATUS
 QzPnpStart(VOID)
 {
@@ -1693,7 +1866,8 @@ QzPnpStart(VOID)
     {
         UNICODE_STRING MountMgr = RTL_CONSTANT_STRING(L"mountmgr");
         PDRIVER_OBJECT Driver;
-        QzIoStartBootDriver(&MountMgr, &Driver);
+        if (NT_SUCCESS(QzIoStartBootDriver(&MountMgr, &Driver)))
+            QzPnpAssignDriveLetters();
     }
 
     QzIoCallReinitRoutines(TRUE);

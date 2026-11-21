@@ -658,3 +658,6 @@
 @ stdcall IoSetDevicePropertyData(ptr ptr long long long long ptr)
 @ stdcall PsIsThreadTerminating(ptr)
 @ stdcall ZwPowerInformation(long ptr long ptr long)
+
+# Registry notifications (B5)
+@ stdcall ZwNotifyChangeKey(ptr ptr ptr ptr ptr long long ptr long long)

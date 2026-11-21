@@ -261,6 +261,9 @@ def run_qzkrnl(iso, out):
                 ("iotest", [r"iotest: \d+ passed, 0 failed"]),
                 ("devices", [r"\\Device\\QzTestDisk0\s+\\Driver\\QzTestDisk",
                              r"\\FileSystem\\QzTestFs", r"\(mounted\)"]),
+                # Stage B5: the writable SYSTEM hive
+                ("regtest", [r"regtest: \d+ passed, 0 failed"]),
+                ("reg", [r"\[ControlSet001\]", r"\[CurrentControlSet\]"]),
                 ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0, HAL KeGetCurrentIrql = 0\), \d+ DPCs retired"]),
                 # Stage B4: the real ReactOS boot drivers through qzkrnl's PnP manager
                 ("pnp", [r"PnP: 0x00000000, \d+ device node\(s\), \d+ started",
@@ -280,7 +283,15 @@ def run_qzkrnl(iso, out):
                              r"29 boot drivers: \d+ started"]),
                 ("obj \\GLOBAL??", [r"PhysicalDrive0\s+SymbolicLink\s+-> \\Device\\Harddisk0\\DR0",
                                      r"Volume\{[0-9A-F-]+\}\s+SymbolicLink\s+-> \\Device\\HarddiskVolume1",
-                                     r"CdRom0\s+SymbolicLink"]),
+                                     r"CdRom0\s+SymbolicLink",
+                                     # Stage B5: drive letters from the mount manager
+                                     r"C:\s+SymbolicLink\s+-> \\Device\\HarddiskVolume1",
+                                     r"[D-Z]:\s+SymbolicLink\s+-> \\Device\\CdRom0"]),
+                ("reg \\Registry\\Machine\\System\\MountedDevices",
+                 [r"\\DosDevices\\C:\s+type 3", r"\\\?\?\\Volume\{[0-9A-F-]+\}\s+type 3"]),
+                ("reg \\Registry\\Machine\\System\\CurrentControlSet\\Enum\\PCI",
+                 [r"\[VEN_8086&DEV_7010\S*\]"]),
+                ("regtest", [r"regtest: \d+ passed, 0 failed"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
                          r"[1-9]\d* interrupt objects connected"]),
@@ -288,7 +299,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "pnp") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest", "regtest", "pnp") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)

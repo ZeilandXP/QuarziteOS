@@ -1,25 +1,29 @@
 /*
  * PROJECT:     QuarziteOS Kernel (qzkrnl)
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
- * PURPOSE:     Registry: the loader's SYSTEM hive (read-only) and the
- *              volatile in-memory keys around it
+ * PURPOSE:     Registry: the loader's SYSTEM hive, writable in memory, and
+ *              the volatile in-memory keys around it
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  *
- * The configuration manager proper is stage B5. Stage B4 needs a registry
- * (the PnP manager matches devices to drivers through
- * CriticalDeviceDatabase, drivers and the HAL read their keys), so:
- *   \REGISTRY\MACHINE\SYSTEM     the SYSTEM hive FreeLoader loaded, read in
- *                                place with ReactOS's hive library (cmlib);
- *                                CurrentControlSet resolves through
- *                                Select\Current. Writes are dropped.
+ * Stage B5, the configuration manager proper:
+ *   \REGISTRY\MACHINE\SYSTEM     the SYSTEM hive FreeLoader loaded, copied
+ *                                into bins of its own (cmlib HINIT_MEMORY)
+ *                                so keys and values can be created, changed
+ *                                and deleted. Stable cells are marked dirty;
+ *                                writing them back to SYSTEM on disk needs a
+ *                                file system (stage B7). Volatile keys
+ *                                (REG_OPTION_VOLATILE) live in the hive's
+ *                                volatile storage.
+ *   SYSTEM\CurrentControlSet     a volatile symbolic link key, created at
+ *                                boot, pointing at the ControlSetNNN that
+ *                                Select\Current names.
  *   \REGISTRY\MACHINE\HARDWARE   volatile and writable, as on NT; its
  *                                DESCRIPTION subtree is built from the
  *                                loader's ARC configuration tree (this is
  *                                where the HAL finds the PCI BIOS).
  *   everything else              volatile in-memory keys.
- * A key created below the SYSTEM hive cannot be stored there yet; it comes
- * back as a detached in-memory key, so drivers recording state keep
- * working until B5 makes the hive writable.
+ * ZwNotifyChangeKey watches a key (or a subtree) for name, value and
+ * attribute changes; an event or a work item signals the caller.
  */
 
 #include "qzio.h"
@@ -57,22 +61,27 @@ typedef struct _QZ_MEM_KEY
 typedef struct _QZ_KEY
 {
     BOOLEAN IsCell;
+    BOOLEAN Deleted;                   /* the key went away under this handle */
     HCELL_INDEX Cell;
     PQZ_MEM_KEY Mem;
+    LIST_ENTRY Link;                   /* QzOpenKeys */
 } QZ_KEY, *PQZ_KEY;
+
+static LIST_ENTRY QzOpenKeys = { &QzOpenKeys, &QzOpenKeys };
 
 typedef struct _QZ_KEY_PARSE
 {
     CSHORT Type;                       /* 'K' */
     BOOLEAN Create;
+    BOOLEAN Volatile;                  /* REG_OPTION_VOLATILE */
     ULONG Disposition;
 } QZ_KEY_PARSE, *PQZ_KEY_PARSE;
 
 POBJECT_TYPE CmKeyObjectType;
-static HHIVE QzSystemHive;
+static PCMHIVE QzSystemCmHive;
+#define QzHive (&QzSystemCmHive->Hive)
 static BOOLEAN QzHiveReady;
 static HCELL_INDEX QzControlSetCell = HCELL_NIL;
-static ULONG QzRegistryWritesDropped;
 static PQZ_MEM_KEY QzRegistryRoot, QzHardwareKey;
 static FAST_MUTEX QzRegistryLock;
 
@@ -109,12 +118,6 @@ IoSetThreadHardErrorMode(IN BOOLEAN HardErrorEnabled)
 {
     UNREFERENCED_PARAMETER(HardErrorEnabled);
     return TRUE;
-}
-
-ULONG
-QzCmDroppedWrites(VOID)
-{
-    return QzRegistryWritesDropped;
 }
 
 static BOOLEAN
@@ -236,7 +239,7 @@ QzMemSetValueW(PQZ_MEM_KEY Key, PCWSTR Name, ULONG Type, const VOID *Data, ULONG
 static PCM_KEY_NODE
 QzCmNode(HCELL_INDEX Cell)
 {
-    return (PCM_KEY_NODE)HvGetCell(&QzSystemHive, Cell);
+    return (PCM_KEY_NODE)HvGetCell(QzHive, Cell);
 }
 
 static ULONG
@@ -273,8 +276,8 @@ static PCM_KEY_VALUE
 QzCmFindValue(HCELL_INDEX KeyCell, PCUNICODE_STRING Name)
 {
     PCM_KEY_NODE Node = QzCmNode(KeyCell);
-    HCELL_INDEX Cell = CmpFindValueByName(&QzSystemHive, Node, (PUNICODE_STRING)Name);
-    return (Cell == HCELL_NIL) ? NULL : (PCM_KEY_VALUE)HvGetCell(&QzSystemHive, Cell);
+    HCELL_INDEX Cell = CmpFindValueByName(QzHive, Node, (PUNICODE_STRING)Name);
+    return (Cell == HCELL_NIL) ? NULL : (PCM_KEY_VALUE)HvGetCell(QzHive, Cell);
 }
 
 static PCM_KEY_VALUE
@@ -285,20 +288,20 @@ QzCmValueByIndex(HCELL_INDEX KeyCell, ULONG Index)
 
     if (Index >= Node->ValueList.Count)
         return NULL;
-    List = (PHCELL_INDEX)HvGetCell(&QzSystemHive, Node->ValueList.List);
-    return (PCM_KEY_VALUE)HvGetCell(&QzSystemHive, List[Index]);
+    List = (PHCELL_INDEX)HvGetCell(QzHive, Node->ValueList.List);
+    return (PCM_KEY_VALUE)HvGetCell(QzHive, List[Index]);
 }
 
 static PVOID
 QzCmValueData(PCM_KEY_VALUE Value, PULONG Length)
 {
-    return CmpValueToData(&QzSystemHive, Value, Length);
+    return CmpValueToData(QzHive, Value, Length);
 }
 
 static HCELL_INDEX
 QzCmSubKey(HCELL_INDEX Parent, PCUNICODE_STRING Name)
 {
-    return CmpFindSubKeyByName(&QzSystemHive, QzCmNode(Parent), (PUNICODE_STRING)Name);
+    return CmpFindSubKeyByName(QzHive, QzCmNode(Parent), (PUNICODE_STRING)Name);
 }
 
 /* ControlSetNNN named by Select\Current */
@@ -306,7 +309,7 @@ static HCELL_INDEX
 QzCmFindControlSet(VOID)
 {
     UNICODE_STRING Select = RTL_CONSTANT_STRING(L"Select"), Current = RTL_CONSTANT_STRING(L"Current");
-    HCELL_INDEX SelectCell = QzCmSubKey(QzSystemHive.BaseBlock->RootCell, &Select);
+    HCELL_INDEX SelectCell = QzCmSubKey(QzHive->BaseBlock->RootCell, &Select);
     ULONG Number = 1, Length;
     WCHAR Buffer[16];
     UNICODE_STRING Name;
@@ -321,7 +324,342 @@ QzCmFindControlSet(VOID)
     Name.MaximumLength = sizeof(Buffer);
     Name.Length = (USHORT)(_snwprintf(Buffer, RTL_NUMBER_OF(Buffer), L"ControlSet%03lu", Number) *
                            sizeof(WCHAR));
-    return QzCmSubKey(QzSystemHive.BaseBlock->RootCell, &Name);
+    return QzCmSubKey(QzHive->BaseBlock->RootCell, &Name);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Writing the SYSTEM hive (in memory; registry lock held)                 */
+/* ---------------------------------------------------------------------- */
+
+static VOID QzCmReportChange(BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_MEM_KEY Mem, ULONG Filter);
+
+static NTSTATUS
+QzCmCreateCellKey(HCELL_INDEX Parent, PCUNICODE_STRING Name, BOOLEAN Volatile, USHORT Flags,
+                  PHCELL_INDEX Result)
+{
+    HSTORAGE_TYPE Storage = (Volatile || HvGetCellType(Parent) == Volatile) ? Volatile : Stable;
+    ULONG NameSize = CmpNameSize(QzHive, (PUNICODE_STRING)Name);
+    PCM_KEY_NODE Node, ParentNode;
+    HCELL_INDEX Cell;
+
+    Cell = HvAllocateCell(QzHive, FIELD_OFFSET(CM_KEY_NODE, Name) + NameSize, Storage, Parent);
+    if (Cell == HCELL_NIL)
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    ParentNode = QzCmNode(Parent);
+    Node = QzCmNode(Cell);
+    RtlZeroMemory(Node, FIELD_OFFSET(CM_KEY_NODE, Name));
+    Node->Signature = CM_KEY_NODE_SIGNATURE;
+    Node->Flags = Flags | ((Storage == Volatile) ? KEY_IS_VOLATILE : 0) |
+                  ((NameSize < Name->Length) ? KEY_COMP_NAME : 0);
+    KeQuerySystemTime(&Node->LastWriteTime);
+    Node->Parent = Parent;
+    Node->SubKeyLists[Stable] = Node->SubKeyLists[Volatile] = HCELL_NIL;
+    Node->ValueList.Count = 0;
+    Node->ValueList.List = HCELL_NIL;
+    Node->Class = HCELL_NIL;
+    Node->NameLength = (USHORT)CmpCopyName(QzHive, Node->Name, (PUNICODE_STRING)Name);
+
+    /* Keys share their parent's security descriptor cell */
+    Node->Security = ParentNode->Security;
+    if (Node->Security != HCELL_NIL)
+    {
+        PCM_KEY_SECURITY Security = (PCM_KEY_SECURITY)HvGetCell(QzHive, Node->Security);
+        Security->ReferenceCount++;
+        HvMarkCellDirty(QzHive, Node->Security, FALSE);
+    }
+
+    if (!CmpAddSubKey(QzHive, Parent, Cell))
+    {
+        HvFreeCell(QzHive, Cell);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    ParentNode = QzCmNode(Parent);
+    if (ParentNode->MaxNameLen < Name->Length)
+        ParentNode->MaxNameLen = Name->Length;
+    KeQuerySystemTime(&ParentNode->LastWriteTime);
+    HvMarkCellDirty(QzHive, Parent, FALSE);
+    *Result = Cell;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+QzCmSetCellValue(HCELL_INDEX KeyCell, PCUNICODE_STRING Name, ULONG Type, PVOID Data, ULONG Length)
+{
+    HSTORAGE_TYPE Storage = HvGetCellType(KeyCell);
+    PCM_KEY_NODE Node = QzCmNode(KeyCell);
+    HCELL_INDEX ValueCell = HCELL_NIL, DataCell = HCELL_NIL;
+    PCM_KEY_VALUE Value;
+    ULONG Index;
+    NTSTATUS Status;
+
+    if (Length > CM_KEY_VALUE_BIG)
+        return STATUS_INSUFFICIENT_RESOURCES;   /* big data cells: later */
+
+    if (!CmpFindNameInList(QzHive, &Node->ValueList, (PUNICODE_STRING)Name, &Index, &ValueCell))
+        return STATUS_INSUFFICIENT_RESOURCES;
+
+    if (ValueCell != HCELL_NIL)
+    {
+        /* Replace the data of an existing value */
+        Value = (PCM_KEY_VALUE)HvGetCell(QzHive, ValueCell);
+        CmpFreeValueData(QzHive, Value->Data, Value->DataLength);
+        HvMarkCellDirty(QzHive, ValueCell, FALSE);
+    }
+    else
+    {
+        ULONG NameSize = CmpNameSize(QzHive, (PUNICODE_STRING)Name);
+        ValueCell = HvAllocateCell(QzHive, FIELD_OFFSET(CM_KEY_VALUE, Name) + NameSize, Storage, KeyCell);
+        if (ValueCell == HCELL_NIL)
+            return STATUS_INSUFFICIENT_RESOURCES;
+        Value = (PCM_KEY_VALUE)HvGetCell(QzHive, ValueCell);
+        RtlZeroMemory(Value, FIELD_OFFSET(CM_KEY_VALUE, Name));
+        Value->Signature = CM_KEY_VALUE_SIGNATURE;
+        Value->NameLength = (USHORT)CmpCopyName(QzHive, Value->Name, (PUNICODE_STRING)Name);
+        Value->Flags = (NameSize < Name->Length) ? VALUE_COMP_NAME : 0;
+        Node = QzCmNode(KeyCell);
+        Status = CmpAddValueToList(QzHive, ValueCell, Node->ValueList.Count, Storage, &Node->ValueList);
+        if (!NT_SUCCESS(Status))
+        {
+            HvFreeCell(QzHive, ValueCell);
+            return Status;
+        }
+    }
+
+    /* Up to four bytes live in the value cell itself */
+    Value = (PCM_KEY_VALUE)HvGetCell(QzHive, ValueCell);
+    Value->Type = Type;
+    if (Length <= CM_KEY_VALUE_SMALL)
+    {
+        Value->Data = 0;
+        if (Length)
+            RtlCopyMemory(&Value->Data, Data, Length);
+        Value->DataLength = Length | CM_KEY_VALUE_SPECIAL_SIZE;
+    }
+    else
+    {
+        Status = CmpSetValueDataNew(QzHive, Data, Length, Storage, ValueCell, &DataCell);
+        if (!NT_SUCCESS(Status))
+        {
+            Value->Data = 0;
+            Value->DataLength = CM_KEY_VALUE_SPECIAL_SIZE;
+            return Status;
+        }
+        Value = (PCM_KEY_VALUE)HvGetCell(QzHive, ValueCell);
+        Value->Data = DataCell;
+        Value->DataLength = Length;
+    }
+    HvMarkCellDirty(QzHive, ValueCell, FALSE);
+
+    Node = QzCmNode(KeyCell);
+    if (Node->MaxValueNameLen < Name->Length)
+        Node->MaxValueNameLen = Name->Length;
+    if (Node->MaxValueDataLen < Length)
+        Node->MaxValueDataLen = Length;
+    KeQuerySystemTime(&Node->LastWriteTime);
+    HvMarkCellDirty(QzHive, KeyCell, FALSE);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+QzCmDeleteCellValue(HCELL_INDEX KeyCell, PCUNICODE_STRING Name)
+{
+    PCM_KEY_NODE Node = QzCmNode(KeyCell);
+    HCELL_INDEX ValueCell = HCELL_NIL;
+    ULONG Index;
+    NTSTATUS Status;
+
+    if (!CmpFindNameInList(QzHive, &Node->ValueList, (PUNICODE_STRING)Name, &Index, &ValueCell) ||
+        ValueCell == HCELL_NIL)
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    Status = CmpRemoveValueFromList(QzHive, Index, &Node->ValueList);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    CmpFreeValue(QzHive, ValueCell);
+    Node = QzCmNode(KeyCell);
+    KeQuerySystemTime(&Node->LastWriteTime);
+    HvMarkCellDirty(QzHive, KeyCell, FALSE);
+    return STATUS_SUCCESS;
+}
+
+/* A key without subkeys; its handles see STATUS_KEY_DELETED afterwards */
+static NTSTATUS
+QzCmDeleteCellKey(HCELL_INDEX Cell)
+{
+    PCM_KEY_NODE Node = QzCmNode(Cell);
+    PLIST_ENTRY Entry;
+    NTSTATUS Status;
+
+    if (Cell == QzHive->BaseBlock->RootCell)
+        return STATUS_CANNOT_DELETE;
+    if (Node->SubKeyCounts[Stable] || Node->SubKeyCounts[Volatile])
+        return STATUS_CANNOT_DELETE;
+    Status = CmpFreeKeyByCell(QzHive, Cell, TRUE);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    for (Entry = QzOpenKeys.Flink; Entry != &QzOpenKeys; Entry = Entry->Flink)
+    {
+        PQZ_KEY Key = CONTAINING_RECORD(Entry, QZ_KEY, Link);
+        if (Key->IsCell && Key->Cell == Cell)
+            Key->Deleted = TRUE;
+    }
+    if (Cell == QzControlSetCell)
+        QzControlSetCell = HCELL_NIL;
+    return STATUS_SUCCESS;
+}
+
+/* SYSTEM\CurrentControlSet: a volatile symbolic link to ControlSetNNN */
+static VOID
+QzCmCreateCurrentControlSetLink(VOID)
+{
+    UNICODE_STRING Ccs = RTL_CONSTANT_STRING(L"CurrentControlSet");
+    UNICODE_STRING LinkValue = RTL_CONSTANT_STRING(L"SymbolicLinkValue");
+    PCM_KEY_NODE Target;
+    HCELL_INDEX Link;
+    WCHAR Buffer[64], Name[32];
+    ULONG Chars, NameChars;
+
+    if (QzControlSetCell == HCELL_NIL ||
+        QzCmSubKey(QzHive->BaseBlock->RootCell, &Ccs) != HCELL_NIL)
+        return;
+    Target = QzCmNode(QzControlSetCell);
+    NameChars = min(QzCmNodeName(Target, Name, sizeof(Name) - sizeof(WCHAR)),
+                    sizeof(Name) - sizeof(WCHAR)) / sizeof(WCHAR);
+    Name[NameChars] = UNICODE_NULL;
+    Chars = _snwprintf(Buffer, RTL_NUMBER_OF(Buffer), L"\\Registry\\Machine\\System\\%ls", Name);
+    if (!NT_SUCCESS(QzCmCreateCellKey(QzHive->BaseBlock->RootCell, &Ccs, TRUE, KEY_SYM_LINK, &Link)))
+        return;
+    QzCmSetCellValue(Link, &LinkValue, REG_LINK, Buffer, Chars * sizeof(WCHAR));
+}
+
+/* ---------------------------------------------------------------------- */
+/* Change notification (ZwNotifyChangeKey); registry lock held            */
+/* ---------------------------------------------------------------------- */
+
+typedef struct _QZ_NOTIFY_BLOCK
+{
+    LIST_ENTRY Link;
+    PQZ_KEY Key;                       /* watched key object (not referenced) */
+    ULONG Filter;
+    BOOLEAN WatchTree;
+    PKEVENT Event;
+    BOOLEAN EventReferenced;
+    PWORK_QUEUE_ITEM WorkItem;         /* kernel callers may ask for a work item */
+    WORK_QUEUE_TYPE WorkQueue;
+    PIO_STATUS_BLOCK IoStatus;
+} QZ_NOTIFY_BLOCK, *PQZ_NOTIFY_BLOCK;
+
+static LIST_ENTRY QzNotifyBlocks = { &QzNotifyBlocks, &QzNotifyBlocks };
+static ULONG QzNotifyFired;
+
+static VOID
+QzCmCompleteNotify(PQZ_NOTIFY_BLOCK Block, NTSTATUS Status)
+{
+    RemoveEntryList(&Block->Link);
+    if (Block->IoStatus)
+    {
+        Block->IoStatus->Status = Status;
+        Block->IoStatus->Information = 0;
+    }
+    if (Block->Event)
+    {
+        KeSetEvent(Block->Event, IO_NO_INCREMENT, FALSE);
+        if (Block->EventReferenced)
+            ObDereferenceObject(Block->Event);
+    }
+    if (Block->WorkItem)
+        ExQueueWorkItem(Block->WorkItem, Block->WorkQueue);
+    QzNotifyFired++;
+    ExFreePoolWithTag(Block, QZ_CM_TAG);
+}
+
+/* Is the key at (IsCell, Cell, Mem) the watched key, or below it? */
+static BOOLEAN
+QzCmNotifyMatches(PQZ_NOTIFY_BLOCK Block, BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_MEM_KEY Mem)
+{
+    ULONG Depth = 0;
+
+    if (Block->Key->IsCell != IsCell)
+        return FALSE;
+    if (IsCell)
+    {
+        while (Cell != HCELL_NIL && Depth < 64)
+        {
+            if (Cell == Block->Key->Cell)
+                return Depth == 0 || Block->WatchTree;
+            if (Cell == QzHive->BaseBlock->RootCell)
+                break;
+            Cell = QzCmNode(Cell)->Parent;
+            Depth++;
+        }
+    }
+    else
+    {
+        for (; Mem && Depth < 64; Mem = Mem->Parent, Depth++)
+            if (Mem == Block->Key->Mem)
+                return Depth == 0 || Block->WatchTree;
+    }
+    return FALSE;
+}
+
+static VOID
+QzCmReportChange(BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_MEM_KEY Mem, ULONG Filter)
+{
+    PLIST_ENTRY Entry, Next;
+
+    for (Entry = QzNotifyBlocks.Flink; Entry != &QzNotifyBlocks; Entry = Next)
+    {
+        PQZ_NOTIFY_BLOCK Block = CONTAINING_RECORD(Entry, QZ_NOTIFY_BLOCK, Link);
+        Next = Entry->Flink;
+        if ((Block->Filter & Filter) && QzCmNotifyMatches(Block, IsCell, Cell, Mem))
+            QzCmCompleteNotify(Block, STATUS_NOTIFY_ENUM_DIR);
+    }
+}
+
+/* The watched key's last handle closed (or the object died) */
+static VOID
+QzCmCancelNotifications(PQZ_KEY Key)
+{
+    PLIST_ENTRY Entry, Next;
+
+    ExAcquireFastMutex(&QzRegistryLock);
+    for (Entry = QzNotifyBlocks.Flink; Entry != &QzNotifyBlocks; Entry = Next)
+    {
+        PQZ_NOTIFY_BLOCK Block = CONTAINING_RECORD(Entry, QZ_NOTIFY_BLOCK, Link);
+        Next = Entry->Flink;
+        if (Block->Key == Key)
+            QzCmCompleteNotify(Block, STATUS_NOTIFY_CLEANUP);
+    }
+    ExReleaseFastMutex(&QzRegistryLock);
+}
+
+static VOID NTAPI
+QzCmCloseKey(PEPROCESS Process, PVOID Object, ACCESS_MASK GrantedAccess,
+             ULONG ProcessHandleCount, ULONG SystemHandleCount)
+{
+    UNREFERENCED_PARAMETER(Process);
+    UNREFERENCED_PARAMETER(GrantedAccess);
+    UNREFERENCED_PARAMETER(ProcessHandleCount);
+    if (SystemHandleCount == 1)
+        QzCmCancelNotifications(Object);
+}
+
+static VOID NTAPI
+QzCmDeleteKey(PVOID Object)
+{
+    PQZ_KEY Key = Object;
+    QzCmCancelNotifications(Key);
+    ExAcquireFastMutex(&QzRegistryLock);
+    if (Key->Link.Flink)
+        RemoveEntryList(&Key->Link);
+    ExReleaseFastMutex(&QzRegistryLock);
+}
+
+ULONG
+QzCmNotificationsFired(VOID)
+{
+    return QzNotifyFired;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -337,8 +675,12 @@ QzCmCreateKeyObject(BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_MEM_KEY Mem, PQZ_KEY *
     if (!NT_SUCCESS(Status))
         return Status;
     Key->IsCell = IsCell;
+    Key->Deleted = FALSE;
     Key->Cell = Cell;
     Key->Mem = Mem;
+    ExAcquireFastMutex(&QzRegistryLock);
+    InsertTailList(&QzOpenKeys, &Key->Link);
+    ExReleaseFastMutex(&QzRegistryLock);
     *Result = Key;
     return STATUS_SUCCESS;
 }
@@ -362,7 +704,7 @@ QzCmFollowLink(HCELL_INDEX Cell)
         return HCELL_NIL;
     Inner.Buffer = Target.Buffer + RTL_NUMBER_OF(Prefix) - 1;
     Inner.Length = Inner.MaximumLength = Target.Length - (sizeof(Prefix) - sizeof(WCHAR));
-    return QzCmSubKey(QzSystemHive.BaseBlock->RootCell, &Inner);
+    return QzCmSubKey(QzHive->BaseBlock->RootCell, &Inner);
 }
 
 static NTSTATUS NTAPI
@@ -389,6 +731,8 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
     *Object = NULL;
     if (!Parse || Parse->Type != 'K')
         return STATUS_OBJECT_TYPE_MISMATCH;
+    if (Start->Deleted)
+        return STATUS_KEY_DELETED;
     Parse->Disposition = REG_OPENED_EXISTING_KEY;
 
     ExAcquireFastMutex(&QzRegistryLock);
@@ -398,7 +742,7 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
         if (!IsCell && Mem && Mem->MountsSystemHive && QzHiveReady)
         {
             IsCell = TRUE;
-            Cell = QzSystemHive.BaseBlock->RootCell;
+            Cell = QzHive->BaseBlock->RootCell;
         }
 
         while (Remaining.Length && Remaining.Buffer[0] == L'\\')
@@ -421,7 +765,7 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
         {
             UNICODE_STRING Ccs = RTL_CONSTANT_STRING(L"CurrentControlSet");
             HCELL_INDEX Next = QzCmSubKey(Cell, &Component);
-            if (Next == HCELL_NIL && Cell == QzSystemHive.BaseBlock->RootCell &&
+            if (Next == HCELL_NIL && Cell == QzHive->BaseBlock->RootCell &&
                 RtlEqualUnicodeString(&Component, &Ccs, TRUE))
                 Next = QzControlSetCell;
             if (Next != HCELL_NIL && (QzCmNode(Next)->Flags & KEY_SYM_LINK))
@@ -436,15 +780,21 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
                 ExReleaseFastMutex(&QzRegistryLock);
                 return STATUS_OBJECT_NAME_NOT_FOUND;
             }
-            /* The hive cannot take new keys yet: detached from here on */
-            IsCell = FALSE;
-            Mem = QzMemCreateKey(NULL, Component.Buffer, Component.Length);
-            Parse->Disposition = REG_CREATED_NEW_KEY;
-            if (!Mem)
+            /* A new key in the hive; below a volatile key only volatile ones */
+            if (!Parse->Volatile && HvGetCellType(Cell) == Volatile)
             {
                 ExReleaseFastMutex(&QzRegistryLock);
-                return STATUS_INSUFFICIENT_RESOURCES;
+                return STATUS_CHILD_MUST_BE_VOLATILE;
             }
+            Status = QzCmCreateCellKey(Cell, &Component, Parse->Volatile, 0, &Next);
+            if (!NT_SUCCESS(Status))
+            {
+                ExReleaseFastMutex(&QzRegistryLock);
+                return Status;
+            }
+            QzCmReportChange(TRUE, Cell, NULL, REG_NOTIFY_CHANGE_NAME);
+            Parse->Disposition = REG_CREATED_NEW_KEY;
+            Cell = Next;
             continue;
         }
 
@@ -458,6 +808,7 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
                     return STATUS_OBJECT_NAME_NOT_FOUND;
                 }
                 Next = QzMemCreateKey(Mem, Component.Buffer, Component.Length);
+                QzCmReportChange(FALSE, HCELL_NIL, Mem, REG_NOTIFY_CHANGE_NAME);
                 Parse->Disposition = REG_CREATED_NEW_KEY;
                 if (!Next)
                 {
@@ -480,7 +831,7 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
 
 static NTSTATUS
 QzCmOpen(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
-         BOOLEAN Create, PULONG Disposition)
+         BOOLEAN Create, ULONG CreateOptions, PULONG Disposition)
 {
     QZ_KEY_PARSE Parse;
     OBJECT_ATTRIBUTES Attributes = *ObjectAttributes;
@@ -488,6 +839,7 @@ QzCmOpen(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES Object
 
     Parse.Type = 'K';
     Parse.Create = Create;
+    Parse.Volatile = (CreateOptions & REG_OPTION_VOLATILE) != 0;
     Parse.Disposition = REG_OPENED_EXISTING_KEY;
     Attributes.Attributes |= OBJ_CASE_INSENSITIVE;
 
@@ -523,7 +875,7 @@ NTSTATUS
 NTAPI
 ZwOpenKey(OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess, IN POBJECT_ATTRIBUTES ObjectAttributes)
 {
-    return QzCmOpen(KeyHandle, DesiredAccess, ObjectAttributes, FALSE, NULL);
+    return QzCmOpen(KeyHandle, DesiredAccess, ObjectAttributes, FALSE, 0, NULL);
 }
 
 NTSTATUS
@@ -551,8 +903,7 @@ ZwCreateKey(OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess,
 {
     UNREFERENCED_PARAMETER(TitleIndex);
     UNREFERENCED_PARAMETER(Class);
-    UNREFERENCED_PARAMETER(CreateOptions);
-    return QzCmOpen(KeyHandle, DesiredAccess, ObjectAttributes, TRUE, Disposition);
+    return QzCmOpen(KeyHandle, DesiredAccess, ObjectAttributes, TRUE, CreateOptions, Disposition);
 }
 
 NTSTATUS
@@ -569,7 +920,14 @@ NtCreateKey(OUT PHANDLE KeyHandle, IN ACCESS_MASK DesiredAccess,
 static NTSTATUS
 QzCmReferenceKey(HANDLE KeyHandle, PQZ_KEY *Key)
 {
-    return ObReferenceObjectByHandle(KeyHandle, 0, CmKeyObjectType, KernelMode, (PVOID *)Key, NULL);
+    NTSTATUS Status = ObReferenceObjectByHandle(KeyHandle, 0, CmKeyObjectType, KernelMode,
+                                                (PVOID *)Key, NULL);
+    if (NT_SUCCESS(Status) && (*Key)->Deleted)
+    {
+        ObDereferenceObject(*Key);
+        return STATUS_KEY_DELETED;
+    }
+    return Status;
 }
 
 /* Everything the KEY_*_INFORMATION classes report */
@@ -723,7 +1081,7 @@ ZwEnumerateKey(IN HANDLE KeyHandle, IN ULONG Index, IN KEY_INFORMATION_CLASS Key
     ExAcquireFastMutex(&QzRegistryLock);
     if (Key->IsCell)
     {
-        HCELL_INDEX Child = CmpFindSubKeyByNumber(&QzSystemHive, QzCmNode(Key->Cell), Index);
+        HCELL_INDEX Child = CmpFindSubKeyByNumber(QzHive, QzCmNode(Key->Cell), Index);
         if (Child != HCELL_NIL)
         {
             QzCmGetFacts(TRUE, Child, NULL, &Facts);
@@ -911,18 +1269,14 @@ ZwSetValueKey(IN HANDLE KeyHandle, IN PUNICODE_STRING ValueName, IN ULONG TitleI
     UNREFERENCED_PARAMETER(TitleIndex);
     if (!NT_SUCCESS(Status))
         return Status;
+    ExAcquireFastMutex(&QzRegistryLock);
     if (Key->IsCell)
-    {
-        /* The SYSTEM hive becomes writable with stage B5 */
-        QzRegistryWritesDropped++;
-        Status = STATUS_SUCCESS;
-    }
+        Status = QzCmSetCellValue(Key->Cell, ValueName ? ValueName : &Empty, Type, Data, DataSize);
     else
-    {
-        ExAcquireFastMutex(&QzRegistryLock);
         Status = QzMemSetValue(Key->Mem, ValueName ? ValueName : &Empty, Type, Data, DataSize);
-        ExReleaseFastMutex(&QzRegistryLock);
-    }
+    if (NT_SUCCESS(Status))
+        QzCmReportChange(Key->IsCell, Key->Cell, Key->Mem, REG_NOTIFY_CHANGE_LAST_SET);
+    ExReleaseFastMutex(&QzRegistryLock);
     ObDereferenceObject(Key);
     return Status;
 }
@@ -938,7 +1292,11 @@ ZwDeleteValueKey(IN HANDLE KeyHandle, IN PUNICODE_STRING ValueName)
         return Status;
     if (Key->IsCell)
     {
-        QzRegistryWritesDropped++;
+        ExAcquireFastMutex(&QzRegistryLock);
+        Status = QzCmDeleteCellValue(Key->Cell, ValueName);
+        if (NT_SUCCESS(Status))
+            QzCmReportChange(TRUE, Key->Cell, NULL, REG_NOTIFY_CHANGE_LAST_SET);
+        ExReleaseFastMutex(&QzRegistryLock);
     }
     else
     {
@@ -975,7 +1333,25 @@ ZwDeleteKey(IN HANDLE KeyHandle)
         return Status;
     if (Key->IsCell)
     {
-        QzRegistryWritesDropped++;
+        PCM_KEY_NODE Node;
+        HCELL_INDEX Parent;
+        ExAcquireFastMutex(&QzRegistryLock);
+        Node = QzCmNode(Key->Cell);
+        Parent = Node->Parent;
+        if (Node->SubKeyCounts[Stable] + Node->SubKeyCounts[Volatile] ||
+            Key->Cell == QzHive->BaseBlock->RootCell)
+        {
+            Status = STATUS_CANNOT_DELETE;
+        }
+        else
+        {
+            /* Watchers of the key and of the trees above it hear first */
+            QzCmReportChange(TRUE, Key->Cell, NULL, REG_NOTIFY_CHANGE_NAME);
+            Status = QzCmDeleteCellKey(Key->Cell);
+            if (NT_SUCCESS(Status))
+                QzCmReportChange(TRUE, Parent, NULL, REG_NOTIFY_CHANGE_NAME);
+        }
+        ExReleaseFastMutex(&QzRegistryLock);
     }
     else if (Key->Mem->Child)
     {
@@ -992,6 +1368,7 @@ ZwDeleteKey(IN HANDLE KeyHandle)
             {
                 *Link = Key->Mem->Sibling;
                 Key->Mem->Parent->SubKeys--;
+                QzCmReportChange(FALSE, HCELL_NIL, Key->Mem, REG_NOTIFY_CHANGE_NAME);
                 Key->Mem->Parent = NULL;
                 break;
             }
@@ -1000,6 +1377,103 @@ ZwDeleteKey(IN HANDLE KeyHandle)
     }
     ObDereferenceObject(Key);
     return Status;
+}
+
+NTSTATUS
+NTAPI
+ZwNotifyChangeKey(IN HANDLE KeyHandle,
+                  IN HANDLE Event OPTIONAL,
+                  IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+                  IN PVOID ApcContext OPTIONAL,
+                  OUT PIO_STATUS_BLOCK IoStatusBlock,
+                  IN ULONG CompletionFilter,
+                  IN BOOLEAN WatchTree,
+                  OUT PVOID Buffer OPTIONAL,
+                  IN ULONG BufferSize,
+                  IN BOOLEAN Asynchronous)
+{
+    PQZ_NOTIFY_BLOCK Block;
+    KEVENT LocalEvent;
+    PQZ_KEY Key;
+    NTSTATUS Status;
+
+    UNREFERENCED_PARAMETER(Buffer);
+    UNREFERENCED_PARAMETER(BufferSize);
+
+    Status = QzCmReferenceKey(KeyHandle, &Key);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Block = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Block), QZ_CM_TAG);
+    if (!Block)
+    {
+        ObDereferenceObject(Key);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(Block, sizeof(*Block));
+    Block->Key = Key;
+    Block->Filter = CompletionFilter & REG_LEGAL_CHANGE_FILTER;
+    Block->WatchTree = WatchTree;
+    Block->IoStatus = IoStatusBlock;
+
+    /* Kernel callers pass a WORK_QUEUE_ITEM and its queue type in place of
+       an APC routine and context; real APCs arrive with stage B6 */
+    if (ApcRoutine)
+    {
+        Block->WorkItem = (PWORK_QUEUE_ITEM)ApcRoutine;
+        Block->WorkQueue = (WORK_QUEUE_TYPE)(ULONG_PTR)ApcContext;
+    }
+    if (Event)
+    {
+        Status = ObReferenceObjectByHandle(Event, EVENT_MODIFY_STATE, ExEventObjectType, KernelMode,
+                                           (PVOID *)&Block->Event, NULL);
+        if (!NT_SUCCESS(Status))
+        {
+            ExFreePoolWithTag(Block, QZ_CM_TAG);
+            ObDereferenceObject(Key);
+            return Status;
+        }
+        Block->EventReferenced = TRUE;
+        KeClearEvent(Block->Event);
+    }
+    else if (!Asynchronous)
+    {
+        KeInitializeEvent(&LocalEvent, NotificationEvent, FALSE);
+        Block->Event = &LocalEvent;
+    }
+
+    IoStatusBlock->Status = STATUS_PENDING;
+    ExAcquireFastMutex(&QzRegistryLock);
+    InsertTailList(&QzNotifyBlocks, &Block->Link);
+    ExReleaseFastMutex(&QzRegistryLock);
+    ObDereferenceObject(Key);
+
+    if (Asynchronous)
+        return STATUS_PENDING;
+    KeWaitForSingleObject(Block->EventReferenced ? Block->Event : &LocalEvent, Executive, KernelMode,
+                          FALSE, NULL);
+    return IoStatusBlock->Status;
+}
+
+NTSTATUS
+NTAPI
+ZwNotifyChangeMultipleKeys(IN HANDLE MasterKeyHandle,
+                           IN ULONG Count,
+                           IN POBJECT_ATTRIBUTES SubordinateObjects OPTIONAL,
+                           IN HANDLE Event OPTIONAL,
+                           IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+                           IN PVOID ApcContext OPTIONAL,
+                           OUT PIO_STATUS_BLOCK IoStatusBlock,
+                           IN ULONG CompletionFilter,
+                           IN BOOLEAN WatchTree,
+                           OUT PVOID Buffer OPTIONAL,
+                           IN ULONG BufferSize,
+                           IN BOOLEAN Asynchronous)
+{
+    if (Count)
+        return STATUS_NOT_IMPLEMENTED;   /* subordinate keys: later */
+    UNREFERENCED_PARAMETER(SubordinateObjects);
+    return ZwNotifyChangeKey(MasterKeyHandle, Event, ApcRoutine, ApcContext, IoStatusBlock,
+                             CompletionFilter, WatchTree, Buffer, BufferSize, Asynchronous);
 }
 
 NTSTATUS
@@ -1376,25 +1850,34 @@ NTAPI
 RtlWriteRegistryValue(IN ULONG RelativeTo, IN PCWSTR Path, IN PCWSTR ValueName,
                       IN ULONG ValueType, IN PVOID ValueData, IN ULONG ValueLength)
 {
-    UNREFERENCED_PARAMETER(RelativeTo);
-    UNREFERENCED_PARAMETER(Path);
-    UNREFERENCED_PARAMETER(ValueName);
-    UNREFERENCED_PARAMETER(ValueType);
-    UNREFERENCED_PARAMETER(ValueData);
-    UNREFERENCED_PARAMETER(ValueLength);
-    QzRegistryWritesDropped++;
-    return STATUS_SUCCESS;
+    UNICODE_STRING Name;
+    HANDLE Key;
+    NTSTATUS Status = QzRtlOpenRegistryKey(RelativeTo, Path, TRUE, &Key);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+    RtlInitUnicodeString(&Name, ValueName);
+    Status = ZwSetValueKey(Key, &Name, 0, ValueType, ValueData, ValueLength);
+    if (!(RelativeTo & RTL_REGISTRY_HANDLE))
+        ZwClose(Key);
+    return Status;
 }
 
 NTSTATUS
 NTAPI
 RtlDeleteRegistryValue(IN ULONG RelativeTo, IN PCWSTR Path, IN PCWSTR ValueName)
 {
-    UNREFERENCED_PARAMETER(RelativeTo);
-    UNREFERENCED_PARAMETER(Path);
-    UNREFERENCED_PARAMETER(ValueName);
-    QzRegistryWritesDropped++;
-    return STATUS_SUCCESS;
+    UNICODE_STRING Name;
+    HANDLE Key;
+    NTSTATUS Status = QzRtlOpenRegistryKey(RelativeTo, Path, FALSE, &Key);
+
+    if (!NT_SUCCESS(Status))
+        return Status;
+    RtlInitUnicodeString(&Name, ValueName);
+    Status = ZwDeleteValueKey(Key, &Name);
+    if (!(RelativeTo & RTL_REGISTRY_HANDLE))
+        ZwClose(Key);
+    return Status;
 }
 
 NTSTATUS
@@ -1497,6 +1980,8 @@ QzCmInit(PLOADER_PARAMETER_BLOCK LoaderBlock)
     Init.UseDefaultObject = TRUE;
     Init.CaseInsensitive = TRUE;
     Init.ParseProcedure = QzCmParseKey;
+    Init.CloseProcedure = QzCmCloseKey;
+    Init.DeleteProcedure = QzCmDeleteKey;
     Status = ObCreateObjectType(&TypeName, &Init, NULL, &CmKeyObjectType);
     if (!NT_SUCCESS(Status))
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, Status, 0, 0);
@@ -1504,12 +1989,21 @@ QzCmInit(PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* The loader's SYSTEM hive, read in place */
     if (LoaderBlock->RegistryBase && LoaderBlock->RegistryLength)
     {
-        Status = HvInitialize(&QzSystemHive, HINIT_FLAT, 0, HFILE_TYPE_PRIMARY,
-                              LoaderBlock->RegistryBase, CmpAllocate, CmpFree,
-                              NULL, NULL, NULL, NULL, 1, NULL);
-        QzHiveReady = NT_SUCCESS(Status);
+        /* Copied into bins of our own so it can be written */
+        QzSystemCmHive = CmpAllocate(sizeof(CMHIVE), FALSE, QZ_CM_TAG);
+        if (QzSystemCmHive)
+        {
+            RtlZeroMemory(QzSystemCmHive, sizeof(CMHIVE));
+            Status = HvInitialize(QzHive, HINIT_MEMORY, HIVE_NOLAZYFLUSH, HFILE_TYPE_PRIMARY,
+                                  LoaderBlock->RegistryBase, CmpAllocate, CmpFree,
+                                  NULL, NULL, NULL, NULL, 1, NULL);
+            QzHiveReady = NT_SUCCESS(Status);
+        }
         if (QzHiveReady)
+        {
             QzControlSetCell = QzCmFindControlSet();
+            QzCmCreateCurrentControlSetLink();
+        }
     }
 
     /* The volatile keys, HARDWARE\DESCRIPTION from the loader's tree */
@@ -1583,11 +2077,18 @@ QzCmDumpKey(PCWSTR Path)
         if (Info->Type == REG_SZ || Info->Type == REG_EXPAND_SZ || Info->Type == REG_MULTI_SZ)
         {
             UNICODE_STRING Text;
+            ULONG i;
             Text.Buffer = (PWCHAR)Data;
             Text.Length = Text.MaximumLength = (USHORT)Info->DataLength;
             while (Text.Length && !Text.Buffer[Text.Length / sizeof(WCHAR) - 1])
                 Text.Length -= sizeof(WCHAR);
-            QzPrint("    %-24wZ REG_SZ    %wZ\n", &ValueName, &Text);
+            /* MULTI_SZ: show the strings separated by "|" */
+            for (i = 0; i < Text.Length / sizeof(WCHAR); i++)
+                if (!Text.Buffer[i])
+                    Text.Buffer[i] = L'|';
+            QzPrint("    %-24wZ %s %wZ\n", &ValueName,
+                    Info->Type == REG_MULTI_SZ ? "MULTI_SZ " : Info->Type == REG_EXPAND_SZ ? "EXPAND_SZ" : "REG_SZ   ",
+                    &Text);
         }
         else if (Info->Type == REG_DWORD && Info->DataLength == 4)
         {

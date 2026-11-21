@@ -498,6 +498,7 @@ static const char *const QzImplementedExports[] =
     "ZwFsControlFile",
     "ZwLoadDriver",
     "ZwMakeTemporaryObject",
+    "ZwNotifyChangeKey",
     "ZwOpenDirectoryObject",
     "ZwOpenEvent",
     "ZwOpenFile",

@@ -577,6 +577,7 @@
 @ stdcall IoSetDevicePropertyData(ptr ptr long long long long ptr)
 @ stdcall PsIsThreadTerminating(ptr)
 @ stdcall ZwPowerInformation(long ptr long ptr long)
+@ stdcall ZwNotifyChangeKey(ptr ptr ptr ptr ptr long long ptr long long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -1562,7 +1563,6 @@
 @ stub ZwMapViewOfSection
 @ stub ZwModifyBootEntry
 @ stub ZwModifyDriverEntry
-@ stub ZwNotifyChangeKey
 @ stub ZwOpenJobObject
 @ stub ZwOpenProcess
 @ stub ZwOpenProcessToken
