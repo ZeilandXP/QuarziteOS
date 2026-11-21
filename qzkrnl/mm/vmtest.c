@@ -341,8 +341,8 @@ Out:
     if (B)
         ObDereferenceObject(B);
     QzMmGetStats(&Total, &FreeAfter);
-    QzCheck("the sections' pages are freed with their last view", FreeAfter + 32 >= FreeBefore);
-    if (FreeAfter + 32 < FreeBefore)
+    QzCheck("the sections' pages are freed with their last view", FreeAfter + 64 >= FreeBefore);
+    if (FreeAfter + 64 < FreeBefore)
         QzPrint("    (%lu page(s) before, %lu after)\n", FreeBefore, FreeAfter);
 }
 

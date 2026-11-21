@@ -74,8 +74,8 @@ QzCmdHelp(VOID)
             "  usertest          self-test: ring 3 (system calls, exceptions, preemption,\n"
             "                    FPU state)\n"
             "  secttest          self-test: sections (ntdll.dll as an image, copy on write,\n"
-            "                    shared memory); needs \"pnp\" first\n"
-            "  smss              start \\SystemRoot\\System32\\smss.exe (needs \"pnp\")\n"
+            "                    shared memory; starts PnP if needed)\n"
+            "  smss              start \\SystemRoot\\System32\\smss.exe\n"
             "  syscalls [on|off] system service statistics; trace every call\n"
             "  dir <path>        list a directory (e.g. \\SystemRoot\\system32)\n"
             "  type <path>       a file's size, checksum and first line\n"
@@ -162,6 +162,23 @@ QzDemoThread(PVOID Context)
         KeDelayExecutionThread(KernelMode, FALSE, &Delay);
     }
     QzPrint("  [demo %lu] done\n", Id);
+}
+
+/* The boot CD (and \\SystemRoot) exist once the device tree is up */
+static VOID
+QzNeedDevices(VOID)
+{
+    if (!QzPnpIsStarted())
+    {
+        ULONG Started, Nodes;
+        NTSTATUS Status;
+        QzPrint("  (starting the device tree first, as \"pnp\" does)\n");
+        Status = QzPnpStart();
+        Nodes = QzPnpDeviceCount(&Started);
+        QzPrint("  PnP: 0x%08lx, %lu device node(s), %lu started\n", Status, Nodes, Started);
+        /* Let hubs and other buses finish enumerating in the background */
+        QzSleepTicks(2000 * 10000 / QzTimeIncrement);
+    }
 }
 
 static VOID
@@ -254,19 +271,34 @@ QzExecute(PCHAR Line)
         QzRunVmTests();
     else if (!strcmp(Cmd, "ps"))
         QzPsDumpProcesses();
-    else if (!strcmp(Cmd, "dir") && Arg)
-        QzIoShellDir(Arg);
-    else if (!strcmp(Cmd, "type") && Arg)
-        QzIoShellType(Arg);
+    else if (!strcmp(Cmd, "dir") || !strcmp(Cmd, "type"))
+    {
+        if (!Arg)
+            QzPrint("  usage: %s <path>, e.g. %s \\SystemRoot\\system32%s\n", Cmd, Cmd,
+                    Cmd[0] == 't' ? "\\smss.exe" : "");
+        else
+        {
+            QzNeedDevices();
+            if (Cmd[0] == 'd')
+                QzIoShellDir(Arg);
+            else
+                QzIoShellType(Arg);
+        }
+    }
     else if (!strcmp(Cmd, "usertest"))
         QzRunUserTests();
     else if (!strcmp(Cmd, "secttest"))
+    {
+        QzNeedDevices();
         QzRunSectionTests();
+    }
     else if (!strcmp(Cmd, "smss"))
     {
         /* Start it, give it a few seconds, and say how far it got */
         PQZ_PROCESS Process;
-        NTSTATUS Status = QzPsStartSmss(&Process);
+        NTSTATUS Status;
+        QzNeedDevices();
+        Status = QzPsStartSmss(&Process);
         if (NT_SUCCESS(Status))
         {
             LARGE_INTEGER Timeout;
@@ -281,7 +313,11 @@ QzExecute(PCHAR Line)
             ObDereferenceObject(Process);
         }
         else
+        {
             QzPrint("  smss: not started (0x%08lx)\n", Status);
+            if (Status == STATUS_OBJECT_PATH_NOT_FOUND || Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                QzPrint("  (the boot CD was not found: \"devtree\" shows whether a CD-ROM drive started)\n");
+        }
     }
     else if (!strcmp(Cmd, "syscalls"))
     {

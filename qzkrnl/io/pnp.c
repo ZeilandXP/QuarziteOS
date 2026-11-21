@@ -1905,6 +1905,12 @@ QzPnpCreateArcNames(VOID)
     DbgPrint(QZ_KERNEL_NAME ": PnP: %wZ -> %wZ (0x%08lx)\n", &Link, &Target, Status);
 }
 
+BOOLEAN
+QzPnpIsStarted(VOID)
+{
+    return QzPnpStarted;
+}
+
 NTSTATUS
 QzPnpStart(VOID)
 {

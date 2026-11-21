@@ -127,6 +127,7 @@ ULONG QzIoFileSystemCount(VOID);
 
 VOID QzPnpInit(VOID);
 NTSTATUS QzPnpStart(VOID);
+BOOLEAN QzPnpIsStarted(VOID);
 VOID QzPnpDumpTree(BOOLEAN Verbose);
 ULONG QzPnpDeviceCount(PULONG Started);
 extern POBJECT_TYPE CmKeyObjectType;
