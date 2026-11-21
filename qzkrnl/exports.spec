@@ -1135,3 +1135,6 @@
 @ stdcall KeDeregisterNmiCallback(ptr)
 @ stdcall IoWMIOpenBlock(ptr long ptr)
 @ stdcall IoWMIQueryAllData(ptr ptr ptr)
+
+# Boot drivers (B8)
+@ stdcall NtNotifyChangeDirectoryFile(ptr ptr ptr ptr ptr ptr long long long)

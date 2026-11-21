@@ -1008,6 +1008,7 @@
 @ stdcall KeDeregisterNmiCallback(ptr)
 @ stdcall IoWMIOpenBlock(ptr long ptr)
 @ stdcall IoWMIQueryAllData(ptr ptr ptr)
+@ stdcall NtNotifyChangeDirectoryFile(ptr ptr ptr ptr ptr ptr long long long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ extern CcFastMdlReadWait QzUnimplementedData
@@ -1291,7 +1292,6 @@
 @ extern NtGlobalFlag QzUnimplementedData
 @ stub NtLockFile
 @ stub NtMapViewOfSection
-@ stub NtNotifyChangeDirectoryFile
 @ stub NtOpenThreadToken
 @ stub NtOpenThreadTokenEx
 @ stub NtQueryDirectoryFile

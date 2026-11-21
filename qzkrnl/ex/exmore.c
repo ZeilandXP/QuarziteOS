@@ -32,7 +32,19 @@ typedef struct _QZ_RESOURCE
     struct { PVOID Thread; ULONG Count; } Shared[QZ_SHARED_OWNERS];
 } QZ_RESOURCE, *PQZ_RESOURCE;
 
-#define QzResource(R) ((PQZ_RESOURCE)(R)->OwnerTable)
+static PQZ_RESOURCE QzResourceSetUp(PERESOURCE Resource);
+
+/*
+ * The private part. A resource that was only zeroed (some drivers never
+ * call ExInitializeResourceLite on a static one, and ReactOS's kernel
+ * lets them) gets it on first use.
+ */
+static __inline PQZ_RESOURCE
+QzResource(PERESOURCE Resource)
+{
+    PQZ_RESOURCE Private = (PQZ_RESOURCE)Resource->OwnerTable;
+    return Private ? Private : QzResourceSetUp(Resource);
+}
 
 NTSTATUS
 NTAPI
@@ -48,6 +60,24 @@ ExInitializeResourceLite(OUT PERESOURCE Resource)
     KeInitializeSemaphore(&Private->ExclusiveWake, 0, MAXLONG);
     Resource->OwnerTable = (POWNER_ENTRY)Private;
     return STATUS_SUCCESS;
+}
+
+static PQZ_RESOURCE
+QzResourceSetUp(PERESOURCE Resource)
+{
+    PQZ_RESOURCE Private = ExAllocatePoolWithTag(NonPagedPool, sizeof(QZ_RESOURCE), QZ_RESOURCE_TAG);
+
+    if (!Private)
+        KeBugCheckEx(INSUFFICIENT_SYSTEM_MAP_REGS, (ULONG_PTR)Resource, 0, 0, 0);
+    RtlZeroMemory(Private, sizeof(*Private));
+    KeInitializeSemaphore(&Private->SharedWake, 0, MAXLONG);
+    KeInitializeSemaphore(&Private->ExclusiveWake, 0, MAXLONG);
+    if (InterlockedCompareExchangePointer((PVOID *)&Resource->OwnerTable, Private, NULL))
+    {
+        ExFreePoolWithTag(Private, QZ_RESOURCE_TAG);   /* another caller set it up first */
+        Private = (PQZ_RESOURCE)Resource->OwnerTable;
+    }
+    return Private;
 }
 
 NTSTATUS

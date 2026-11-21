@@ -585,6 +585,7 @@ static const char *const QzImplementedExports[] =
     "NtFindAtom",
     "NtFsControlFile",
     "NtMakePermanentObject",
+    "NtNotifyChangeDirectoryFile",
     "NtOpenFile",
     "NtOpenProcess",
     "NtOpenProcessToken",

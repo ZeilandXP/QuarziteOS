@@ -308,6 +308,8 @@ sys_thread_new(const char *name, lwip_thread_fn thread, void *arg, int stacksize
 void
 sys_init(void)
 {
+    /* The global lwIP lock: an ERESOURCE has to be initialized before use */
+    ExInitializeResourceLite(&GlobalLock);
     KeInitializeSpinLock(&ThreadListLock);
     InitializeListHead(&ThreadListHead);
 

@@ -299,6 +299,8 @@ QzTrapDispatch(PKTRAP_FRAME TrapFrame, ULONG Vector)
         {
             DbgPrint(QZ_KERNEL_NAME ": system service touched bad user address %08lx at %08lx; aborted\n",
                      Address, TrapFrame->Eip);
+            if (Address < 0x10000)
+                QzDumpTrapFrame(TrapFrame);   /* a NULL pointer, more likely a kernel bug than a caller's */
             TrapFrame->Eip = QzCurrentThread->SyscallRecovery;
             return;
         }

@@ -400,6 +400,7 @@ NtSetInformationThread(IN HANDLE ThreadHandle,
         case ThreadPriorityBoost:
         case ThreadSetTlsArrayAddress:
         case ThreadBreakOnTermination:
+        case ThreadNameInformation:     /* SetThreadDescription: nothing shows names yet */
             break;   /* accepted: one processor, no priorities, no impersonation yet */
         default:
             DbgPrint(QZ_KERNEL_NAME ": NtSetInformationThread: class %lu not supported yet\n",

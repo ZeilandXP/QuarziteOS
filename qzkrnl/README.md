@@ -149,5 +149,8 @@ See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
    `ke/callback.c`, `mm/sysview.c`, `rtl/heap.c`, `se/srm.c`).
 8. The default kernel (stage B8): APCs, completion ports and the other
    hives so the live environment's services and msgina run (milestone 1,
-   in progress; see `ke/apc.c`, `ex/iocomp.c`, `cm/registry.c`); next,
-   user-mode PnP, then qzkrnl as the default boot entry.
+   in progress; see `ke/apc.c`, `ex/iocomp.c`, `cm/registry.c`): user-mode
+   PnP, shared images and all boot drivers bring the live CD up to the
+   explorer desktop with `/QZAUTOSTART` ("QuarziteOS Live Environment on
+   qzkrnl" in the boot menu); next, input and speed, then qzkrnl as the
+   default boot entry.

@@ -172,6 +172,17 @@ QzDemoThread(PVOID Context)
     QzPrint("  [demo %lu] done\n", Id);
 }
 
+/* Is Needle in Haystack, ignoring case? (load options) */
+static BOOLEAN
+QzStrStrI(PCSTR Haystack, PCSTR Needle)
+{
+    SIZE_T Length = strlen(Needle);
+    for (; *Haystack; Haystack++)
+        if (!_strnicmp(Haystack, Needle, Length))
+            return TRUE;
+    return FALSE;
+}
+
 /* The boot CD (and \\SystemRoot) exist once the device tree is up */
 static VOID
 QzNeedDevices(VOID)
@@ -607,6 +618,24 @@ VOID
 QzShell(VOID)
 {
     CHAR Line[128];
+
+    /*
+     * /QZAUTOSTART (the live environment's boot entry): the native
+     * subsystem starts by itself, as on NT; the shell stays for
+     * debugging, on the serial port once the display is the GUI's.
+     */
+    if (QzLoaderBlock->LoadOptions && QzStrStrI(QzLoaderBlock->LoadOptions, "QZAUTOSTART"))
+    {
+        PQZ_PROCESS Process;
+        NTSTATUS Status;
+        QzPrint("  Starting the native subsystem (/QZAUTOSTART)\n");
+        QzNeedDevices();
+        Status = QzPsStartSmss(&Process);
+        if (NT_SUCCESS(Status))
+            ObDereferenceObject(Process);
+        else
+            QzPrint("  smss: not started (0x%08lx)\n", Status);
+    }
 
     QzPrint("  Type 'help' for a list of commands.\n\n");
     for (;;)

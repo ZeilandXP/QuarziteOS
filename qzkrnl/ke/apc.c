@@ -280,7 +280,9 @@ QzApcDeliverUser(PKTRAP_FRAME TrapFrame)
         RtlZeroMemory(&Context, sizeof(Context));
         QzTrapFrameToContext(TrapFrame, &Context);
         Context.ContextFlags = CONTEXT_FULL;
-        Stack = ((Context.Esp & ~3UL) - (CONTEXT_ALIGNED_SIZE + sizeof(Frame))) & ~3UL;
+        /* Under the interrupted stack: 8 bytes KiUserApcDispatcher uses for its SEH
+           registration (above the context), the context, then the dispatcher's frame */
+        Stack = ((((Context.Esp & ~3UL) - 8) & ~3UL) - (CONTEXT_ALIGNED_SIZE + sizeof(Frame)));
         Frame[0] = (ULONG_PTR)NormalRoutine;
         Frame[1] = (ULONG_PTR)NormalContext;
         Frame[2] = (ULONG_PTR)Argument1;

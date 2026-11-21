@@ -1062,6 +1062,49 @@ NtWriteFile(IN HANDLE FileHandle, IN HANDLE Event OPTIONAL, IN PIO_APC_ROUTINE A
                        ByteOffset, Key);
 }
 
+/*
+ * Watch a directory: the file system completes the request when something
+ * in it changes (explorer's desktop, the shell's folder views). Usually
+ * asynchronous, with an APC or a completion port.
+ */
+NTSTATUS
+NTAPI
+NtNotifyChangeDirectoryFile(IN HANDLE FileHandle, IN HANDLE Event OPTIONAL, IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+                            IN PVOID ApcContext OPTIONAL, OUT PIO_STATUS_BLOCK IoStatusBlock, OUT PVOID Buffer,
+                            IN ULONG BufferSize, IN ULONG CompletionFilter, IN BOOLEAN WatchTree)
+{
+    QZ_FILE_REQUEST Request;
+    PIO_STACK_LOCATION Stack;
+    NTSTATUS Status;
+
+    if (!CompletionFilter || (CompletionFilter & ~FILE_NOTIFY_VALID_MASK))
+        return STATUS_INVALID_PARAMETER;
+    Status = QzIoBeginRequest(&Request, FileHandle, FILE_LIST_DIRECTORY, Event, ApcRoutine, ApcContext, FALSE);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    if (BufferSize && !QzIoAttachBuffer(Request.Irp, Request.Device, Buffer, BufferSize, TRUE))
+        return QzIoAbortRequest(&Request, STATUS_INSUFFICIENT_RESOURCES);
+    Request.Irp->UserBuffer = Buffer;
+    Stack = IoGetNextIrpStackLocation(Request.Irp);
+    Stack->MajorFunction = IRP_MJ_DIRECTORY_CONTROL;
+    Stack->MinorFunction = IRP_MN_NOTIFY_CHANGE_DIRECTORY;
+    Stack->FileObject = Request.FileObject;
+    Stack->Flags = WatchTree ? SL_WATCH_TREE : 0;
+    Stack->Parameters.NotifyDirectory.Length = BufferSize;
+    Stack->Parameters.NotifyDirectory.CompletionFilter = CompletionFilter;
+    return QzIoCallRequest(&Request, IoStatusBlock, FALSE);
+}
+
+NTSTATUS
+NTAPI
+ZwNotifyChangeDirectoryFile(IN HANDLE FileHandle, IN HANDLE Event OPTIONAL, IN PIO_APC_ROUTINE ApcRoutine OPTIONAL,
+                            IN PVOID ApcContext OPTIONAL, OUT PIO_STATUS_BLOCK IoStatusBlock, OUT PVOID Buffer,
+                            IN ULONG BufferSize, IN ULONG CompletionFilter, IN BOOLEAN WatchTree)
+{
+    return QZ_AS_KERNEL(NtNotifyChangeDirectoryFile(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer,
+                                                    BufferSize, CompletionFilter, WatchTree));
+}
+
 static NTSTATUS
 QzIoControl(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
             PIO_STATUS_BLOCK IoStatusBlock, ULONG Code, PVOID InputBuffer, ULONG InputLength,
