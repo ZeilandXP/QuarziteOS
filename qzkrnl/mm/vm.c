@@ -686,6 +686,44 @@ QzMmQuery(PQZ_PROCESS Process, PVOID Address, PMEMORY_BASIC_INFORMATION Info)
 /* ---------------------------------------------------------------------- */
 
 /*
+ * The guard page below the committed part of the current thread's stack
+ * was touched: move the guard one page down and record the new limit in
+ * the TEB (MiCheckForUserStackOverflow). The lowest page of the stack's
+ * reservation is never committed. FALSE if Address is not that stack's.
+ */
+static BOOLEAN
+QzMmGrowStack(ULONG_PTR Address)
+{
+    PQZ_THREAD Thread = QzCurrentThread;
+    PQZ_PS_THREAD PsThread = Thread->PsThread;
+    ULONG_PTR Saved = Thread->FaultRecovery, Page = Address & ~(QZ_PAGE_SIZE - 1), Guard;
+    PTEB Teb;
+    PVOID StackBase = NULL, Deallocation = NULL, Limit;
+    BOOLEAN Ok;
+
+    if (!PsThread || !PsThread->Teb)
+        return FALSE;
+    Teb = PsThread->Teb;
+    /* We may be inside a fault-safe copy: keep its recovery point */
+    Ok = QzCopyFromUser(&StackBase, &Teb->NtTib.StackBase, sizeof(PVOID)) &&
+         QzCopyFromUser(&Deallocation, &Teb->DeallocationStack, sizeof(PVOID));
+    Thread->FaultRecovery = Saved;
+    if (!Ok || Page < (ULONG_PTR)Deallocation || Page >= (ULONG_PTR)StackBase)
+        return FALSE;
+    Guard = Page - QZ_PAGE_SIZE;
+    if (Guard >= (ULONG_PTR)Deallocation + QZ_PAGE_SIZE)
+    {
+        QzMmEnsurePageTable(Guard);
+        if (!(*QzPteOf(Guard) & (QZ_PTE_PRESENT | QZ_PTE_COMMITTED)))
+            *QzPteOf(Guard) = QZ_SWPTE(PAGE_READWRITE | PAGE_GUARD);
+    }
+    Limit = (PVOID)Page;
+    QzCopyToUser(&Teb->NtTib.StackLimit, &Limit, sizeof(Limit));
+    Thread->FaultRecovery = Saved;
+    return TRUE;
+}
+
+/*
  * Called from the #PF trap with interrupts off. Resolves demand-zero pages
  * and guard pages of the current address space; anything else is an
  * access violation for the caller to deal with.
@@ -735,6 +773,9 @@ QzMmAccessFault(ULONG_PTR Address, ULONG ErrorCode, KPROCESSOR_MODE Mode)
     if (Protect & PAGE_GUARD)
     {
         *Pte = QZ_SWPTE(Protect & ~PAGE_GUARD);
+        /* A thread's stack grows into its guard page: no exception for that */
+        if (QzMmGrowStack(Address))
+            return STATUS_SUCCESS;
         return STATUS_GUARD_PAGE_VIOLATION;
     }
     Bits = QzMmProtectToPte(Protect);

@@ -365,6 +365,42 @@ QzObKillHandleTable(PQZ_HANDLE_TABLE Table)
     ExFreePoolWithTag(Table, QZ_HANDLE_TAG);
 }
 
+/* A new process inherits its parent's OBJ_INHERIT handles, with the same values */
+NTSTATUS
+QzObInheritHandles(PQZ_HANDLE_TABLE Parent, PQZ_HANDLE_TABLE Child)
+{
+    ULONG Index;
+    KIRQL OldIrql;
+
+    if (!Parent || !Child || Parent == &QzKernelHandleTable)
+        return STATUS_SUCCESS;
+    if (Parent->Capacity)
+    {
+        Child->Entries = ExAllocatePoolWithTag(NonPagedPool, Parent->Capacity * sizeof(QZ_HANDLE_ENTRY),
+                                               QZ_HANDLE_TAG);
+        if (!Child->Entries)
+            return STATUS_INSUFFICIENT_RESOURCES;
+        RtlZeroMemory(Child->Entries, Parent->Capacity * sizeof(QZ_HANDLE_ENTRY));
+        Child->Capacity = Parent->Capacity;
+    }
+    OldIrql = QzAcquireSpinLock(&Parent->Lock);
+    for (Index = 0; Index < Parent->Capacity; Index++)
+    {
+        QZ_HANDLE_ENTRY *Entry = &Parent->Entries[Index];
+        POBJECT_HEADER Header;
+        if (!Entry->Object || !(Entry->Attributes & OBJ_INHERIT))
+            continue;
+        Header = OBJECT_TO_OBJECT_HEADER(Entry->Object);
+        ObfReferenceObject(Entry->Object);
+        InterlockedIncrement((PLONG)&Header->HandleCount);
+        InterlockedIncrement((PLONG)&Header->Type->TotalNumberOfHandles);
+        Child->Entries[Index] = *Entry;
+        Child->InUse++;
+    }
+    QzReleaseSpinLock(&Parent->Lock, OldIrql);
+    return STATUS_SUCCESS;
+}
+
 /* Look a handle up in another process's table (NtDuplicateObject) */
 static BOOLEAN
 QzObpLookupInTable(PQZ_HANDLE_TABLE Table, HANDLE Handle, PQZ_HANDLE_ENTRY Out)

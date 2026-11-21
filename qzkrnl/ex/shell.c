@@ -75,6 +75,7 @@ QzCmdHelp(VOID)
             "                    FPU state)\n"
             "  secttest          self-test: sections (ntdll.dll as an image, copy on write,\n"
             "                    shared memory); needs \"pnp\" first\n"
+            "  smss              start \\SystemRoot\\System32\\smss.exe (needs \"pnp\")\n"
             "  syscalls [on|off] system service statistics; trace every call\n"
             "  dir <path>        list a directory (e.g. \\SystemRoot\\system32)\n"
             "  type <path>       a file's size, checksum and first line\n"
@@ -261,6 +262,27 @@ QzExecute(PCHAR Line)
         QzRunUserTests();
     else if (!strcmp(Cmd, "secttest"))
         QzRunSectionTests();
+    else if (!strcmp(Cmd, "smss"))
+    {
+        /* Start it, give it a few seconds, and say how far it got */
+        PQZ_PROCESS Process;
+        NTSTATUS Status = QzPsStartSmss(&Process);
+        if (NT_SUCCESS(Status))
+        {
+            LARGE_INTEGER Timeout;
+            Timeout.QuadPart = -10000LL * (Arg ? strtoul(Arg, NULL, 0) : 5000);
+            KeWaitForSingleObject(&Process->Exited, Executive, KernelMode, FALSE, &Timeout);
+            QzPrint("  smss: pid %lu, %s its own code, %s",
+                    Process->UniqueId, Process->RanImage ? "ran" : "did not reach",
+                    KeReadStateEvent(&Process->Exited) ? "exited with " : "still running");
+            if (KeReadStateEvent(&Process->Exited))
+                QzPrint("0x%08lx", Process->ExitStatus);
+            QzPrint("\n");
+            ObDereferenceObject(Process);
+        }
+        else
+            QzPrint("  smss: not started (0x%08lx)\n", Status);
+    }
     else if (!strcmp(Cmd, "syscalls"))
     {
         if (Arg)

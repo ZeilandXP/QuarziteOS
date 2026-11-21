@@ -53,11 +53,17 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | Spinlocks | `Ke[f]AcquireSpinLockAtDpcLevel`, release, try, test, in-stack queued. On one CPU, re-acquiring a held lock is reported (`SPIN_LOCK_ALREADY_OWNED`). |
 | Dispatcher | `KEVENT` (notification/synchronization, set/reset/clear/pulse), `KMUTANT`/`KMUTEX` (recursive ownership, `THREAD_NOT_MUTEX_OWNER`), `KSEMAPHORE`, all with the public NT layouts. `KeWaitForSingleObject`/`KeWaitForMultipleObjects` (WaitAny/WaitAll, timeouts, `Wait=TRUE` chaining) with NT-style direct handoff. |
 | Timers | `KTIMER` one-shot/periodic, notification/synchronization, optional DPC; `KeSetTimer[Ex]`, `KeCancelTimer`, `KeReadStateTimer`. |
-| Scheduler | Preemptive round-robin kernel threads with kernel-stack switching (`QzSwapContext`), always at DISPATCH_LEVEL; `KeDelayExecutionThread`, critical regions, `KeGetCurrentThread`. |
+| Scheduler | Preemptive round-robin threads with kernel-stack switching (`QzSwapContext`), always at DISPATCH_LEVEL. A switch loads the next thread's address space (CR3), its kernel stack for ring 3 entries (`TSS.Esp0`), its TEB selector and, for user threads, its FPU/SSE state (`fxsave`/`fxrstor`). Ended threads are reaped. `KeDelayExecutionThread`, critical regions, `KeGetCurrentThread`. |
 | Memory | Physical page bitmap built from the loader's memory descriptors, after the HAL has taken its pages. Page tables are managed through the self-map. Also `MmMapIoSpace`, `MmGetPhysicalAddress`, `MmAllocate/FreeContiguousMemorySpecifyCache`, MDLs (`IoAllocateMdl`, `MmBuildMdlForNonPagedPool`, `MmMapLockedPages[SpecifyCache]`). |
+| Address spaces | One page directory per process, the system half shared (every system PDE has a page table before the first process exists). User memory is described by VADs: reserve, commit, protect, decommit and release (`Nt{Allocate,Free,Protect,Query}VirtualMemory`, `Nt{Read,Write}VirtualMemory`), bottom-up or top-down, 64 KB granularity. Pages are demand-zero; guard pages fault once, and a thread's stack grows through its guard page as on NT. `KUSER_SHARED_DATA` is mapped read-only at `0x7FFE0000`. No paging file yet: committed memory is RAM when touched. |
+| Sections | Image sections lay a PE file out as it runs (headers and sections at their RVAs, per-page protections); data sections are page-file backed or a copy of a file. Views map the section's own pages; writable image pages and `PAGE_WRITECOPY` views are copy-on-write. `Nt{Create,Open,MapViewOf,UnmapViewOf,Query}Section`; an image away from its base is `STATUS_IMAGE_NOT_AT_BASE`, and ntdll relocates it. |
+| Processes | `Process` objects (waitable, signaled at exit) with their own handle tables and client IDs; the System process is PID 4. `NtCreateProcess[Ex]` maps the image, `ntdll.dll` and the NLS tables and builds the PEB; `NtCreateThread` builds the TEB. A new thread first runs ntdll's `LdrInitializeThunk` as a user APC, as on NT. `NtTerminateThread`/`NtTerminateProcess`, `NtSuspend/ResumeThread`, `Nt{Query,Set}Information{Process,Thread}`, `KeStackAttachProcess`, the `Ps*` queries. |
+| User mode | Ring 3 through `int 2Eh` and `sysenter` (`SharedUserData->SystemCall` points at ntdll's stub). The service table follows ntdll's numbering (generated from `sysfuncs.h` by `tools/gensys.py`); 94 of its 296 services are implemented. User pointers are copied with fault recovery, and a service that faults on a bad user address is aborted with `STATUS_ACCESS_VIOLATION`. Ring-3 exceptions go to ntdll's `KiUserExceptionDispatcher`; `NtContinue`, `NtRaiseException`, `int 2Dh` debug output and prompts. |
+| Boot volume | A small read-only ISO 9660 file system (`\FileSystem\QzIso`) mounts the boot CD until the real CDFS arrives with the cache manager (B7); `\ArcName\<boot device>` links to it, so `\SystemRoot\...` works: opens, reads, information and directory listings. |
+| smss | `smss` starts `\SystemRoot\System32\smss.exe` the way NT starts it (process parameters, environment, stack, PEB argument). ntdll's loader initializes the process and hands over to smss, which runs its own initialization and creates its threads until it needs LPC ports, the next piece (B7). |
 | Objects | Object manager with the NT layouts (`OBJECT_HEADER`, name info, `OBJECT_TYPE`, 37-bucket `OBJECT_DIRECTORY`, `OBJECT_SYMBOLIC_LINK`): `ObCreateObjectType`, `ObCreateObject`, `ObInsertObject` (`OBJ_OPENIF`, `OBJ_PERMANENT`, collisions), `Ob[f]Reference/DereferenceObject`, `ObReferenceObjectByHandle/ByName/ByPointer`, `ObOpenObjectByName/ByPointer`, `ObQueryNameString`, `ObMakeTemporaryObject`. Deletion at raised IRQL is deferred to a reaper thread. |
 | Namespace | `\`, `\ObjectTypes`, `\ArcName`, `\BaseNamedObjects`, `\Callback`, `\Device`, `\Driver`, `\FileSystem`, `\KernelObjects`, `\GLOBAL??`; links `\??`, `\DosDevices` and `\SystemRoot`. Lookups follow symbolic links (32 reparses at most), honour `OBJ_CASE_INSENSITIVE`/`OBJ_OPENLINK`, and call a type's parse procedure (the hook for the I/O manager). `Zw[Create/Open/Query]DirectoryObject`, `Zw[Create/Open/Query]SymbolicLinkObject`. |
-| Handles | One system handle table (kernel handles, `0x8000xxxx`); `ZwClose`/`ObCloseHandle`, `ZwDuplicateObject`, `ZwQueryObject` (basic/name/type), `ZwMakeTemporaryObject`. Temporary objects lose their name with the last handle. |
+| Handles | A handle table per process; kernel handles (`OBJ_KERNEL_HANDLE`, `0x8000xxxx`) live in the System table and work from any process, and user mode cannot use them. Inherited handles keep their values. `ZwClose`/`ObCloseHandle`, `NtDuplicateObject` across processes, `ZwQueryObject` (basic/name/type), `ZwMakeTemporaryObject`; `NtCurrentProcess()`/`NtCurrentThread()` resolve. Temporary objects lose their name with the last handle. |
 | Executive objects | `Event`, `Semaphore`, `Timer` types; `ZwCreate/Open/Set/Reset/Clear/PulseEvent`, `ZwCreate/Open/Set/CancelTimer`, `ZwWaitForSingleObject`, `ZwWaitForMultipleObjects`. `Adapter`, `Device`, `Driver` and `File` types exist for drivers to name; their procedures come with the I/O manager. |
 | Security | Stubs until tokens exist: access checks grant the generic-mapped request, privilege checks succeed. `SeExports` is real (privilege LUIDs and well-known SIDs). |
 | I/O manager | Driver and device objects (`IoCreateDriver`, `IoCreateDevice`, device stacks, symbolic links, timers, shutdown notification), IRPs (`IofCallDriver`, `IofCompleteRequest` with completion routines, pending propagation and buffered/direct I/O, cancellation, the IRP builders, remove locks, StartIo queues), file objects (`IoCreateFile`/`ZwCreateFile`/`ZwOpenFile`, relative opens, `Zw{Read,Write,DeviceIoControl,FsControl,QueryInformation,SetInformation,QueryVolumeInformation,QueryDirectory}File`), volume mounting through the VPB and the registered file systems, share access, work items and system worker threads, interrupt connection, controller objects, DMA adapters, MBR partition tables (`IoReadPartitionTableEx`). |
@@ -69,7 +75,7 @@ Re-run `python3 qzkrnl/tools/genspec.py` after editing `exports.spec`.
 | Version | `RtlGetVersion`, `PsGetVersion` and `NtBuildNumber` report **6.1.7601 Service Pack 1**. |
 | Rtl | Formatted output with the NT format dialect (`%wZ`, `%Z`, `%S`, `%I64u`...), `DbgPrint[Ex]`, `_vsnprintf`, string and memory routines, counted strings, bitmaps (`RtlInitializeBitMap` & co.). |
 | Console | VGA text console with a live status line, PS/2 keyboard, COM1 (115200 8N1) input and output. |
-| Shell | `help`, `ver`, `mem`, `pool`, `pooltest`, `mods`, `drivers`, `threads`, `spawn`, `sleep`, `uptime`, `cpu`, `exports`, `synctest`, `obtest`, `obj [path]`, `iotest`, `regtest`, `pnp`, `devtree`, `devices`, `drvobj`, `read <device> <sector>`, `reg [path]`, `pcicfg`, `start <service>`, `irptrace`, `verbose`, `irql`, `hal`, `time`, `call <export>`, `bugcheck`, `crash`, `reboot`. |
+| Shell | `help`, `ver`, `mem`, `pool`, `pooltest`, `mods`, `drivers`, `threads`, `spawn`, `sleep`, `uptime`, `cpu`, `exports`, `synctest`, `obtest`, `obj [path]`, `iotest`, `regtest`, `vmtest`, `usertest`, `secttest`, `ps`, `vm [pid]`, `smss`, `syscalls [on|off]`, `dir <path>`, `type <path>`, `pnp`, `devtree`, `devices`, `drvobj`, `read <device> <sector>`, `reg [path]`, `pcicfg`, `start <service>`, `irptrace`, `verbose`, `irql`, `hal`, `time`, `call <export>`, `bugcheck`, `crash`, `reboot`. |
 
 ## Layout
 
@@ -79,20 +85,26 @@ qzkrnl/
              (event, semaphore, timer), debug shell
   ke/        bug checks, HAL clock interface, HAL data/dispatch tables,
              interrupt objects, IRQL/DPCs/spinlocks, dispatcher objects and
-             waits, timers, scheduler, self-test; ke/i386: CPU tables, traps
-  mm/        physical pages, page tables, contiguous memory, MDLs, pool
+             waits, timers, scheduler, user threads, system services,
+             self-tests (synctest, usertest); ke/i386: CPU tables, traps
+  mm/        physical pages, page tables, contiguous memory, MDLs, pool,
+             process address spaces and page faults, sections, self-test
+             (vmtest, secttest)
   ob/        object manager: objects and types, namespace and lookup,
              handles, standard directories and links, self-test
   se/        security stubs, SeExports
   io/        I/O manager: drivers, devices, IRPs, files and mounting,
-             storage helpers, PnP manager, self-test (iotest)
+             storage helpers, PnP manager, the ISO 9660 boot file system,
+             self-test (iotest)
   cm/        registry: the writable SYSTEM hive (cmlib), volatile keys, notification, self-test (regtest)
-  ps/        system threads and the System process
+  ps/        processes and threads, process creation (PEB, TEB, ntdll,
+             the first process), information services
   drv/       serial, VGA text, PS/2 keyboard, input queue
   rtl/       formatted output, string/memory runtime, bitmaps, time conversion,
              export lookup
-  include/   qz.h (private header), exportstats.h (generated)
-  exports.spec, qzkrnl.spec (generated), tools/genspec.py
+  include/   qz.h, qzio.h, qzps.h (private headers); exportstats.h,
+             exportnames.h, systable.h (generated)
+  exports.spec, qzkrnl.spec (generated), tools/genspec.py, tools/gensys.py
 ```
 
 ## Next steps
@@ -109,5 +121,8 @@ See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
    done; see `io/`, `cm/registry.c`, `io/iotest.c`).
 5. ~~Configuration manager proper: writable hives, drive letters~~
    (stage B5, done; see `cm/registry.c`, `cm/regtest.c`).
-6. Processes, user-mode address spaces, system calls, `ntdll.dll` and
-   `smss.exe` (stage B6).
+6. ~~Processes, user-mode address spaces, system calls, `ntdll.dll` and
+   `smss.exe`~~ (stage B6, done; see `mm/vm.c`, `mm/section.c`, `ke/user.c`,
+   `ke/syscall.c`, `ps/create.c`, `io/isofs.c`).
+7. LPC ports, tokens and the rest of what smss needs to start csrss; then
+   paging, the cache manager and real file systems (stage B7).

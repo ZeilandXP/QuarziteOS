@@ -136,7 +136,9 @@ QzSystemCall(PKTRAP_FRAME TrapFrame)
     if (QzSyscallTrace)
         DbgPrint("qzkrnl: [%s] Nt%s -> 0x%08lx\n", QzCurrentThread->Name, Service->Name, Status);
     /* A service that set a new user context (NtContinue) leaves EAX alone */
-    if (Status != STATUS_ALERTED || Service->Handler == NULL)
+    if (Thread->TrapFrameReplaced)
+        Thread->TrapFrameReplaced = FALSE;
+    else
         TrapFrame->Eax = (ULONG)Status;
 Out:
     _disable();
@@ -161,6 +163,24 @@ QzDebugService(PKTRAP_FRAME TrapFrame)
         {
             Buffer[Length] = 0;
             DbgPrint("%s", Buffer);
+        }
+    }
+    else if (TrapFrame->Eax == 2 /* BREAKPOINT_PROMPT */)
+    {
+        /* No debugger to answer: show the prompt, reply "i" (ignore) */
+        static const CHAR Answer[] = "i";
+        Length = min(TrapFrame->Edx, sizeof(Buffer) - 1);
+        if (QzCopyFromUser(Buffer, (PVOID)TrapFrame->Ecx, Length))
+        {
+            Buffer[Length] = 0;
+            DbgPrint("%s%s  (no debugger: answering \"i\")\n", Buffer, Answer);
+        }
+        if (TrapFrame->Edi >= 1 && QzCopyToUser((PVOID)TrapFrame->Ebx, Answer, 1))
+        {
+            TrapFrame->Eax = 1;   /* the length of the response */
+            TrapFrame->Eip++;
+            _disable();
+            return;
         }
     }
     TrapFrame->Eax = (ULONG)STATUS_SUCCESS;

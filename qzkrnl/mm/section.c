@@ -417,6 +417,20 @@ QzMmCreateSection(PQZ_SECTION *Result, PLARGE_INTEGER MaximumSize, ULONG Protect
     return STATUS_SUCCESS;
 }
 
+/* A data section holding a copy of kernel memory (the NLS tables) */
+NTSTATUS
+QzMmCreateSectionFromMemory(PVOID Data, ULONG Size, PQZ_SECTION *Result)
+{
+    LARGE_INTEGER Maximum;
+    NTSTATUS Status;
+
+    Maximum.QuadPart = Size;
+    Status = QzMmCreateSection(Result, &Maximum, PAGE_READONLY, SEC_COMMIT, NULL);
+    if (NT_SUCCESS(Status))
+        QzMmFillSection(*Result, 0, Data, Size);
+    return Status;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Views                                                                   */
 /* ---------------------------------------------------------------------- */

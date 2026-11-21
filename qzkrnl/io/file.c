@@ -1315,3 +1315,44 @@ IoGetFileObjectGenericMapping(VOID)
 {
     return &IoFileObjectType->TypeInfo.GenericMapping;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Attributes by name: open, ask, close                                    */
+/* ---------------------------------------------------------------------- */
+
+static NTSTATUS
+QzIoQueryAttributesByName(POBJECT_ATTRIBUTES ObjectAttributes, FILE_INFORMATION_CLASS Class, PVOID Buffer,
+                          ULONG Length)
+{
+    IO_STATUS_BLOCK IoStatus;
+    HANDLE Handle;
+    NTSTATUS Status;
+
+    /* Opened for attributes only; the name may be a file or a directory */
+    Status = NtOpenFile(&Handle, FILE_READ_ATTRIBUTES | SYNCHRONIZE, ObjectAttributes, &IoStatus,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                        FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Status = ZwQueryInformationFile(Handle, &IoStatus, Buffer, Length, Class);
+    NtClose(Handle);
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+NtQueryAttributesFile(IN POBJECT_ATTRIBUTES ObjectAttributes,
+                      OUT PFILE_BASIC_INFORMATION FileInformation)
+{
+    return QzIoQueryAttributesByName(ObjectAttributes, FileBasicInformation, FileInformation,
+                                     sizeof(FILE_BASIC_INFORMATION));
+}
+
+NTSTATUS
+NTAPI
+NtQueryFullAttributesFile(IN POBJECT_ATTRIBUTES ObjectAttributes,
+                          OUT PFILE_NETWORK_OPEN_INFORMATION FileInformation)
+{
+    return QzIoQueryAttributesByName(ObjectAttributes, FileNetworkOpenInformation, FileInformation,
+                                     sizeof(FILE_NETWORK_OPEN_INFORMATION));
+}

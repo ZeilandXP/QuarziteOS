@@ -78,6 +78,7 @@ NTSTATUS QzMmMapView(PQZ_SECTION Section, struct _QZ_PROCESS *Process, PVOID *Ba
 NTSTATUS QzMmUnmapView(struct _QZ_PROCESS *Process, PVOID BaseAddress);
 PVOID QzMmMapHyper(ULONG Pfn);       /* interrupts off around the use */
 VOID QzMmUnmapHyper(VOID);
+NTSTATUS QzMmCreateSectionFromMemory(PVOID Data, ULONG Size, PQZ_SECTION *Result);
 
 /* ---------------------------------------------------------------------- */
 /* Processes                                                               */
@@ -116,6 +117,10 @@ typedef struct _QZ_PROCESS
     ULONG Cookie;
     CHAR ImageFileName[16];
     UNICODE_STRING ImagePathName;   /* \Device\...\smss.exe, for queries */
+    PVOID SystemDllBase;            /* ntdll.dll, if mapped */
+    ULONG_PTR EntryPoint;           /* the image's, once relocated */
+    BOOLEAN RanImage;               /* the loader handed over to the image */
+    ULONG_PTR NextTeb;              /* where the next TEB goes (downwards) */
 } QZ_PROCESS, *PQZ_PROCESS;
 
 /* The Thread object body (ps/thread.c) */
@@ -161,6 +166,7 @@ PQZ_HANDLE_TABLE QzObKernelHandleTable(VOID);
 PQZ_HANDLE_TABLE QzObCreateHandleTable(VOID);
 VOID QzObKillHandleTable(PQZ_HANDLE_TABLE Table);
 ULONG QzObTableHandleCount(PQZ_HANDLE_TABLE Table);
+NTSTATUS QzObInheritHandles(PQZ_HANDLE_TABLE Parent, PQZ_HANDLE_TABLE Child);
 
 /* mm/vm.c */
 VOID QzVmInit(VOID);
@@ -205,6 +211,9 @@ NTSTATUS QzPsCreateUserThread(PQZ_PROCESS Process, PCONTEXT Context, PVOID Teb, 
 VOID QzSetTebSelector(PVOID Teb);           /* ke/i386/cpu.c */
 VOID QzContextToTrapFrame(PCONTEXT Context, PKTRAP_FRAME TrapFrame, ULONG Flags);
 VOID QzTrapFrameToContext(PKTRAP_FRAME TrapFrame, PCONTEXT Context);
+
+/* ps/create.c */
+NTSTATUS QzPsStartSmss(PQZ_PROCESS *Result);
 
 /* ps/thread.c */
 DECLSPEC_NORETURN VOID QzPsTerminateCurrentThread(NTSTATUS ExitStatus);

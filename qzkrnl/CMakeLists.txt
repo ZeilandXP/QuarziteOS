@@ -66,6 +66,7 @@ list(APPEND SOURCE
     ob/obname.c
     ob/obtest.c
     ps/create.c
+    ps/info.c
     ps/process.c
     ps/thread.c
     se/se.c

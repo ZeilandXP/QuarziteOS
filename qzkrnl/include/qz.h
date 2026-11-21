@@ -128,6 +128,7 @@ typedef struct _QZ_THREAD
     PVOID SyscallExceptionList;
     PVOID FxSaveArea;              /* user threads: FPU/SSE state, 512 bytes, 16-aligned */
     BOOLEAN Alerted;
+    BOOLEAN TrapFrameReplaced;     /* NtContinue & co.: the service set the whole user context */
 } QZ_THREAD, *PQZ_THREAD;
 
 /* ---------------------------------------------------------------------- */
