@@ -21,6 +21,8 @@ QuarziteOS has two tracks that eventually meet:
       timers, system time (`synctest`: 27/27).
 - [x] qzkrnl stage B2: runs on the unmodified `hal.dll` (clock, IRQL,
       interrupt objects through the HAL).
+- [x] qzkrnl stage B3: object manager, namespace, handles, executive
+      objects (`obtest`: 31/31).
 
 ## 0.2.0 (next release, after 0.1.0 is done)
 
@@ -122,7 +124,7 @@ so this comes first.
 |-------|----------|----------------|
 | B1 ✔ | IRQL (raise/lower, DISPATCH software interrupt), DPCs, spinlocks, NT-layout PCR/PRCB, dispatcher objects (events, mutants, semaphores, timers) with NT layouts, `KeWaitFor*Object(s)`, system time. | Done: `synctest` passes 27/27. |
 | B2 ✔ | Host `HAL.DLL`: PCR at `KIP0PCRADDRESS`, `KTRAP_FRAME` traps and `KiEoiHelper`, `KeUpdateSystemTime`, `KiDispatchInterrupt`, dispatch tables, interrupt objects, MDLs, contiguous memory, RTL bitmaps; private PIC/PIT/CMOS code removed. | Done: HAL phases 0 and 1 complete, clock and devices run through the HAL, boot test 26/26, `synctest` 27/27. |
-| B3 | Object manager (types, namespace, handles), security stubs, executive objects. | `ObCreateObject`/`ObReferenceObjectByHandle` work. |
+| B3 ✔ | Object manager (NT object header/type/directory layouts, types, namespace with symbolic links and parse hooks, system handle table, deferred deletion), standard directories and links, security stubs with a real `SeExports`, executive objects (event, semaphore, timer) and handle waits, counted-string RTL. | Done: `obtest` 31/31, boot test 29/29, export set still identical to ntoskrnl (1600 names, 218 implemented). |
 | B4 | I/O manager: driver objects, device objects, IRPs, `IoCallDriver`, PnP root enumerator. Start FreeLoader's boot drivers (`DriverEntry`). | The disk stack and a filesystem mount. |
 | B5 | Configuration manager on the loader's SYSTEM hive; `Zw*` registry APIs. | Drivers read their service keys. |
 | B6 | Processes, user-mode address spaces, sections and image loading, system calls (`int 2e`/`sysenter`), `ntdll.dll`. | `smss.exe` starts. |

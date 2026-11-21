@@ -53,6 +53,9 @@ QzCmdHelp(VOID)
             "  exports           kernel export coverage\n"
             "  synctest          self-test: IRQL, DPCs, spinlocks, events, mutexes,\n"
             "                    semaphores, waits, timers, system time\n"
+            "  obtest            self-test: object manager (types, names, handles,\n"
+            "                    directories, symbolic links, executive objects)\n"
+            "  obj [path]        list an object directory (default \\)\n"
             "  irql              current IRQL, DPC and timer statistics\n"
             "  hal               HAL clock and interrupt statistics\n"
             "  time              date and time (CMOS clock + KeQuerySystemTime)\n"
@@ -224,6 +227,23 @@ QzExecute(PCHAR Line)
     }
     else if (!strcmp(Cmd, "synctest"))
         QzRunSyncTests();
+    else if (!strcmp(Cmd, "obtest"))
+        QzRunObjectTests();
+    else if (!strcmp(Cmd, "obj"))
+    {
+        WCHAR Path[128];
+        ULONG i = 0;
+        PCSTR Source = Arg ? Arg : "\\";
+        while (Source[i] && i < RTL_NUMBER_OF(Path) - 1)
+        {
+            Path[i] = (UCHAR)Source[i];
+            i++;
+        }
+        Path[i] = UNICODE_NULL;
+        QzObDumpDirectory(Path);
+        QzPrint("  %lu objects, %lu handles in the system handle table\n",
+                QzObObjectCount(), QzObHandleCount());
+    }
     else if (!strcmp(Cmd, "irql"))
     {
         QzPrint("  IRQL %u (PCR FS:0x24 = %u, HAL KeGetCurrentIrql = %u), %lu DPCs retired, %lu queued, %lu active timers\n",

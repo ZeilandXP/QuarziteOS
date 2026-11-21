@@ -221,6 +221,12 @@ def run_qzkrnl(iso, out):
                 ("exports", [r"\d+ implemented by qzkrnl"]),
                 ("time", [r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (19|20)\d\d-\d\d-\d\d \d\d:\d\d:\d\d"]),
                 ("synctest", [r"synctest: \d+ passed, 0 failed"]),
+                ("obtest", [r"obtest: \d+ passed, 0 failed"]),
+                ("obj", [r"Directory \\", r"ObjectTypes\s+Directory",
+                         r"SystemRoot\s+SymbolicLink\s+-> \\ArcName\\multi\(0\)",
+                         r"DosDevices\s+SymbolicLink\s+-> \\\?\?"]),
+                ("obj \\ObjectTypes", [r"Event\s+Type", r"SymbolicLink\s+Type",
+                                        r"File\s+Type"]),
                 ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0, HAL KeGetCurrentIrql = 0\), \d+ DPCs retired"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
@@ -229,7 +235,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd == "synctest" else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)

@@ -195,9 +195,17 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzKbdInit();
     QzSerialConnectInterrupt();
 
+    /* Object manager: the namespace and its mutex need PASSIVE_LEVEL and a
+       running scheduler */
+    QzObInit(LoaderBlock);
+    QzObInitPhase1();
+    DbgPrint(QZ_KERNEL_NAME ": object manager up, %lu objects\n", QzObObjectCount());
+
     DbgPrint(QZ_KERNEL_NAME ": interrupts on, scheduler running\n");
-    QzPrint("  HAL:      hal.dll -- PIC, PIT clock (%lu.%04lu ms tick), stall factor %lu\n\n",
+    QzPrint("  HAL:      hal.dll -- PIC, PIT clock (%lu.%04lu ms tick), stall factor %lu\n",
             QzTimeIncrement / 10000, QzTimeIncrement % 10000, QzPcr.StallScaleFactor);
+    QzPrint("  Objects:  %lu in the namespace (\\ObjectTypes, \\Device, \\GLOBAL??, ...)\n\n",
+            QzObObjectCount());
 
     QzShell();
 }

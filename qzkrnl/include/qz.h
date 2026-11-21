@@ -19,6 +19,8 @@
 #include <ndk/ketypes.h>
 #include <ndk/haltypes.h>
 #include <ndk/halfuncs.h>
+#include <ndk/obtypes.h>
+#include <ndk/obfuncs.h>
 #include "exportstats.h"
 
 /* ---------------------------------------------------------------------- */
@@ -281,6 +283,45 @@ VOID NTAPI QzKeAcquireSpinLockAtDpcLevel(PKSPIN_LOCK SpinLock);
 VOID NTAPI QzKeReleaseSpinLockFromDpcLevel(PKSPIN_LOCK SpinLock);
 VOID NTAPI QzKeEnterCriticalRegion(VOID);
 VOID NTAPI QzKeLeaveCriticalRegion(VOID);
+
+/* ob/ -- object manager */
+extern POBJECT_TYPE ObpTypeObjectType;
+extern POBJECT_TYPE ObpDirectoryObjectType;
+extern POBJECT_TYPE ObpSymbolicLinkObjectType;
+extern POBJECT_DIRECTORY QzObRootDirectory;
+VOID QzObCoreInit(VOID);
+VOID QzObInit(PLOADER_PARAMETER_BLOCK LoaderBlock);
+VOID QzObInitPhase1(VOID);
+VOID QzObAcquireNamespace(VOID);
+VOID QzObReleaseNamespace(VOID);
+NTSTATUS QzObpLookupObjectName(HANDLE RootHandle, PUNICODE_STRING ObjectName,
+                               ULONG Attributes, POBJECT_TYPE ObjectType,
+                               KPROCESSOR_MODE AccessMode, PVOID ParseContext,
+                               PVOID InsertObject, PVOID *FoundObject);
+VOID QzObpDeleteNameCheck(PVOID Object);
+NTSTATUS QzObpCreateHandle(PVOID Object, ACCESS_MASK GrantedAccess,
+                           ULONG HandleAttributes, PHANDLE Handle);
+ACCESS_MASK QzObpMapDesiredAccess(POBJECT_TYPE Type, ACCESS_MASK DesiredAccess);
+ULONG QzObHandleCount(VOID);
+ULONG QzObObjectCount(VOID);
+PCUNICODE_STRING QzObTypeName(PVOID Object);
+VOID QzObDumpDirectory(PCWSTR Path);
+
+/* ex/exobj.c -- executive objects */
+extern POBJECT_TYPE ExEventObjectType, ExSemaphoreObjectType, ExTimerObjectType;
+VOID QzExObjectsInit(VOID);
+NTSTATUS NTAPI NtCreateSemaphore(PHANDLE SemaphoreHandle, ACCESS_MASK DesiredAccess,
+                                 POBJECT_ATTRIBUTES ObjectAttributes,
+                                 LONG InitialCount, LONG MaximumCount);
+NTSTATUS NTAPI NtReleaseSemaphore(HANDLE SemaphoreHandle, LONG ReleaseCount,
+                                  PLONG PreviousCount);
+/* Exported services the DDK headers do not declare */
+NTSTATUS NTAPI ZwResetEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS NTAPI ZwPulseEvent(HANDLE EventHandle, PLONG PreviousState);
+NTSTATUS NTAPI ZwClearEvent(HANDLE EventHandle);
+
+/* ob/obtest.c */
+VOID QzRunObjectTests(VOID);
 
 /* ke/synctest.c */
 VOID QzRunSyncTests(VOID);

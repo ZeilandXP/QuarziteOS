@@ -21,6 +21,7 @@ endif()
 spec2def(qzkrnl.exe qzkrnl.spec)
 
 list(APPEND SOURCE
+    ex/exobj.c
     ex/init.c
     ex/shell.c
     ex/version.c
@@ -38,6 +39,12 @@ list(APPEND SOURCE
     mm/mdl.c
     mm/mm.c
     mm/pool.c
+    ob/obhandle.c
+    ob/obinit.c
+    ob/object.c
+    ob/obname.c
+    ob/obtest.c
+    se/se.c
     drv/input.c
     drv/kbd.c
     drv/serial.c
@@ -45,7 +52,8 @@ list(APPEND SOURCE
     rtl/bitmap.c
     rtl/print.c
     rtl/rtl.c
-    rtl/time.c)
+    rtl/time.c
+    rtl/ustr.c)
 
 add_executable(qzkrnl
     ${SOURCE}

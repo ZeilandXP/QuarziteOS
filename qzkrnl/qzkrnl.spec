@@ -146,6 +146,82 @@
 @ stdcall RtlFindMostSignificantBit(long long)
 @ stdcall MmAllocateContiguousMemorySpecifyCache(long long long long long long long long)
 @ stdcall MmFreeContiguousMemorySpecifyCache(ptr long long)
+@ fastcall ObfDereferenceObject(ptr)
+@ stdcall ObDereferenceObject(ptr)
+@ fastcall ObfReferenceObject(ptr)
+@ stdcall ObReferenceObjectByPointer(ptr long ptr long)
+@ stdcall ObCreateObjectType(ptr ptr ptr ptr)
+@ stdcall ObCreateObject(long ptr ptr long ptr long long long ptr)
+@ stdcall ObInsertObject(ptr ptr long long ptr ptr)
+@ stdcall ObMakeTemporaryObject(ptr)
+@ stdcall ObQueryNameString(ptr ptr long ptr)
+@ stdcall ObReferenceObjectByName(ptr long ptr long ptr long ptr ptr)
+@ stdcall ObOpenObjectByName(ptr ptr long ptr long ptr ptr)
+@ stdcall ObReferenceObjectByHandle(ptr long ptr long ptr ptr)
+@ stdcall ObOpenObjectByPointer(ptr long ptr long ptr long ptr)
+@ stdcall ObCloseHandle(ptr long)
+@ stdcall NtClose(ptr)
+@ stdcall ZwClose(ptr)
+@ stdcall NtDuplicateObject(ptr ptr ptr ptr long long long)
+@ stdcall ZwDuplicateObject(ptr ptr ptr ptr long long long)
+@ stdcall ZwMakeTemporaryObject(ptr)
+@ stdcall NtMakePermanentObject(ptr)
+@ stdcall ZwQueryObject(ptr long ptr long ptr)
+@ stdcall ZwCreateDirectoryObject(ptr long ptr)
+@ stdcall ZwOpenDirectoryObject(ptr long ptr)
+@ stdcall ZwQueryDirectoryObject(ptr ptr long long long ptr ptr)
+@ stdcall ZwCreateSymbolicLinkObject(ptr long ptr ptr)
+@ stdcall ZwOpenSymbolicLinkObject(ptr long ptr)
+@ stdcall ZwQuerySymbolicLinkObject(ptr ptr ptr)
+@ extern IoAdapterObjectType
+@ extern IoDeviceObjectType
+@ extern IoDriverObjectType
+@ extern IoFileObjectType
+@ extern ExEventObjectType
+@ extern ExSemaphoreObjectType
+@ stdcall NtCreateEvent(ptr long ptr long long)
+@ stdcall ZwCreateEvent(ptr long ptr long long)
+@ stdcall ZwOpenEvent(ptr long ptr)
+@ stdcall NtSetEvent(ptr ptr)
+@ stdcall ZwSetEvent(ptr ptr)
+@ stdcall ZwResetEvent(ptr ptr)
+@ stdcall ZwClearEvent(ptr)
+@ stdcall ZwPulseEvent(ptr ptr)
+@ stdcall ZwCreateTimer(ptr long ptr long)
+@ stdcall ZwOpenTimer(ptr long ptr)
+@ stdcall ZwSetTimer(ptr ptr ptr ptr long long ptr)
+@ stdcall ZwCancelTimer(ptr ptr)
+@ stdcall NtWaitForSingleObject(ptr long ptr)
+@ stdcall ZwWaitForSingleObject(ptr long ptr)
+@ stdcall ZwWaitForMultipleObjects(long ptr long long ptr)
+@ extern SeExports
+@ stdcall SeCaptureSubjectContext(ptr)
+@ stdcall SeReleaseSubjectContext(ptr)
+@ stdcall SeLockSubjectContext(ptr)
+@ stdcall SeUnlockSubjectContext(ptr)
+@ stdcall SeSinglePrivilegeCheck(long long long)
+@ stdcall SeAccessCheck(ptr ptr ptr long long ptr ptr long ptr ptr)
+@ stdcall RtlMapGenericMask(ptr ptr)
+@ stdcall ObGetObjectSecurity(ptr ptr ptr)
+@ stdcall ObReleaseObjectSecurity(ptr long)
+@ stdcall RtlUpcaseUnicodeChar(long)
+@ stdcall RtlCompareUnicodeString(ptr ptr long)
+@ stdcall RtlEqualUnicodeString(ptr ptr long)
+@ stdcall RtlPrefixUnicodeString(ptr ptr long)
+@ stdcall RtlCopyUnicodeString(ptr ptr)
+@ stdcall RtlAppendUnicodeStringToString(ptr ptr)
+@ stdcall RtlAppendUnicodeToString(ptr wstr)
+@ stdcall RtlCreateUnicodeString(ptr wstr)
+@ stdcall RtlFreeUnicodeString(ptr)
+@ stdcall RtlUpcaseUnicodeString(ptr ptr long)
+@ stdcall RtlInitString(ptr str)
+@ stdcall RtlEqualString(ptr ptr long)
+@ stdcall RtlCopyString(ptr ptr)
+@ stdcall RtlAnsiCharToUnicodeChar(ptr)
+@ stdcall RtlAnsiStringToUnicodeString(ptr ptr long)
+@ stdcall RtlUnicodeStringToAnsiString(ptr ptr long)
+@ stdcall RtlFreeAnsiString(ptr)
+@ stdcall RtlIntegerToUnicodeString(long long ptr)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -228,7 +304,6 @@
 @ stub ExEnterCriticalRegionAndAcquireResourceShared
 @ stub ExEnterCriticalRegionAndAcquireSharedWaitForExclusive
 @ stub ExEnumHandleTable
-@ extern ExEventObjectType QzUnimplementedData
 @ stub ExExtendZone
 @ stub ExFreeCacheAwareRundownProtection
 @ stub ExFreeToPagedLookasideList
@@ -286,7 +361,6 @@
 @ stub ExReleaseRundownProtectionEx
 @ stub ExRundownCompleted
 @ stub ExRundownCompletedCacheAware
-@ extern ExSemaphoreObjectType QzUnimplementedData
 @ stub ExSetResourceOwnerPointer
 @ stub ExSetTimerResolution
 @ stub ExSizeOfRundownProtectionCacheAware
@@ -472,7 +546,6 @@
 @ stub IoAcquireCancelSpinLock
 @ stub IoAcquireRemoveLockEx
 @ stub IoAcquireVpbSpinLock
-@ extern IoAdapterObjectType QzUnimplementedData
 @ stub IoAllocateAdapterChannel
 @ stub IoAllocateController
 @ stub IoAllocateDriverObjectExtension
@@ -528,15 +601,12 @@
 @ stub IoDetachDevice
 @ extern IoDeviceHandlerObjectSize QzUnimplementedData
 @ extern IoDeviceHandlerObjectType QzUnimplementedData
-@ extern IoDeviceObjectType QzUnimplementedData
 @ stub IoDisconnectInterrupt
 @ stub IoDisconnectInterruptEx
-@ extern IoDriverObjectType QzUnimplementedData
 @ stub IoEnqueueIrp
 @ stub IoEnumerateDeviceObjectList
 @ stub IoEnumerateRegisteredFiltersList
 @ stub IoFastQueryNetworkAttributes
-@ extern IoFileObjectType QzUnimplementedData
 @ stub IoForwardAndCatchIrp
 @ stub IoForwardIrpSynchronously
 @ stub IoFreeController
@@ -897,22 +967,18 @@
 @ stub NtAllocateLocallyUniqueId
 @ stub NtAllocateUuids
 @ stub NtAllocateVirtualMemory
-@ stub NtClose
 @ stub NtConnectPort
-@ stub NtCreateEvent
 @ stub NtCreateFile
 @ stub NtCreateSection
 @ stub NtDeleteAtom
 @ stub NtDeleteFile
 @ stub NtDeviceIoControlFile
-@ stub NtDuplicateObject
 @ stub NtDuplicateToken
 @ stub NtFindAtom
 @ stub NtFreeVirtualMemory
 @ stub NtFsControlFile
 @ extern NtGlobalFlag QzUnimplementedData
 @ stub NtLockFile
-@ stub NtMakePermanentObject
 @ stub NtMapViewOfSection
 @ stub NtNotifyChangeDirectoryFile
 @ stub NtOpenFile
@@ -937,7 +1003,6 @@
 @ stub NtRequestPort
 @ stub NtRequestWaitReplyPort
 @ stub NtSetEaFile
-@ stub NtSetEvent
 @ stub NtSetInformationFile
 @ stub NtSetInformationProcess
 @ stub NtSetInformationThread
@@ -948,36 +1013,19 @@
 @ stub NtTraceEvent
 @ stub NtUnlockFile
 @ stub NtVdmControl
-@ stub NtWaitForSingleObject
 @ stub NtWriteFile
 @ stub ObAssignSecurity
 @ stub ObCheckCreateObjectAccess
 @ stub ObCheckObjectAccess
-@ stub ObCloseHandle
-@ stub ObCreateObject
-@ stub ObCreateObjectType
 @ stub ObDeleteCapturedInsertInfo
-@ stub ObDereferenceObject
 @ stub ObDereferenceSecurityDescriptor
 @ stub ObFindHandleForObject
-@ stub ObGetObjectSecurity
-@ stub ObInsertObject
 @ stub ObLogSecurityDescriptor
-@ stub ObMakeTemporaryObject
-@ stub ObOpenObjectByName
-@ stub ObOpenObjectByPointer
-@ stub ObQueryNameString
 @ stub ObQueryObjectAuditingByHandle
-@ stub ObReferenceObjectByHandle
-@ stub ObReferenceObjectByName
-@ stub ObReferenceObjectByPointer
 @ stub ObReferenceSecurityDescriptor
-@ stub ObReleaseObjectSecurity
 @ stub ObSetHandleAttributes
 @ stub ObSetSecurityDescriptorInfo
 @ stub ObSetSecurityObjectByPointer
-@ stub ObfDereferenceObject
-@ stub ObfReferenceObject
 @ stub PfxFindPrefix
 @ stub PfxInitialize
 @ stub PfxInsertPrefix
@@ -1112,13 +1160,9 @@
 @ stub RtlAddAtomToAtomTable
 @ stub RtlAddRange
 @ stub RtlAllocateHeap
-@ stub RtlAnsiCharToUnicodeChar
 @ stub RtlAnsiStringToUnicodeSize
-@ stub RtlAnsiStringToUnicodeString
 @ stub RtlAppendAsciizToString
 @ stub RtlAppendStringToString
-@ stub RtlAppendUnicodeStringToString
-@ stub RtlAppendUnicodeToString
 @ stub RtlAreAllAccessesGranted
 @ stub RtlAreAnyAccessesGranted
 @ stub RtlAreBitsClear
@@ -1131,7 +1175,6 @@
 @ stub RtlCmEncodeMemIoResource
 @ stub RtlCompareMemoryUlong
 @ stub RtlCompareString
-@ stub RtlCompareUnicodeString
 @ stub RtlCompressBuffer
 @ stub RtlCompressChunks
 @ stub RtlConvertLongToLargeInteger
@@ -1142,15 +1185,12 @@
 @ stub -arch=x86_64 RtlCopyMemoryNonTemporal
 @ stub RtlCopyRangeList
 @ stub RtlCopySid
-@ stub RtlCopyString
-@ stub RtlCopyUnicodeString
 @ stub RtlCreateAcl
 @ stub RtlCreateAtomTable
 @ stub RtlCreateHeap
 @ stub RtlCreateRegistryKey
 @ stub RtlCreateSecurityDescriptor
 @ stub RtlCreateSystemVolumeInformationFolder
-@ stub RtlCreateUnicodeString
 @ stub RtlCustomCPToUnicodeN
 @ stub RtlDecompressBuffer
 @ stub RtlDecompressChunks
@@ -1179,8 +1219,6 @@
 @ stub RtlEnumerateGenericTableWithoutSplayingAvl
 @ stub RtlEqualLuid
 @ stub RtlEqualSid
-@ stub RtlEqualString
-@ stub RtlEqualUnicodeString
 @ stub -arch=win32 RtlExtendedIntegerMultiply
 @ stub -arch=win32 RtlExtendedLargeIntegerDivide
 @ stub -arch=win32 RtlExtendedMagicDivide
@@ -1194,11 +1232,9 @@
 @ stub RtlFindRange
 @ stub RtlFindUnicodePrefix
 @ stub RtlFormatCurrentUserKeyPath
-@ stub RtlFreeAnsiString
 @ stub RtlFreeHeap
 @ stub RtlFreeOemString
 @ stub RtlFreeRangeList
-@ stub RtlFreeUnicodeString
 @ stub RtlGUIDFromString
 @ stub RtlGenerate8dot3Name
 @ stub RtlGetAce
@@ -1221,7 +1257,6 @@
 @ stub RtlImageNtHeader
 @ stub RtlInitAnsiStringEx
 @ stub RtlInitCodePageTable
-@ stub RtlInitString
 @ stub RtlInitUnicodeStringEx
 @ stub RtlInitializeGenericTable
 @ stub RtlInitializeGenericTableAvl
@@ -1236,7 +1271,6 @@
 @ stub RtlInt64ToUnicodeString
 @ stub RtlIntegerToChar
 @ stub RtlIntegerToUnicode
-@ stub RtlIntegerToUnicodeString
 @ stub RtlInvertRangeList
 @ stub RtlInvertRangeListEx
 @ stub RtlIoDecodeMemIoResource
@@ -1279,7 +1313,6 @@
 @ stub RtlLookupElementGenericTableFull
 @ stub RtlLookupElementGenericTableFullAvl
 @ stub -arch=x86_64 RtlLookupFunctionEntry
-@ stub RtlMapGenericMask
 @ stub RtlMapSecurityErrorToNtStatus
 @ stub RtlMergeRangeLists
 @ stub RtlMultiByteToUnicodeN
@@ -1297,7 +1330,6 @@
 @ stub RtlPinAtomInAtomTable
 @ stub RtlPrefetchMemoryNonTemporal
 @ stub RtlPrefixString
-@ stub RtlPrefixUnicodeString
 @ stub RtlQueryAtomInAtomTable
 @ stub RtlQueryRegistryValues
 @ stub RtlQueryTimeZoneInformation
@@ -1339,7 +1371,6 @@
 @ stub -arch=i386,arm RtlUlongByteSwap
 @ stub -arch=i386,arm RtlUlonglongByteSwap
 @ stub RtlUnicodeStringToAnsiSize
-@ stub RtlUnicodeStringToAnsiString
 @ stub RtlUnicodeStringToCountedOemString
 @ stub RtlUnicodeStringToInteger
 @ stub RtlUnicodeStringToOemSize
@@ -1352,8 +1383,6 @@
 @ stub RtlUnlockBootStatusData
 @ stub RtlUnwind
 @ stub -arch=x86_64,arm RtlUnwindEx
-@ stub RtlUpcaseUnicodeChar
-@ stub RtlUpcaseUnicodeString
 @ stub RtlUpcaseUnicodeStringToAnsiString
 @ stub RtlUpcaseUnicodeStringToCountedOemString
 @ stub RtlUpcaseUnicodeStringToOemString
@@ -1376,7 +1405,6 @@
 @ stub RtlxOemStringToUnicodeSize
 @ stub RtlxUnicodeStringToAnsiSize
 @ stub RtlxUnicodeStringToOemSize
-@ stub SeAccessCheck
 @ stub SeAppendPrivileges
 @ stub SeAssignSecurity
 @ stub SeAssignSecurityEx
@@ -1387,7 +1415,6 @@
 @ stub SeAuditingHardLinkEvents
 @ stub SeAuditingHardLinkEventsWithContext
 @ stub SeCaptureSecurityDescriptor
-@ stub SeCaptureSubjectContext
 @ stub SeCloseObjectAuditAlarm
 @ stub SeCreateAccessState
 @ stub SeCreateClientSecurity
@@ -1395,12 +1422,10 @@
 @ stub SeDeassignSecurity
 @ stub SeDeleteAccessState
 @ stub SeDeleteObjectAuditAlarm
-@ extern SeExports QzUnimplementedData
 @ stub SeFilterToken
 @ stub SeFreePrivileges
 @ stub SeImpersonateClient
 @ stub SeImpersonateClientEx
-@ stub SeLockSubjectContext
 @ stub SeMarkLogonSessionForTerminationNotification
 @ stub SeOpenObjectAuditAlarm
 @ stub SeOpenObjectForDeleteAuditAlarm
@@ -1413,20 +1438,17 @@
 @ stub SeQuerySessionIdToken
 @ stub SeRegisterLogonSessionTerminatedRoutine
 @ stub SeReleaseSecurityDescriptor
-@ stub SeReleaseSubjectContext
 @ stub SeReportSecurityEvent
 @ stub SeSetAccessStateGenericMapping
 @ stub SeSetAuditParameter
 @ stub SeSetSecurityDescriptorInfo
 @ stub SeSetSecurityDescriptorInfoEx
-@ stub SeSinglePrivilegeCheck
 @ extern SeSystemDefaultDacl QzUnimplementedData
 @ stub SeTokenImpersonationLevel
 @ stub SeTokenIsAdmin
 @ stub SeTokenIsRestricted
 @ extern SeTokenObjectType QzUnimplementedData
 @ stub SeTokenType
-@ stub SeUnlockSubjectContext
 @ stub SeUnregisterLogonSessionTerminatedRoutine
 @ stub SeValidSecurityDescriptor
 @ stub VerSetConditionMask
@@ -1459,19 +1481,12 @@
 @ stub ZwAllocateVirtualMemory
 @ stub ZwAssignProcessToJobObject
 @ stub ZwCancelIoFile
-@ stub ZwCancelTimer
-@ stub ZwClearEvent
-@ stub ZwClose
 @ stub ZwCloseObjectAuditAlarm
 @ stub ZwConnectPort
-@ stub ZwCreateDirectoryObject
-@ stub ZwCreateEvent
 @ stub ZwCreateFile
 @ stub ZwCreateJobObject
 @ stub ZwCreateKey
 @ stub ZwCreateSection
-@ stub ZwCreateSymbolicLinkObject
-@ stub ZwCreateTimer
 @ stub ZwDeleteBootEntry
 @ stub ZwDeleteDriverEntry
 @ stub ZwDeleteFile
@@ -1479,7 +1494,6 @@
 @ stub ZwDeleteValueKey
 @ stub ZwDeviceIoControlFile
 @ stub ZwDisplayString
-@ stub ZwDuplicateObject
 @ stub ZwDuplicateToken
 @ stub ZwEnumerateBootEntries
 @ stub ZwEnumerateDriverEntries
@@ -1494,13 +1508,10 @@
 @ stub ZwIsProcessInJob
 @ stub ZwLoadDriver
 @ stub ZwLoadKey
-@ stub ZwMakeTemporaryObject
 @ stub ZwMapViewOfSection
 @ stub ZwModifyBootEntry
 @ stub ZwModifyDriverEntry
 @ stub ZwNotifyChangeKey
-@ stub ZwOpenDirectoryObject
-@ stub ZwOpenEvent
 @ stub ZwOpenFile
 @ stub ZwOpenJobObject
 @ stub ZwOpenKey
@@ -1508,19 +1519,15 @@
 @ stub ZwOpenProcessToken
 @ stub ZwOpenProcessTokenEx
 @ stub ZwOpenSection
-@ stub ZwOpenSymbolicLinkObject
 @ stub ZwOpenThread
 @ stub ZwOpenThreadToken
 @ stub ZwOpenThreadTokenEx
-@ stub ZwOpenTimer
 @ stub ZwPowerInformation
-@ stub ZwPulseEvent
 @ stub ZwQueryBootEntryOrder
 @ stub ZwQueryBootOptions
 @ stub ZwQueryDefaultLocale
 @ stub ZwQueryDefaultUILanguage
 @ stub ZwQueryDirectoryFile
-@ stub ZwQueryDirectoryObject
 @ stub ZwQueryDriverEntryOrder
 @ stub ZwQueryEaFile
 @ stub ZwQueryFullAttributesFile
@@ -1531,17 +1538,14 @@
 @ stub ZwQueryInformationToken
 @ stub ZwQueryInstallUILanguage
 @ stub ZwQueryKey
-@ stub ZwQueryObject
 @ stub ZwQuerySection
 @ stub ZwQuerySecurityObject
-@ stub ZwQuerySymbolicLinkObject
 @ stub ZwQuerySystemInformation
 @ stub ZwQueryValueKey
 @ stub ZwQueryVolumeInformationFile
 @ stub ZwReadFile
 @ stub ZwReplaceKey
 @ stub ZwRequestWaitReplyPort
-@ stub ZwResetEvent
 @ stub ZwRestoreKey
 @ stub ZwSaveKey
 @ stub ZwSaveKeyEx
@@ -1552,7 +1556,6 @@
 @ stub ZwSetDefaultUILanguage
 @ stub ZwSetDriverEntryOrder
 @ stub ZwSetEaFile
-@ stub ZwSetEvent
 @ stub ZwSetInformationFile
 @ stub ZwSetInformationJobObject
 @ stub ZwSetInformationObject
@@ -1561,7 +1564,6 @@
 @ stub ZwSetSecurityObject
 @ stub ZwSetSystemInformation
 @ stub ZwSetSystemTime
-@ stub ZwSetTimer
 @ stub ZwSetValueKey
 @ stub ZwSetVolumeInformationFile
 @ stub ZwTerminateJobObject
@@ -1570,8 +1572,6 @@
 @ stub ZwUnloadDriver
 @ stub ZwUnloadKey
 @ stub ZwUnmapViewOfSection
-@ stub ZwWaitForMultipleObjects
-@ stub ZwWaitForSingleObject
 @ stub ZwWriteFile
 @ stub ZwYieldExecution
 @ stub -arch=x86_64,arm __C_specific_handler
