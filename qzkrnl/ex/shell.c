@@ -8,7 +8,7 @@
  * you poke at the kernel. Commands are deliberately tiny and self-checking.
  */
 
-#include "qz.h"
+#include "qzio.h"
 
 VOID QzPrintModules(VOID);
 ULONG QzCountBootDrivers(VOID);
@@ -56,6 +56,10 @@ QzCmdHelp(VOID)
             "  obtest            self-test: object manager (types, names, handles,\n"
             "                    directories, symbolic links, executive objects)\n"
             "  obj [path]        list an object directory (default \\)\n"
+            "  iotest            self-test: I/O manager (drivers, devices, IRPs, files,\n"
+            "                    filters, mounting a test file system)\n"
+            "  drvobj            driver objects\n"
+            "  devices           device objects\n"
             "  irql              current IRQL, DPC and timer statistics\n"
             "  hal               HAL clock and interrupt statistics\n"
             "  time              date and time (CMOS clock + KeQuerySystemTime)\n"
@@ -229,6 +233,12 @@ QzExecute(PCHAR Line)
         QzRunSyncTests();
     else if (!strcmp(Cmd, "obtest"))
         QzRunObjectTests();
+    else if (!strcmp(Cmd, "iotest"))
+        QzRunIoTests();
+    else if (!strcmp(Cmd, "drvobj"))
+        QzIoDumpDrivers();
+    else if (!strcmp(Cmd, "devices"))
+        QzIoDumpDevices();
     else if (!strcmp(Cmd, "obj"))
     {
         WCHAR Path[128];

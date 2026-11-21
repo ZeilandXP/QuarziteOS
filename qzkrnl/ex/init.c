@@ -5,7 +5,7 @@
  * COPYRIGHT:   Copyright 2026 QuarziteOS contributors
  */
 
-#include "qz.h"
+#include "qzio.h"
 
 #define QZ_BOOT_STACK_SIZE (16 * 1024)
 
@@ -35,18 +35,6 @@ __asm__(
     "1:  hlt\n"
     "    jmp 1b\n"
 );
-
-typedef struct _QZ_LDR_ENTRY
-{
-    LIST_ENTRY InLoadOrderLinks;
-    LIST_ENTRY InMemoryOrderLinks;
-    LIST_ENTRY InInitializationOrderLinks;
-    PVOID DllBase;
-    PVOID EntryPoint;
-    ULONG SizeOfImage;
-    UNICODE_STRING FullDllName;
-    UNICODE_STRING BaseDllName;
-} QZ_LDR_ENTRY, *PQZ_LDR_ENTRY;
 
 static VOID NTAPI
 QzStatusThread(PVOID Context)
@@ -199,6 +187,8 @@ QzKernelMain(PLOADER_PARAMETER_BLOCK LoaderBlock)
        running scheduler */
     QzObInit(LoaderBlock);
     QzObInitPhase1();
+    QzExWorkerInit();
+    QzIoInit();
     DbgPrint(QZ_KERNEL_NAME ": object manager up, %lu objects\n", QzObObjectCount());
 
     DbgPrint(QZ_KERNEL_NAME ": interrupts on, scheduler running\n");

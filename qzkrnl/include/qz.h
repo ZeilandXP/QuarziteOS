@@ -23,6 +23,10 @@
 #include <ndk/obfuncs.h>
 #include "exportstats.h"
 
+/* ExRaiseStatus is exported as an alias of RtlRaiseStatus */
+DECLSPEC_NORETURN VOID NTAPI RtlRaiseStatus(NTSTATUS Status);
+#define ExRaiseStatus RtlRaiseStatus
+
 /* ---------------------------------------------------------------------- */
 /* Product identity                                                        */
 /* ---------------------------------------------------------------------- */
@@ -378,4 +382,16 @@ VOID QzSetConsoleColor(UCHAR Attribute);
 DECLSPEC_NORETURN VOID QzShell(VOID);
 
 /* rtl/rtl.c */
+typedef struct _QZ_LDR_ENTRY          /* the leading part of LDR_DATA_TABLE_ENTRY */
+{
+    LIST_ENTRY InLoadOrderLinks;
+    LIST_ENTRY InMemoryOrderLinks;
+    LIST_ENTRY InInitializationOrderLinks;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+} QZ_LDR_ENTRY, *PQZ_LDR_ENTRY;
 PVOID QzFindKernelExport(PCSTR Name);
+PVOID QzFindImageExport(PVOID ImageBase, PCSTR Name);

@@ -394,3 +394,101 @@ sprintf(char *Buffer, const char *Format, ...)
     va_end(Args);
     return Result;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Wide formatting: the format is translated to the narrow dialect (where  */
+/* %s and %S swap meaning) and the Latin-1 result widened.                 */
+/* ---------------------------------------------------------------------- */
+
+int
+__cdecl
+_vsnwprintf(wchar_t *Buffer, size_t Count, const wchar_t *Format, va_list Args)
+{
+    char Narrow[256], Small[512];
+    char *Out = Small;
+    size_t i = 0, OutSize = sizeof(Small);
+    int Result, j;
+    BOOLEAN InSpec = FALSE, Prefixed = FALSE;
+
+    for (; *Format && i < sizeof(Narrow) - 3; Format++)
+    {
+        WCHAR c = *Format;
+        if (!InSpec)
+        {
+            InSpec = (c == L'%');
+            Prefixed = FALSE;
+            Narrow[i++] = (char)c;
+            continue;
+        }
+        if (c == L'h' || c == L'l' || c == L'w')
+            Prefixed = TRUE;
+        if ((c == L's' || c == L'c') && !Prefixed)
+        {
+            Narrow[i++] = 'w';           /* bare %s / %c are wide */
+            Narrow[i++] = (char)c;
+            InSpec = FALSE;
+            continue;
+        }
+        if ((c == L'S' || c == L'C') && !Prefixed)
+        {
+            Narrow[i++] = 'h';           /* %S / %C are narrow */
+            Narrow[i++] = (char)(c + ('a' - 'A'));
+            InSpec = FALSE;
+            continue;
+        }
+        Narrow[i++] = (char)c;
+        if ((c >= L'a' && c <= L'z' && c != L'h' && c != L'l' && c != L'w') ||
+            (c >= L'A' && c <= L'Z' && c != L'I') || c == L'%')
+        {
+            InSpec = FALSE;
+        }
+    }
+    Narrow[i] = 0;
+
+    if (Count > OutSize)
+    {
+        Out = ExAllocatePoolWithTag(NonPagedPool, Count, 'tnrP');
+        if (!Out)
+        {
+            Out = Small;
+        }
+        else
+        {
+            OutSize = Count;
+        }
+    }
+    Result = QzVsnprintf(Out, OutSize, Narrow, Args);
+    for (j = 0; (size_t)j < Count && j < Result && (size_t)j < OutSize - 1; j++)
+        Buffer[j] = (UCHAR)Out[j];
+    if ((size_t)j < Count)
+        Buffer[j] = 0;
+    if (Out != Small)
+        ExFreePoolWithTag(Out, 'tnrP');
+    return ((size_t)Result >= Count) ? -1 : Result;
+}
+
+int
+__cdecl
+_snwprintf(wchar_t *Buffer, size_t Count, const wchar_t *Format, ...)
+{
+    va_list Args;
+    int Result;
+
+    va_start(Args, Format);
+    Result = _vsnwprintf(Buffer, Count, Format, Args);
+    va_end(Args);
+    return Result;
+}
+
+int
+__cdecl
+_swprintf(wchar_t *Buffer, const wchar_t *Format, ...)
+{
+    va_list Args;
+    int Result;
+
+    va_start(Args, Format);
+    Result = _vsnwprintf(Buffer, 0x7FFFFFFF / sizeof(wchar_t), Format, Args);
+    va_end(Args);
+    return Result;
+}

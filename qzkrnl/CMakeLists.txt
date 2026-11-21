@@ -25,8 +25,10 @@ list(APPEND SOURCE
     ex/init.c
     ex/shell.c
     ex/version.c
+    ex/worker.c
     ke/bugcheck.c
     ke/clock.c
+    ke/devqueue.c
     ke/halif.c
     ke/intobj.c
     ke/irql.c
@@ -36,6 +38,12 @@ list(APPEND SOURCE
     ke/wait.c
     ke/i386/cpu.c
     ke/i386/trap.c
+    io/device.c
+    io/driver.c
+    io/file.c
+    io/iotest.c
+    io/irp.c
+    io/misc.c
     mm/mdl.c
     mm/mm.c
     mm/pool.c

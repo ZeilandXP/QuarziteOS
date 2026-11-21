@@ -338,6 +338,8 @@ static PVOID
 QzExWaitableObject(PVOID Object)
 {
     POBJECT_TYPE Type = OBJECT_TO_OBJECT_HEADER(Object)->Type;
+    if (Type == IoFileObjectType)
+        return &((PFILE_OBJECT)Object)->Event;
     return Type->DefaultObject ? Type->DefaultObject : Object;
 }
 

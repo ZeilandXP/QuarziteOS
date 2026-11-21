@@ -198,32 +198,16 @@ RtlInitUnicodeString(IN OUT PUNICODE_STRING DestinationString,
  * Look a name up in the kernel image's own export directory. The kernel is
  * always the first entry of the loader's module list.
  */
-typedef struct _QZ_LDR_ENTRY
-{
-    LIST_ENTRY InLoadOrderLinks;
-    LIST_ENTRY InMemoryOrderLinks;
-    LIST_ENTRY InInitializationOrderLinks;
-    PVOID DllBase;
-    PVOID EntryPoint;
-    ULONG SizeOfImage;
-    UNICODE_STRING FullDllName;
-    UNICODE_STRING BaseDllName;
-} QZ_LDR_ENTRY, *PQZ_LDR_ENTRY;
-
 PVOID
-QzFindKernelExport(PCSTR Name)
+QzFindImageExport(PVOID ImageBase, PCSTR Name)
 {
-    PQZ_LDR_ENTRY Kernel;
-    PUCHAR Base;
+    PUCHAR Base = ImageBase;
     PIMAGE_NT_HEADERS Nt;
     PIMAGE_EXPORT_DIRECTORY Exports;
     PULONG Names, Functions;
     PUSHORT Ordinals;
     ULONG i;
 
-    Kernel = CONTAINING_RECORD(QzLoaderBlock->LoadOrderListHead.Flink,
-                               QZ_LDR_ENTRY, InLoadOrderLinks);
-    Base = Kernel->DllBase;
     Nt = (PIMAGE_NT_HEADERS)(Base + ((PIMAGE_DOS_HEADER)Base)->e_lfanew);
     if (!Nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size)
         return NULL;
@@ -240,4 +224,12 @@ QzFindKernelExport(PCSTR Name)
             return Base + Functions[Ordinals[i]];
     }
     return NULL;
+}
+
+PVOID
+QzFindKernelExport(PCSTR Name)
+{
+    PQZ_LDR_ENTRY Kernel = CONTAINING_RECORD(QzLoaderBlock->LoadOrderListHead.Flink,
+                                             QZ_LDR_ENTRY, InLoadOrderLinks);
+    return QzFindImageExport(Kernel->DllBase, Name);
 }

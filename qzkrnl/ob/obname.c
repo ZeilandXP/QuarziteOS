@@ -314,8 +314,11 @@ Restart:
                 *FoundObject = Object;
                 goto Done;
             }
+            /* A device named by itself is the device, unless this is an
+               open (the I/O manager's parse context) */
             if (OBJECT_TO_OBJECT_HEADER(Object)->Type->TypeInfo.ParseProcedure &&
-                OBJECT_TO_OBJECT_HEADER(Object)->Type != ObpDirectoryObjectType)
+                OBJECT_TO_OBJECT_HEADER(Object)->Type != ObpDirectoryObjectType &&
+                ParseContext)
             {
                 goto ParseObject;
             }

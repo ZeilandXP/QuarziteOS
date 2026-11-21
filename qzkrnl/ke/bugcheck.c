@@ -125,6 +125,20 @@ RtlRaiseException(IN PEXCEPTION_RECORD ExceptionRecord)
                        Text);
 }
 
+DECLSPEC_NORETURN
+VOID
+NTAPI
+RtlRaiseStatus(IN NTSTATUS Status)
+{
+    EXCEPTION_RECORD Record;
+
+    RtlZeroMemory(&Record, sizeof(Record));
+    Record.ExceptionCode = Status;
+    Record.ExceptionAddress = __builtin_return_address(0);
+    RtlRaiseException(&Record);
+    for (;;);
+}
+
 VOID
 NTAPI
 RtlAssert(IN PVOID FailedAssertion,

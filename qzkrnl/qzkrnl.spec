@@ -222,6 +222,124 @@
 @ stdcall RtlUnicodeStringToAnsiString(ptr ptr long)
 @ stdcall RtlFreeAnsiString(ptr)
 @ stdcall RtlIntegerToUnicodeString(long long ptr)
+@ cdecl _vsnwprintf()
+@ cdecl _snwprintf()
+@ cdecl -version=0x600+ _swprintf()
+@ cdecl swprintf() _swprintf # Non-conforming swprintf
+@ stdcall ExRaiseStatus(long) RtlRaiseStatus
+@ stdcall MmIsAddressValid(ptr)
+@ stdcall MmProbeAndLockPages(ptr long long)
+@ stdcall MmUnlockPages(ptr)
+@ stdcall IoBuildPartialMdl(ptr ptr ptr long)
+@ stdcall IoCreateDriver(ptr ptr)
+@ stdcall IoDeleteDriver(ptr)
+@ stdcall IoAllocateDriverObjectExtension(ptr ptr long ptr)
+@ stdcall IoGetDriverObjectExtension(ptr ptr)
+@ stdcall IoRegisterDriverReinitialization(ptr ptr ptr)
+@ stdcall IoRegisterBootDriverReinitialization(ptr ptr ptr)
+@ stdcall IoCreateDevice(ptr long ptr long long long ptr)
+@ stdcall IoDeleteDevice(ptr)
+@ stdcall IoAttachDeviceToDeviceStackSafe(ptr ptr ptr)
+@ stdcall IoAttachDeviceToDeviceStack(ptr ptr)
+@ stdcall IoAttachDeviceByPointer(ptr ptr)
+@ stdcall IoAttachDevice(ptr ptr ptr)
+@ stdcall IoDetachDevice(ptr)
+@ stdcall IoGetAttachedDevice(ptr)
+@ stdcall IoGetAttachedDeviceReference(ptr)
+@ stdcall IoGetLowerDeviceObject(ptr)
+@ stdcall IoGetDeviceAttachmentBaseRef(ptr)
+@ stdcall IoGetRelatedDeviceObject(ptr)
+@ stdcall IoGetBaseFileSystemDeviceObject(ptr)
+@ stdcall IoGetDeviceObjectPointer(ptr long ptr ptr)
+@ stdcall IoCreateSymbolicLink(ptr ptr)
+@ stdcall IoCreateUnprotectedSymbolicLink(ptr ptr)
+@ stdcall IoDeleteSymbolicLink(ptr)
+@ stdcall IoRegisterShutdownNotification(ptr)
+@ stdcall IoRegisterLastChanceShutdownNotification(ptr)
+@ stdcall IoUnregisterShutdownNotification(ptr)
+@ stdcall IoInitializeTimer(ptr ptr ptr)
+@ stdcall IoStartTimer(ptr)
+@ stdcall IoStopTimer(ptr)
+@ stdcall IoInitializeIrp(ptr long long)
+@ stdcall IoAllocateIrp(long long)
+@ stdcall IoFreeIrp(ptr)
+@ stdcall IoReuseIrp(ptr long)
+@ stdcall IoMakeAssociatedIrp(ptr long)
+@ fastcall IofCallDriver(ptr ptr)
+@ stdcall IoCallDriver(ptr ptr)
+@ fastcall IofCompleteRequest(ptr long)
+@ stdcall IoCompleteRequest(ptr long)
+@ stdcall IoAcquireCancelSpinLock(ptr)
+@ stdcall IoReleaseCancelSpinLock(long)
+@ stdcall IoCancelIrp(ptr)
+@ stdcall IoBuildAsynchronousFsdRequest(long ptr ptr long ptr ptr)
+@ stdcall IoBuildSynchronousFsdRequest(long ptr ptr long ptr ptr ptr)
+@ stdcall IoBuildDeviceIoControlRequest(long ptr ptr long ptr long long ptr ptr)
+@ stdcall IoInitializeRemoveLockEx(ptr long long long long)
+@ stdcall IoAcquireRemoveLockEx(ptr ptr str long long)
+@ stdcall IoReleaseRemoveLockEx(ptr ptr long)
+@ stdcall IoReleaseRemoveLockAndWaitEx(ptr ptr long)
+@ stdcall IoRegisterFileSystem(ptr)
+@ stdcall IoUnregisterFileSystem(ptr)
+@ stdcall IoRegisterFsRegistrationChange(ptr ptr)
+@ stdcall IoUnregisterFsRegistrationChange(ptr ptr)
+@ stdcall IoVerifyVolume(ptr long)
+@ stdcall IoSetHardErrorOrVerifyDevice(ptr ptr)
+@ stdcall IoCreateStreamFileObjectEx(ptr ptr ptr)
+@ stdcall IoCreateStreamFileObject(ptr ptr)
+@ stdcall IoCreateStreamFileObjectLite(ptr ptr)
+@ stdcall IoCreateFile(ptr long ptr ptr ptr long long long long ptr long long ptr long)
+@ stdcall IoCreateFileSpecifyDeviceObjectHint(ptr long ptr ptr ptr long long long long ptr long long ptr long ptr)
+@ stdcall ZwCreateFile(ptr long ptr ptr ptr long long long long ptr long)
+@ stdcall NtCreateFile(ptr long ptr ptr ptr long long long long ptr long)
+@ stdcall ZwOpenFile(ptr long ptr ptr long long)
+@ stdcall NtOpenFile(ptr long ptr ptr long long)
+@ stdcall ZwReadFile(ptr ptr ptr ptr ptr ptr long ptr ptr)
+@ stdcall ZwWriteFile(ptr ptr ptr ptr ptr ptr long ptr ptr)
+@ stdcall NtReadFile(ptr ptr ptr ptr ptr ptr long ptr ptr)
+@ stdcall NtWriteFile(ptr ptr ptr ptr ptr ptr long ptr ptr)
+@ stdcall ZwDeviceIoControlFile(ptr ptr ptr ptr ptr long ptr long ptr long)
+@ stdcall NtDeviceIoControlFile(ptr ptr ptr ptr ptr long ptr long ptr long)
+@ stdcall ZwFsControlFile(ptr ptr ptr ptr ptr long ptr long ptr long)
+@ stdcall NtFsControlFile(ptr ptr ptr ptr ptr long ptr long ptr long)
+@ stdcall ZwQueryInformationFile(ptr ptr ptr long long)
+@ stdcall ZwSetInformationFile(ptr ptr ptr long long)
+@ stdcall ZwQueryVolumeInformationFile(ptr ptr ptr long long)
+@ stdcall IoIsOperationSynchronous(ptr)
+@ stdcall IoCheckShareAccess(long long ptr ptr long)
+@ stdcall IoSetShareAccess(long long ptr ptr)
+@ stdcall IoRemoveShareAccess(ptr ptr)
+@ stdcall IoUpdateShareAccess(ptr ptr)
+@ stdcall IoGetFileObjectGenericMapping()
+@ stdcall IoStartPacket(ptr ptr ptr ptr)
+@ stdcall IoStartNextPacket(ptr long)
+@ stdcall IoStartNextPacketByKey(ptr long long)
+@ stdcall IoConnectInterrupt(ptr ptr ptr ptr long long long long long long long)
+@ stdcall IoDisconnectInterrupt(ptr)
+@ stdcall IoAllocateErrorLogEntry(ptr long)
+@ stdcall IoFreeErrorLogEntry(ptr)
+@ stdcall IoWriteErrorLogEntry(ptr)
+@ stdcall IoGetConfigurationInformation()
+@ stdcall IoIsWdmVersionAvailable(long long)
+@ stdcall IoWMIRegistrationControl(ptr long)
+@ stdcall IoGetCurrentProcess()
+@ stdcall IoGetRequestorProcess(ptr)
+@ stdcall IoGetRequestorProcessId(ptr)
+@ stdcall PsGetCurrentProcessId()
+@ stdcall PsGetCurrentThreadId()
+@ stdcall PsGetCurrentProcess() IoGetCurrentProcess
+@ stdcall IoGetStackLimits(ptr ptr)
+@ stdcall ExQueueWorkItem(ptr long)
+@ stdcall IoAllocateWorkItem(ptr)
+@ stdcall IoFreeWorkItem(ptr)
+@ stdcall IoQueueWorkItem(ptr ptr long ptr)
+@ stdcall KeInitializeDeviceQueue(ptr)
+@ stdcall KeInsertDeviceQueue(ptr ptr)
+@ stdcall KeInsertByKeyDeviceQueue(ptr ptr long)
+@ stdcall KeRemoveDeviceQueue(ptr)
+@ stdcall KeRemoveByKeyDeviceQueue(ptr long)
+@ stdcall KeRemoveByKeyDeviceQueueIfBusy(ptr long)
+@ stdcall KeRemoveEntryDeviceQueue(ptr ptr)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -340,11 +458,9 @@
 @ stub ExNotifyCallback
 @ stub -arch=x86_64,arm ExQueryDepthSList
 @ stub ExQueryPoolBlockSize
-@ stub ExQueueWorkItem
 @ stub ExRaiseAccessViolation
 @ stub ExRaiseDatatypeMisalignment
 @ stub ExRaiseHardError
-@ stub ExRaiseStatus
 @ stub ExReInitializeRundownProtection
 @ stub ExReInitializeRundownProtectionCacheAware
 @ stub ExRegisterCallback
@@ -543,51 +659,23 @@
 @ stub -arch=arm InterlockedPopEntrySList
 @ stub -arch=arm InterlockedPushEntrySList
 @ stub -arch=x86_64 InitializeSListHead
-@ stub IoAcquireCancelSpinLock
-@ stub IoAcquireRemoveLockEx
 @ stub IoAcquireVpbSpinLock
 @ stub IoAllocateAdapterChannel
 @ stub IoAllocateController
-@ stub IoAllocateDriverObjectExtension
-@ stub IoAllocateErrorLogEntry
-@ stub IoAllocateIrp
-@ stub IoAllocateWorkItem
 @ stub IoAssignDriveLetters
 @ stub IoAssignResources
-@ stub IoAttachDevice
-@ stub IoAttachDeviceByPointer
-@ stub IoAttachDeviceToDeviceStack
-@ stub IoAttachDeviceToDeviceStackSafe
-@ stub IoBuildAsynchronousFsdRequest
-@ stub IoBuildDeviceIoControlRequest
-@ stub IoBuildPartialMdl
-@ stub IoBuildSynchronousFsdRequest
-@ stub IoCallDriver
 @ stub IoCancelFileOpen
-@ stub IoCancelIrp
 @ stub IoCheckDesiredAccess
 @ stub IoCheckEaBufferValidity
 @ stub IoCheckFunctionAccess
 @ stub IoCheckQuerySetFileInformation
 @ stub IoCheckQuerySetVolumeInformation
 @ stub IoCheckQuotaBufferValidity
-@ stub IoCheckShareAccess
-@ stub IoCompleteRequest
-@ stub IoConnectInterrupt
 @ stub IoConnectInterruptEx
 @ stub IoCreateController
-@ stub IoCreateDevice
 @ stub IoCreateDisk
-@ stub IoCreateDriver
-@ stub IoCreateFile
-@ stub IoCreateFileSpecifyDeviceObjectHint
 @ stub IoCreateNotificationEvent
-@ stub IoCreateStreamFileObject
-@ stub IoCreateStreamFileObjectEx
-@ stub IoCreateStreamFileObjectLite
-@ stub IoCreateSymbolicLink
 @ stub IoCreateSynchronizationEvent
-@ stub IoCreateUnprotectedSymbolicLink
 @ stub IoCsqInitialize
 @ stub IoCsqInitializeEx
 @ stub IoCsqInsertIrp
@@ -595,13 +683,8 @@
 @ stub IoCsqRemoveIrp
 @ stub IoCsqRemoveNextIrp
 @ stub IoDeleteController
-@ stub IoDeleteDevice
-@ stub IoDeleteDriver
-@ stub IoDeleteSymbolicLink
-@ stub IoDetachDevice
 @ extern IoDeviceHandlerObjectSize QzUnimplementedData
 @ extern IoDeviceHandlerObjectType QzUnimplementedData
-@ stub IoDisconnectInterrupt
 @ stub IoDisconnectInterruptEx
 @ stub IoEnqueueIrp
 @ stub IoEnumerateDeviceObjectList
@@ -610,48 +693,25 @@
 @ stub IoForwardAndCatchIrp
 @ stub IoForwardIrpSynchronously
 @ stub IoFreeController
-@ stub IoFreeErrorLogEntry
-@ stub IoFreeIrp
-@ stub IoFreeWorkItem
-@ stub IoGetAttachedDevice
-@ stub IoGetAttachedDeviceReference
-@ stub IoGetBaseFileSystemDeviceObject
 @ stub IoGetBootDiskInformation
-@ stub IoGetConfigurationInformation
-@ stub IoGetCurrentProcess
-@ stub IoGetDeviceAttachmentBaseRef
 @ stub IoGetDeviceInterfaceAlias
 @ stub -version=0x602+ IoGetDeviceInterfacePropertyData
 @ stub IoGetDeviceInterfaces
-@ stub IoGetDeviceObjectPointer
 @ stub IoGetDeviceProperty
 @ stub IoGetDevicePropertyData
 @ stub IoGetDeviceToVerify
 @ stub IoGetDiskDeviceObject
 @ stub IoGetDmaAdapter
-@ stub IoGetDriverObjectExtension
-@ stub IoGetFileObjectGenericMapping
 @ stub IoGetInitialStack
-@ stub IoGetLowerDeviceObject
 @ stub IoGetPagingIoPriority
-@ stub IoGetRelatedDeviceObject
-@ stub IoGetRequestorProcess
-@ stub IoGetRequestorProcessId
 @ stub IoGetRequestorSessionId
-@ stub IoGetStackLimits
 @ stub IoGetTopLevelIrp
-@ stub IoInitializeIrp
-@ stub IoInitializeRemoveLockEx
-@ stub IoInitializeTimer
 @ stub IoInvalidateDeviceRelations
 @ stub IoInvalidateDeviceState
 @ stub -arch=x86_64 IoIs32bitProcess
 @ stub IoIsFileOriginRemote
-@ stub IoIsOperationSynchronous
 @ stub IoIsSystemThread
 @ stub IoIsValidNameGraftingBuffer
-@ stub IoIsWdmVersionAvailable
-@ stub IoMakeAssociatedIrp
 @ stub IoOpenDeviceInterfaceRegistryKey
 @ stub IoOpenDeviceRegistryKey
 @ stub IoPageRead
@@ -661,7 +721,6 @@
 @ stub IoQueryFileInformation
 @ stub IoQueryVolumeInformation
 @ stub IoQueueThreadIrp
-@ stub IoQueueWorkItem
 @ stub IoRaiseHardError
 @ stub IoRaiseInformationalHardError
 @ stub IoReadDiskSignature
@@ -669,19 +728,9 @@
 @ stub IoReadPartitionTable
 @ stub IoReadPartitionTableEx
 @ extern IoReadTransferCount QzUnimplementedData
-@ stub IoRegisterBootDriverReinitialization
 @ stub IoRegisterDeviceInterface
-@ stub IoRegisterDriverReinitialization
-@ stub IoRegisterFileSystem
-@ stub IoRegisterFsRegistrationChange
-@ stub IoRegisterLastChanceShutdownNotification
 @ stub IoRegisterPlugPlayNotification
-@ stub IoRegisterShutdownNotification
-@ stub IoReleaseCancelSpinLock
-@ stub IoReleaseRemoveLockAndWaitEx
-@ stub IoReleaseRemoveLockEx
 @ stub IoReleaseVpbSpinLock
-@ stub IoRemoveShareAccess
 @ stub IoReportDetectedDevice
 @ stub IoReportHalResourceUsage
 @ stub IoReportResourceForDetection
@@ -689,41 +738,28 @@
 @ stub IoReportTargetDeviceChange
 @ stub IoReportTargetDeviceChangeAsynchronous
 @ stub IoRequestDeviceEject
-@ stub IoReuseIrp
 @ stub IoSetCompletionRoutineEx
 @ stub -version=0x602+ IoSetDeviceInterfacePropertyData
 @ stub IoSetDeviceInterfaceState
 @ stub IoSetDevicePropertyData
 @ stub IoSetDeviceToVerify
 @ stub IoSetFileOrigin
-@ stub IoSetHardErrorOrVerifyDevice
 @ stub IoSetInformation
 @ stub IoSetIoCompletion
 @ stub IoSetPartitionInformation
 @ stub IoSetPartitionInformationEx
-@ stub IoSetShareAccess
 @ stub IoSetStartIoAttributes
 @ stub IoSetSystemPartition
 @ stub IoSetThreadHardErrorMode
 @ stub IoSetTopLevelIrp
-@ stub IoStartNextPacket
-@ stub IoStartNextPacketByKey
-@ stub IoStartPacket
-@ stub IoStartTimer
 @ extern IoStatisticsLock QzUnimplementedData
-@ stub IoStopTimer
 @ stub IoSynchronousInvalidateDeviceRelations
 @ stub IoSynchronousPageWrite
 @ stub IoThreadToProcess
 @ stub IoTranslateBusAddress
-@ stub IoUnregisterFileSystem
-@ stub IoUnregisterFsRegistrationChange
 @ stub IoUnregisterPlugPlayNotification
-@ stub IoUnregisterShutdownNotification
-@ stub IoUpdateShareAccess
 @ stub IoValidateDeviceIoControlAccess
 @ stub IoVerifyPartitionTable
-@ stub IoVerifyVolume
 @ stub IoVolumeDeviceToDosName
 @ stub IoWMIAllocateInstanceIds
 @ stub IoWMIDeviceObjectToInstanceName
@@ -735,19 +771,15 @@
 @ stub IoWMIQueryAllDataMultiple
 @ stub IoWMIQuerySingleInstance
 @ stub IoWMIQuerySingleInstanceMultiple
-@ stub IoWMIRegistrationControl
 @ stub IoWMISetNotificationCallback
 @ stub IoWMISetSingleInstance
 @ stub IoWMISetSingleItem
 @ stub IoWMISuggestInstanceName
 @ stub IoWMIWriteEvent
-@ stub IoWriteErrorLogEntry
 @ extern IoWriteOperationCount QzUnimplementedData
 @ stub IoWritePartitionTable
 @ stub IoWritePartitionTableEx
 @ extern IoWriteTransferCount QzUnimplementedData
-@ stub IofCallDriver
-@ stub IofCompleteRequest
 @ stub KdChangeOption
 @ stub KdDisableDebugger
 @ stub KdEnableDebugger
@@ -799,11 +831,8 @@
 @ stub -arch=i386 KeI386SetGdtSelector
 @ stub KeInitializeApc
 @ stub KeInitializeCrashDumpHeader
-@ stub KeInitializeDeviceQueue
 @ stub KeInitializeGuardedMutex
 @ stub KeInitializeQueue
-@ stub KeInsertByKeyDeviceQueue
-@ stub KeInsertDeviceQueue
 @ stub KeInsertHeadQueue
 @ stub KeInsertQueue
 @ stub KeInsertQueueApc
@@ -831,10 +860,6 @@
 @ stub -arch=x86_64 KeReleaseQueuedSpinLock
 @ stub -arch=x86_64 KeReleaseSpinLock
 @ stub KeReleaseSpinLockForDpc
-@ stub KeRemoveByKeyDeviceQueue
-@ stub KeRemoveByKeyDeviceQueueIfBusy
-@ stub KeRemoveDeviceQueue
-@ stub KeRemoveEntryDeviceQueue
 @ stub KeRemoveQueue
 @ stub KeRemoveSystemServiceTable
 @ stub -arch=i386 KeRestoreFloatingPointState
@@ -912,7 +937,6 @@
 @ stub MmGetVirtualForPhysical
 @ stub MmGrowKernelStack
 @ extern MmHighestUserAddress QzUnimplementedData
-@ stub MmIsAddressValid
 @ stub MmIsDriverVerifying
 @ stub MmIsIoSpaceActive
 @ stub MmIsNonPagedSystemAddressValid
@@ -933,7 +957,6 @@
 @ stub MmMarkPhysicalMemoryAsGood
 @ stub MmPageEntireDriver
 @ stub MmPrefetchPages
-@ stub MmProbeAndLockPages
 @ stub MmProbeAndLockProcessPages
 @ stub MmProbeAndLockSelectedPages
 @ stub MmProtectMdlSystemAddress
@@ -948,7 +971,6 @@
 @ extern MmSystemRangeStart QzUnimplementedData
 @ stub MmTrimAllSystemPagableMemory
 @ stub MmUnlockPagableImageSection
-@ stub MmUnlockPages
 @ stub MmUnmapReservedMapping
 @ stub MmUnmapVideoDisplay
 @ stub MmUnmapViewInSessionSpace
@@ -968,20 +990,16 @@
 @ stub NtAllocateUuids
 @ stub NtAllocateVirtualMemory
 @ stub NtConnectPort
-@ stub NtCreateFile
 @ stub NtCreateSection
 @ stub NtDeleteAtom
 @ stub NtDeleteFile
-@ stub NtDeviceIoControlFile
 @ stub NtDuplicateToken
 @ stub NtFindAtom
 @ stub NtFreeVirtualMemory
-@ stub NtFsControlFile
 @ extern NtGlobalFlag QzUnimplementedData
 @ stub NtLockFile
 @ stub NtMapViewOfSection
 @ stub NtNotifyChangeDirectoryFile
-@ stub NtOpenFile
 @ stub NtOpenProcess
 @ stub NtOpenProcessToken
 @ stub NtOpenProcessTokenEx
@@ -999,7 +1017,6 @@
 @ stub NtQuerySecurityObject
 @ stub NtQuerySystemInformation
 @ stub NtQueryVolumeInformationFile
-@ stub NtReadFile
 @ stub NtRequestPort
 @ stub NtRequestWaitReplyPort
 @ stub NtSetEaFile
@@ -1013,7 +1030,6 @@
 @ stub NtTraceEvent
 @ stub NtUnlockFile
 @ stub NtVdmControl
-@ stub NtWriteFile
 @ stub ObAssignSecurity
 @ stub ObCheckCreateObjectAccess
 @ stub ObCheckObjectAccess
@@ -1068,11 +1084,8 @@
 @ stub PsDisableImpersonation
 @ stub PsEstablishWin32Callouts
 @ stub PsGetContextThread
-@ stub PsGetCurrentProcess
-@ stub PsGetCurrentProcessId
 @ stub PsGetCurrentProcessSessionId
 @ stub PsGetCurrentProcessWin32Process
-@ stub PsGetCurrentThreadId
 @ stub PsGetCurrentThreadPreviousMode
 @ stub PsGetCurrentThreadProcess
 @ stub PsGetCurrentThreadProcessId
@@ -1483,7 +1496,6 @@
 @ stub ZwCancelIoFile
 @ stub ZwCloseObjectAuditAlarm
 @ stub ZwConnectPort
-@ stub ZwCreateFile
 @ stub ZwCreateJobObject
 @ stub ZwCreateKey
 @ stub ZwCreateSection
@@ -1492,7 +1504,6 @@
 @ stub ZwDeleteFile
 @ stub ZwDeleteKey
 @ stub ZwDeleteValueKey
-@ stub ZwDeviceIoControlFile
 @ stub ZwDisplayString
 @ stub ZwDuplicateToken
 @ stub ZwEnumerateBootEntries
@@ -1503,7 +1514,6 @@
 @ stub ZwFlushKey
 @ stub ZwFlushVirtualMemory
 @ stub ZwFreeVirtualMemory
-@ stub ZwFsControlFile
 @ stub ZwInitiatePowerAction
 @ stub ZwIsProcessInJob
 @ stub ZwLoadDriver
@@ -1512,7 +1522,6 @@
 @ stub ZwModifyBootEntry
 @ stub ZwModifyDriverEntry
 @ stub ZwNotifyChangeKey
-@ stub ZwOpenFile
 @ stub ZwOpenJobObject
 @ stub ZwOpenKey
 @ stub ZwOpenProcess
@@ -1531,7 +1540,6 @@
 @ stub ZwQueryDriverEntryOrder
 @ stub ZwQueryEaFile
 @ stub ZwQueryFullAttributesFile
-@ stub ZwQueryInformationFile
 @ stub ZwQueryInformationJobObject
 @ stub ZwQueryInformationProcess
 @ stub ZwQueryInformationThread
@@ -1542,8 +1550,6 @@
 @ stub ZwQuerySecurityObject
 @ stub ZwQuerySystemInformation
 @ stub ZwQueryValueKey
-@ stub ZwQueryVolumeInformationFile
-@ stub ZwReadFile
 @ stub ZwReplaceKey
 @ stub ZwRequestWaitReplyPort
 @ stub ZwRestoreKey
@@ -1556,7 +1562,6 @@
 @ stub ZwSetDefaultUILanguage
 @ stub ZwSetDriverEntryOrder
 @ stub ZwSetEaFile
-@ stub ZwSetInformationFile
 @ stub ZwSetInformationJobObject
 @ stub ZwSetInformationObject
 @ stub ZwSetInformationProcess
@@ -1572,7 +1577,6 @@
 @ stub ZwUnloadDriver
 @ stub ZwUnloadKey
 @ stub ZwUnmapViewOfSection
-@ stub ZwWriteFile
 @ stub ZwYieldExecution
 @ stub -arch=x86_64,arm __C_specific_handler
 @ stub -arch=arm __jump_unwind
@@ -1602,7 +1606,6 @@
 @ stub _purecall
 @ stub -arch=x86_64,arm _setjmp
 @ stub -arch=x86_64,arm _setjmpex
-@ stub _snwprintf
 @ stub _stricmp
 @ stub _strlwr
 @ stub _strnicmp
@@ -1610,9 +1613,6 @@
 @ stub _strrev
 @ stub _strset
 @ stub _strupr
-@ stub -version=0x400-0x502 _swprintf
-@ stub -version=0x600+ _swprintf
-@ stub _vsnwprintf
 @ stub _wcsicmp
 @ stub _wcslwr
 @ stub _wcsnicmp
@@ -1642,7 +1642,6 @@
 @ stub strrchr
 @ stub strspn
 @ stub strstr
-@ stub swprintf
 @ stub tolower
 @ stub toupper
 @ stub towlower

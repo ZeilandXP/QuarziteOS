@@ -227,6 +227,9 @@ def run_qzkrnl(iso, out):
                          r"DosDevices\s+SymbolicLink\s+-> \\\?\?"]),
                 ("obj \\ObjectTypes", [r"Event\s+Type", r"SymbolicLink\s+Type",
                                         r"File\s+Type"]),
+                ("iotest", [r"iotest: \d+ passed, 0 failed"]),
+                ("devices", [r"\\Device\\QzTestDisk0\s+\\Driver\\QzTestDisk",
+                             r"\\FileSystem\\QzTestFs", r"\(mounted\)"]),
                 ("irql", [r"IRQL 0 \(PCR FS:0x24 = 0, HAL KeGetCurrentIrql = 0\), \d+ DPCs retired"]),
                 ("hal", [r"HAL: clock tick \d+ x 100ns, stall factor [1-9]\d*",
                          r"[1-9]\d* clock interrupts, [1-9]\d* device interrupts",
@@ -235,7 +238,7 @@ def run_qzkrnl(iso, out):
             for cmd, patterns in commands:
                 mark = len(vm.serial_text())
                 vm.send_serial(cmd + "\r")
-                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest") else 30,
+                text = vm.wait_serial(r"qz> ", 90 if cmd in ("synctest", "obtest", "iotest") else 30,
                                       start=mark + len(cmd))
                 output = (text or "")[mark:]
                 ok = text is not None and all(re.search(p, output) for p in patterns)
@@ -253,10 +256,10 @@ def run_qzkrnl(iso, out):
             vm.screenshot(os.path.join(out, "qzkrnl-shell.png"))
 
             # Calling an unimplemented export must produce a clean stop screen
-            vm.send_serial("call IoCreateDevice\r")
+            vm.send_serial("call KeUserModeCallback\r")
             text = vm.wait_serial(r"\*\*\* STOP: 0x0000001E", 20)
             chk.check("unimplemented export -> KMODE_EXCEPTION_NOT_HANDLED stop",
-                      text and re.search(r"Unimplemented kernel export: (ntoskrnl|qzkrnl)\.exe!IoCreateDevice", text))
+                      text and re.search(r"Unimplemented kernel export: (ntoskrnl|qzkrnl)\.exe!KeUserModeCallback", text))
             time.sleep(1)
             screen = vm.screen_text()
             open(os.path.join(out, "qzkrnl-bugcheck.txt"), "w").write(screen)

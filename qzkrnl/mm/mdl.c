@@ -34,9 +34,20 @@ IoAllocateMdl(IN PVOID VirtualAddress,
     MmInitializeMdl(Mdl, VirtualAddress, Length);
     RtlZeroMemory(MmGetMdlPfnArray(Mdl), Pages * sizeof(PFN_NUMBER));
 
-    /* IRP chaining arrives with the I/O manager (stage B4) */
-    if (Irp && !Irp->MdlAddress)
-        Irp->MdlAddress = Mdl;
+    if (Irp)
+    {
+        if (!SecondaryBuffer || !Irp->MdlAddress)
+        {
+            Irp->MdlAddress = Mdl;
+        }
+        else
+        {
+            PMDL Last = Irp->MdlAddress;
+            while (Last->Next)
+                Last = Last->Next;
+            Last->Next = Mdl;
+        }
+    }
     return Mdl;
 }
 
@@ -126,4 +137,76 @@ MmMapLockedPages(IN PMDL Mdl,
 {
     return MmMapLockedPagesSpecifyCache(Mdl, AccessMode, MmCached, NULL, TRUE,
                                         NormalPagePriority);
+}
+
+/*
+ * Everything is resident and every caller is in kernel mode until stage
+ * B6/B7, so probing just records the physical pages. The buffer already
+ * has a system address, which MmGetSystemAddressForMdlSafe returns.
+ */
+VOID
+NTAPI
+MmProbeAndLockPages(IN OUT PMDL Mdl,
+                    IN KPROCESSOR_MODE AccessMode,
+                    IN LOCK_OPERATION Operation)
+{
+    PPFN_NUMBER Pfns = MmGetMdlPfnArray(Mdl);
+    PUCHAR Base = (PUCHAR)Mdl->StartVa;
+    ULONG Pages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(Base + Mdl->ByteOffset, Mdl->ByteCount);
+    ULONG i;
+
+    UNREFERENCED_PARAMETER(AccessMode);
+    UNREFERENCED_PARAMETER(Operation);
+
+    for (i = 0; i < Pages; i++)
+    {
+        if (!MmIsAddressValid(Base + i * PAGE_SIZE))
+            ExRaiseStatus(STATUS_ACCESS_VIOLATION);
+        Pfns[i] = (PFN_NUMBER)(MmGetPhysicalAddress(Base + i * PAGE_SIZE).QuadPart >> PAGE_SHIFT);
+    }
+    Mdl->MappedSystemVa = Base + Mdl->ByteOffset;
+    Mdl->MdlFlags |= MDL_PAGES_LOCKED | MDL_SOURCE_IS_NONPAGED_POOL;
+}
+
+VOID
+NTAPI
+MmUnlockPages(IN OUT PMDL Mdl)
+{
+    if ((Mdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA) && !(Mdl->MdlFlags & MDL_SOURCE_IS_NONPAGED_POOL))
+        MmUnmapLockedPages(Mdl->MappedSystemVa, Mdl);
+    Mdl->MdlFlags &= ~MDL_PAGES_LOCKED;
+}
+
+VOID
+NTAPI
+IoBuildPartialMdl(IN PMDL SourceMdl,
+                  IN PMDL TargetMdl,
+                  IN PVOID VirtualAddress,
+                  IN ULONG Length)
+{
+    ULONG_PTR Offset = (PUCHAR)VirtualAddress - (PUCHAR)MmGetMdlVirtualAddress(SourceMdl);
+    PPFN_NUMBER Source, Target = MmGetMdlPfnArray(TargetMdl);
+    ULONG Pages, i;
+
+    if (!Length)
+        Length = MmGetMdlByteCount(SourceMdl) - (ULONG)Offset;
+    Source = MmGetMdlPfnArray(SourceMdl) +
+             (((ULONG_PTR)MmGetMdlVirtualAddress(SourceMdl) & (PAGE_SIZE - 1)) + Offset) / PAGE_SIZE;
+
+    TargetMdl->StartVa = PAGE_ALIGN(VirtualAddress);
+    TargetMdl->ByteOffset = BYTE_OFFSET(VirtualAddress);
+    TargetMdl->ByteCount = Length;
+    TargetMdl->MdlFlags &= (MDL_ALLOCATED_FIXED_SIZE | MDL_ALLOCATED_MUST_SUCCEED);
+    TargetMdl->MdlFlags |= MDL_PARTIAL | (SourceMdl->MdlFlags & (MDL_SOURCE_IS_NONPAGED_POOL |
+                                                                 MDL_PAGES_LOCKED));
+    TargetMdl->Process = SourceMdl->Process;
+    if (SourceMdl->MdlFlags & (MDL_SOURCE_IS_NONPAGED_POOL | MDL_MAPPED_TO_SYSTEM_VA))
+    {
+        TargetMdl->MappedSystemVa = (PUCHAR)SourceMdl->MappedSystemVa + Offset;
+        if (SourceMdl->MdlFlags & MDL_MAPPED_TO_SYSTEM_VA)
+            TargetMdl->MdlFlags |= MDL_PARTIAL_HAS_BEEN_MAPPED;
+    }
+    Pages = ADDRESS_AND_SIZE_TO_SPAN_PAGES(VirtualAddress, Length);
+    for (i = 0; i < Pages; i++)
+        Target[i] = Source[i];
 }

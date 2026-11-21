@@ -398,3 +398,17 @@ MmFreeContiguousMemorySpecifyCache(IN PVOID BaseAddress,
             QzFreePhysicalPage((ULONG)(Pa.QuadPart >> QZ_PAGE_SHIFT));
     }
 }
+
+BOOLEAN
+NTAPI
+MmIsAddressValid(IN PVOID VirtualAddress)
+{
+    ULONG_PTR Va = (ULONG_PTR)VirtualAddress;
+    ULONG Pde = *(volatile ULONG *)(QZ_PDE_BASE + (Va >> 22) * 4);
+
+    if (!(Pde & QZ_PTE_PRESENT))
+        return FALSE;
+    if (Pde & QZ_PTE_LARGE)
+        return TRUE;
+    return (*(volatile ULONG *)(QZ_PTE_BASE + (Va >> 12) * 4) & QZ_PTE_PRESENT) != 0;
+}
