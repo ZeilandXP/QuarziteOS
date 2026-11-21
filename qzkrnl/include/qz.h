@@ -131,6 +131,16 @@ typedef struct _QZ_THREAD
     BOOLEAN TrapFrameReplaced;     /* NtContinue & co.: the service set the whole user context */
     PVOID CallbackFrame;           /* ke/callback.c: the innermost KeUserModeCallback */
 
+    /* APCs (stage B8, ke/apc.c): lists by mode, set up on first use */
+    LIST_ENTRY ApcListHead[2];     /* KernelMode, UserMode */
+    BOOLEAN KernelApcPending;
+    BOOLEAN KernelApcInProgress;   /* a normal kernel APC is running */
+    BOOLEAN UserApcPending;        /* deliver one on the way back to ring 3 */
+    BOOLEAN WaitAlertable;         /* the current wait's parameters */
+    KPROCESSOR_MODE WaitMode;
+    KIRQL WaitOldIrql;             /* the IRQL the wait returns to */
+    BOOLEAN ApcQueueingDisabled;   /* the thread is ending */
+
     /* File systems (stage B7) */
     PIRP TopLevelIrp;              /* IoGet/SetTopLevelIrp */
     PDEVICE_OBJECT DeviceToVerify; /* IoGet/SetDeviceToVerify */
@@ -274,6 +284,16 @@ VOID QzYield(VOID);
 VOID QzSleepTicks(ULONG Ticks);
 VOID QzDumpThreads(VOID);
 ULONG QzThreadCount(VOID);
+
+/* ke/apc.c */
+VOID QzApcCheckPending(VOID);
+VOID QzApcDeliverUser(PKTRAP_FRAME TrapFrame);
+BOOLEAN QzApcTestAlert(VOID);
+VOID QzApcRundown(struct _QZ_THREAD *Thread);
+struct _QZ_THREAD *QzKeThreadOf(PVOID Thread);
+NTSTATUS QzDelayEx(LONGLONG Interval100ns, BOOLEAN Alertable, KPROCESSOR_MODE WaitMode);
+VOID NTAPI KiDeliverApc(IN KPROCESSOR_MODE DeliveryMode, IN PKEXCEPTION_FRAME ExceptionFrame,
+                        IN PKTRAP_FRAME TrapFrame);
 PQZ_THREAD QzFirstThread(VOID);
 VOID QzRequestDispatch(VOID);
 VOID QzRequestSoftwareInterrupt(VOID);

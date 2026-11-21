@@ -1105,3 +1105,16 @@
 @ stdcall PsDereferencePrimaryToken(ptr)
 @ stdcall PsDereferenceImpersonationToken(ptr) PsDereferencePrimaryToken
 @ stdcall PsRevertToSelf()
+
+# APCs and I/O completion (B8)
+@ stdcall KeInitializeApc(ptr ptr long ptr ptr ptr long ptr)
+@ stdcall KeInsertQueueApc(ptr ptr ptr long)
+
+# APCs and I/O completion (B8)
+@ stdcall KeInitializeQueue(ptr long)
+@ stdcall KeInsertQueue(ptr ptr)
+@ stdcall KeInsertHeadQueue(ptr ptr)
+@ stdcall KeRemoveQueue(ptr long ptr)
+@ stdcall KeReadStateQueue(ptr)
+@ stdcall KeRundownQueue(ptr)
+@ stdcall IoSetIoCompletion(ptr ptr ptr long ptr long)

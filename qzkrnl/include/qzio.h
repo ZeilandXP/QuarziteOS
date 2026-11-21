@@ -66,6 +66,15 @@ VOID QzCcMmSetDirty(PVOID Map, LONGLONG Offset);
 PSECTION_OBJECT_POINTERS QzCcMmSop(PVOID Map);
 extern VOID (*QzMmCollectFileDirty)(PSECTION_OBJECT_POINTERS Sop);
 
+/* io/file.c, io/irp.c: an IRP for a request from user mode (I/O manager's own flag) */
+#define QZ_IRP_USER_REQUEST     0x40000000UL
+
+/* ex/iocomp.c */
+NTSTATUS QzIoQueueCompletion(PVOID Port, PVOID KeyContext, PVOID ApcContext, NTSTATUS Status,
+                             ULONG_PTR Information);
+NTSTATUS QzIoSetFileCompletion(PFILE_OBJECT FileObject, PFILE_COMPLETION_INFORMATION Information);
+VOID QzIoFreeFileCompletion(PFILE_OBJECT FileObject);
+
 /* mm/sysload.c: kernel images loaded from disk */
 VOID QzMmInitSystemImages(VOID);
 NTSTATUS QzMmLoadSystemImage(PCUNICODE_STRING Path, PVOID *Entry);

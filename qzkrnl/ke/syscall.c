@@ -43,7 +43,7 @@ static const QZ_SERVICE QzServiceTable[QZ_SERVICE_COUNT] =
 #undef QZ_SVC_IMPL
 #undef QZ_SVC_NONE
 
-BOOLEAN QzSyscallTrace;
+UCHAR QzSyscallTrace;           /* 0 off, 1 every call, 2 calls that fail */
 static ULONG QzSyscallCount, QzSyscallUnimplemented;
 
 /* Tables 1 to 3: win32k's (KeAddSystemServiceTable); table 0 is ours */
@@ -138,7 +138,7 @@ QzWin32SystemCall(PKTRAP_FRAME TrapFrame, ULONG Table, ULONG Number)
         DbgPrint("qzkrnl: win32k service 0x%lx returned at IRQL %u\n", Number, QzGetCurrentIrql());
         QzLowerIrql(PASSIVE_LEVEL);
     }
-    if (QzSyscallTrace)
+    if (QzSyscallTrace == 1 || (QzSyscallTrace == 2 && NT_ERROR(Status)))
         DbgPrint("qzkrnl: [%s] win32k #0x%lx -> 0x%08lx\n", Thread->Name, Number, Status);
     if (Thread->TrapFrameReplaced)
         Thread->TrapFrameReplaced = FALSE;
@@ -237,7 +237,7 @@ QzSystemCall(PKTRAP_FRAME TrapFrame)
         DbgPrint("qzkrnl: Nt%s returned at IRQL %u\n", Service->Name, QzGetCurrentIrql());
         QzLowerIrql(PASSIVE_LEVEL);
     }
-    if (QzSyscallTrace)
+    if (QzSyscallTrace == 1 || (QzSyscallTrace == 2 && NT_ERROR(Status)))
         DbgPrint("qzkrnl: [%s] Nt%s -> 0x%08lx\n", QzCurrentThread->Name, Service->Name, Status);
     /* A service that set a new user context (NtContinue) leaves EAX alone */
     if (Thread->TrapFrameReplaced)

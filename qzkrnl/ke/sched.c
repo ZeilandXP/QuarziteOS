@@ -290,6 +290,8 @@ QzSwapThread(VOID)
         if (Next->FxSaveArea)
             __asm__ __volatile__("fxrstor (%0)" : : "r"(Next->FxSaveArea) : "memory");
         QzSwapContext(Current, Next);
+        /* Running again: APCs queued while we were away */
+        QzApcCheckPending();
     }
 
     QzRestoreFlags(Flags);
@@ -395,7 +397,8 @@ VOID
 NTAPI
 QzKeLeaveCriticalRegion(VOID)
 {
-    QzCurrentThread->KernelApcDisable++;
+    if (++QzCurrentThread->KernelApcDisable == 0)
+        QzApcCheckPending();            /* normal kernel APCs held by the region */
 }
 
 BOOLEAN
@@ -419,9 +422,7 @@ KeDelayExecutionThread(IN KPROCESSOR_MODE WaitMode,
                        IN BOOLEAN Alertable,
                        IN PLARGE_INTEGER Interval)
 {
-    UNREFERENCED_PARAMETER(WaitMode);
-    UNREFERENCED_PARAMETER(Alertable);
-    return QzDelay(Interval->QuadPart);
+    return QzDelayEx(Interval->QuadPart, Alertable, WaitMode);
 }
 
 /* NT 6.0 / 6.1 processor and group queries: one processor, one group */

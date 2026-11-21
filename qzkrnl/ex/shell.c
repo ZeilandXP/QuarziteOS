@@ -84,7 +84,7 @@ QzCmdHelp(VOID)
             "  ldrtest           self-test: drivers loaded from disk (load, imports,\n"
             "                    relocation, unload)\n"
             "  smss              start \\SystemRoot\\System32\\smss.exe\n"
-            "  syscalls [on|off] system service statistics; trace every call\n"
+            "  syscalls [on|errors|off] service statistics; trace every call, or the failed ones\n"
             "  dir <path>        list a directory (e.g. \\SystemRoot\\system32)\n"
             "  type <path>       a file's size, checksum and first line\n"
             "  ps                list the processes\n"
@@ -350,9 +350,9 @@ QzExecute(PCHAR Line)
     else if (!strcmp(Cmd, "syscalls"))
     {
         if (Arg)
-            QzSyscallTrace = !strcmp(Arg, "on");
+            QzSyscallTrace = !strcmp(Arg, "on") ? 1 : !strcmp(Arg, "errors") ? 2 : 0;
         QzSyscallStats();
-        QzPrint("  tracing %s\n", QzSyscallTrace ? "on" : "off");
+        QzPrint("  tracing %s\n", QzSyscallTrace == 1 ? "on" : QzSyscallTrace == 2 ? "errors" : "off");
     }
     else if (!strcmp(Cmd, "vm"))
     {

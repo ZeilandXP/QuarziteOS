@@ -84,6 +84,21 @@ NtQueryInformationProcess(IN HANDLE ProcessHandle,
             Status = QzPsReturn(Mode, ProcessInformation, ProcessInformationLength, ReturnLength,
                                 &Process->HardErrorMode, sizeof(ULONG));
             break;
+        case ProcessQuotaLimits:
+        {
+            /* No quotas: NT's defaults for a process */
+            QUOTA_LIMITS Limits;
+            RtlZeroMemory(&Limits, sizeof(Limits));
+            Limits.PagedPoolLimit = (SIZE_T)-1;
+            Limits.NonPagedPoolLimit = (SIZE_T)-1;
+            Limits.MinimumWorkingSetSize = 50 * PAGE_SIZE;
+            Limits.MaximumWorkingSetSize = 345 * PAGE_SIZE;
+            Limits.PagefileLimit = (SIZE_T)-1;
+            Limits.TimeLimit.QuadPart = -1;
+            Status = QzPsReturn(Mode, ProcessInformation, ProcessInformationLength, ReturnLength, &Limits,
+                                sizeof(Limits));
+            break;
+        }
         case ProcessDebugPort:
         case ProcessWow64Information:
         case ProcessLUIDDeviceMapsEnabled:    /* no LUID device maps: one global DosDevices */
@@ -469,23 +484,61 @@ NtAllocateLocallyUniqueId(OUT LUID *LocallyUniqueId)
                                                                                   : STATUS_ACCESS_VIOLATION;
 }
 
+/* The system's and the user's locale and UI language: US English until someone sets them */
+static LCID QzSystemLocale = 0x0409, QzUserLocale = 0x0409;
+static LANGID QzUiLanguage = 0x0409;
+
 NTSTATUS
 NTAPI
 NtQueryDefaultLocale(IN BOOLEAN UserProfile,
                      OUT PLCID DefaultLocaleId)
 {
-    LCID Lcid = 0x0409;
-    UNREFERENCED_PARAMETER(UserProfile);
+    LCID Lcid = UserProfile ? QzUserLocale : QzSystemLocale;
     return QzWriteArg(ExGetPreviousMode(), DefaultLocaleId, &Lcid, sizeof(Lcid)) ? STATUS_SUCCESS
                                                                                  : STATUS_ACCESS_VIOLATION;
 }
 
 NTSTATUS
 NTAPI
+NtSetDefaultLocale(IN BOOLEAN UserProfile, IN LCID DefaultLocaleId)
+{
+    /* 0 asks for the one in the registry: what we have is all there is */
+    if (DefaultLocaleId)
+    {
+        if (UserProfile)
+            QzUserLocale = DefaultLocaleId;
+        else
+            QzSystemLocale = DefaultLocaleId;
+    }
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+NTAPI
 NtQueryDefaultUILanguage(OUT LANGID *LanguageId)
 {
-    LANGID Id = 0x0409;
+    LANGID Id = QzUiLanguage;
     return QzWriteArg(ExGetPreviousMode(), LanguageId, &Id, sizeof(Id)) ? STATUS_SUCCESS : STATUS_ACCESS_VIOLATION;
+}
+
+NTSTATUS
+NTAPI
+NtSetDefaultUILanguage(IN LANGID LanguageId)
+{
+    if (LanguageId)
+        QzUiLanguage = LanguageId;
+    return STATUS_SUCCESS;
+}
+
+/* The node part of UUIDs (rpcss hands one over when there is no network card) */
+static UCHAR QzUuidSeed[6];
+
+NTSTATUS
+NTAPI
+NtSetUuidSeed(IN PUCHAR Seed)
+{
+    return QzReadArg(ExGetPreviousMode(), QzUuidSeed, Seed, sizeof(QzUuidSeed)) ? STATUS_SUCCESS
+                                                                                 : STATUS_ACCESS_VIOLATION;
 }
 
 NTSTATUS

@@ -21,6 +21,7 @@
 #define QZ_EVENT_NOTIFICATION       0
 #define QZ_EVENT_SYNCHRONIZATION    1
 #define QZ_MUTANT                   2
+#define QZ_QUEUE                    4
 #define QZ_SEMAPHORE                5
 #define QZ_TIMER_NOTIFICATION       8
 #define QZ_TIMER_SYNCHRONIZATION    9
@@ -53,6 +54,7 @@ QzSatisfyObject(PDISPATCHER_HEADER Object, PQZ_THREAD Thread)
             break;
 
         case QZ_SEMAPHORE:
+        case QZ_QUEUE:                  /* the waiter takes an entry: KeRemoveQueue */
             Object->SignalState--;
             break;
 
@@ -179,19 +181,30 @@ QzTimeoutToInterruptTime(LONGLONG Timeout)
     return QzInterruptTime + (ULONGLONG)(Timeout - Now.QuadPart);
 }
 
+NTSTATUS QzApcWaitCheck(PQZ_THREAD Thread, BOOLEAN Alertable, KPROCESSOR_MODE WaitMode, KIRQL OldIrql);
+
 static NTSTATUS
 QzWaitCommon(ULONG Count,
              PVOID Object[],
              WAIT_TYPE WaitType,
+             BOOLEAN Alertable,
+             KPROCESSOR_MODE WaitMode,
              PLARGE_INTEGER Timeout,
              PKWAIT_BLOCK WaitBlockArray)
 {
     PQZ_THREAD Thread = QzCurrentThread;
     PDISPATCHER_HEADER Header;
+    ULONGLONG Deadline = 0;
+    LARGE_INTEGER Remaining;
     NTSTATUS Status;
     KIRQL OldIrql;
     ULONG i;
 
+    /* A kernel APC breaks the wait and it starts again: keep the deadline */
+    if (Timeout && Timeout->QuadPart != 0)
+        Deadline = QzTimeoutToInterruptTime(Timeout->QuadPart);
+
+Restart:
     if (Thread->WaitNext)
     {
         /* A KeSetEvent/KeRelease*(..., Wait=TRUE) left us at DISPATCH */
@@ -201,6 +214,20 @@ QzWaitCommon(ULONG Count,
     else
     {
         OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
+    }
+
+    /* Pending APCs or an alert end the wait before it starts */
+    Status = QzApcWaitCheck(Thread, Alertable, WaitMode, OldIrql);
+    if (Status == STATUS_KERNEL_APC)
+    {
+        HalRequestSoftwareInterrupt(APC_LEVEL);
+        QzLowerIrql(OldIrql);           /* they run here */
+        goto Restart;
+    }
+    if (Status != STATUS_SUCCESS)
+    {
+        QzLowerIrql(OldIrql);
+        return Status;
     }
 
     /* Can the wait be satisfied right now? */
@@ -256,15 +283,32 @@ QzWaitCommon(ULONG Count,
 
     Thread->TimeoutActive = (Timeout != NULL);
     if (Timeout)
-        Thread->TimeoutInterruptTime = QzTimeoutToInterruptTime(Timeout->QuadPart);
+        Thread->TimeoutInterruptTime = Deadline;
 
     Thread->WaitStatus = STATUS_PENDING;
+    Thread->WaitAlertable = Alertable;
+    Thread->WaitMode = WaitMode;
+    Thread->WaitOldIrql = OldIrql;
     Thread->State = QzThreadWaiting;
 
-    /* Sleep; QzWaitTest or the timeout code makes us ready again */
+    /* Sleep; QzWaitTest, the timeout code or an APC makes us ready again */
     QzSwapThread();
 
     Status = Thread->WaitStatus;
+    Thread->WaitAlertable = FALSE;
+    if (Status == STATUS_KERNEL_APC)
+    {
+        HalRequestSoftwareInterrupt(APC_LEVEL);
+        QzLowerIrql(OldIrql);           /* the APCs run here, then the wait again */
+        if (Timeout)
+        {
+            if (QzInterruptTime >= Deadline)
+                return Count ? STATUS_TIMEOUT : STATUS_SUCCESS;
+            Remaining.QuadPart = -(LONGLONG)(Deadline - QzInterruptTime);
+            Timeout = &Remaining;
+        }
+        goto Restart;
+    }
     QzLowerIrql(OldIrql);
     return Status;
 }
@@ -274,7 +318,15 @@ QzDelay(LONGLONG Interval100ns)
 {
     LARGE_INTEGER Timeout;
     Timeout.QuadPart = Interval100ns;
-    return QzWaitCommon(0, NULL, WaitAny, &Timeout, QzCurrentThread->WaitBlock);
+    return QzWaitCommon(0, NULL, WaitAny, FALSE, KernelMode, &Timeout, QzCurrentThread->WaitBlock);
+}
+
+NTSTATUS
+QzDelayEx(LONGLONG Interval100ns, BOOLEAN Alertable, KPROCESSOR_MODE WaitMode)
+{
+    LARGE_INTEGER Timeout;
+    Timeout.QuadPart = Interval100ns;
+    return QzWaitCommon(0, NULL, WaitAny, Alertable, WaitMode, &Timeout, QzCurrentThread->WaitBlock);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -290,9 +342,7 @@ KeWaitForSingleObject(IN PVOID Object,
                       IN PLARGE_INTEGER Timeout OPTIONAL)
 {
     UNREFERENCED_PARAMETER(WaitReason);
-    UNREFERENCED_PARAMETER(WaitMode);
-    UNREFERENCED_PARAMETER(Alertable);
-    return QzWaitCommon(1, &Object, WaitAny, Timeout, QzCurrentThread->WaitBlock);
+    return QzWaitCommon(1, &Object, WaitAny, Alertable, WaitMode, Timeout, QzCurrentThread->WaitBlock);
 }
 
 NTSTATUS
@@ -307,8 +357,6 @@ KeWaitForMultipleObjects(IN ULONG Count,
                          OUT PKWAIT_BLOCK WaitBlockArray OPTIONAL)
 {
     UNREFERENCED_PARAMETER(WaitReason);
-    UNREFERENCED_PARAMETER(WaitMode);
-    UNREFERENCED_PARAMETER(Alertable);
 
     if (WaitBlockArray == NULL)
     {
@@ -321,7 +369,7 @@ KeWaitForMultipleObjects(IN ULONG Count,
         KeBugCheckEx(MAXIMUM_WAIT_OBJECTS_EXCEEDED, Count, 0, 0, 0);
     }
 
-    return QzWaitCommon(Count, Object, WaitType, Timeout, WaitBlockArray);
+    return QzWaitCommon(Count, Object, WaitType, Alertable, WaitMode, Timeout, WaitBlockArray);
 }
 
 /* Shared tail of KeSetEvent/KeRelease*: honour the Wait parameter */
@@ -565,4 +613,108 @@ NTAPI
 KeReadStateSemaphore(IN PRKSEMAPHORE Semaphore)
 {
     return Semaphore->Header.SignalState;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Queues (I/O completion ports, worker queues)                            */
+/* ---------------------------------------------------------------------- */
+
+/*
+ * The signal state counts the entries. A waiter woken by an insert has
+ * already taken one (QzSatisfyObject), so the count and the list agree.
+ * The concurrency limit is not enforced: one processor.
+ */
+VOID
+NTAPI
+KeInitializeQueue(OUT PKQUEUE Queue, IN ULONG Count OPTIONAL)
+{
+    QzInitializeHeader(&Queue->Header, QZ_QUEUE, sizeof(KQUEUE), 0);
+    InitializeListHead(&Queue->EntryListHead);
+    InitializeListHead(&Queue->ThreadListHead);
+    Queue->CurrentCount = 0;
+    Queue->MaximumCount = Count ? Count : 1;
+}
+
+static LONG
+QzInsertQueue(PKQUEUE Queue, PLIST_ENTRY Entry, BOOLEAN Head)
+{
+    KIRQL OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
+    LONG Previous = Queue->Header.SignalState;
+
+    if (Head)
+        InsertHeadList(&Queue->EntryListHead, Entry);
+    else
+        InsertTailList(&Queue->EntryListHead, Entry);
+    Queue->Header.SignalState++;
+    QzWaitTest(&Queue->Header);
+    QzLowerIrql(OldIrql);
+    return Previous;
+}
+
+LONG
+NTAPI
+KeInsertQueue(IN PKQUEUE Queue, IN PLIST_ENTRY Entry)
+{
+    return QzInsertQueue(Queue, Entry, FALSE);
+}
+
+LONG
+NTAPI
+KeInsertHeadQueue(IN PKQUEUE Queue, IN PLIST_ENTRY Entry)
+{
+    return QzInsertQueue(Queue, Entry, TRUE);
+}
+
+PLIST_ENTRY
+NTAPI
+KeRemoveQueue(IN PKQUEUE Queue, IN KPROCESSOR_MODE WaitMode, IN PLARGE_INTEGER Timeout OPTIONAL)
+{
+    PLIST_ENTRY Entry;
+    NTSTATUS Status;
+    KIRQL OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
+
+    if (Queue->Header.SignalState > 0)
+    {
+        Queue->Header.SignalState--;
+        Entry = RemoveHeadList(&Queue->EntryListHead);
+        QzLowerIrql(OldIrql);
+        Entry->Flink = NULL;
+        return Entry;
+    }
+    QzLowerIrql(OldIrql);
+
+    Status = KeWaitForSingleObject(Queue, WrQueue, WaitMode, FALSE, Timeout);
+    if (Status != STATUS_WAIT_0)
+        return (PLIST_ENTRY)(ULONG_PTR)Status;      /* STATUS_TIMEOUT, STATUS_USER_APC, ... */
+    OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
+    Entry = RemoveHeadList(&Queue->EntryListHead);
+    QzLowerIrql(OldIrql);
+    Entry->Flink = NULL;
+    return Entry;
+}
+
+LONG
+NTAPI
+KeReadStateQueue(IN PKQUEUE Queue)
+{
+    return Queue->Header.SignalState;
+}
+
+/* Empty the queue: the entries, still linked to each other, or NULL */
+PLIST_ENTRY
+NTAPI
+KeRundownQueue(IN PKQUEUE Queue)
+{
+    KIRQL OldIrql = QzRaiseIrql(DISPATCH_LEVEL);
+    PLIST_ENTRY First = NULL;
+
+    if (!IsListEmpty(&Queue->EntryListHead))
+    {
+        First = Queue->EntryListHead.Flink;
+        RemoveEntryList(&Queue->EntryListHead);
+    }
+    InitializeListHead(&Queue->EntryListHead);
+    Queue->Header.SignalState = 0;
+    QzLowerIrql(OldIrql);
+    return First;
 }

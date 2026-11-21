@@ -146,5 +146,8 @@ See [docs/quarzite/ROADMAP.md](../docs/quarzite/ROADMAP.md). In short:
    (milestone 3, done; see `cc/`, `fsrtl/`, `ke/except.c`, `io/fstest.c`);
    win32k.sys, user-mode callbacks, csrss, winlogon, services and lsass,
    up to the first desktop (milestone 4, in progress; see `ps/win32.c`,
-   `ke/callback.c`, `mm/sysview.c`, `rtl/heap.c`, `se/srm.c`); next, I/O
-   completion ports so msgina loads, and the shell's own processes.
+   `ke/callback.c`, `mm/sysview.c`, `rtl/heap.c`, `se/srm.c`).
+8. The default kernel (stage B8): APCs, completion ports and the other
+   hives so the live environment's services and msgina run (milestone 1,
+   in progress; see `ke/apc.c`, `ex/iocomp.c`, `cm/registry.c`); next,
+   user-mode PnP, then qzkrnl as the default boot entry.

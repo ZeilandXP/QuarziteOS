@@ -51,15 +51,16 @@ typedef struct _QZ_MEM_KEY
     struct _QZ_MEM_KEY *Parent, *Child, *Sibling;
     PQZ_MEM_VALUE Values;
     ULONG SubKeys, ValueCount;
-    BOOLEAN MountsSystemHive;          /* \REGISTRY\MACHINE\SYSTEM */
+    struct _CMHIVE *MountedHive;       /* a hive's root goes here (\REGISTRY\MACHINE\SYSTEM, ...) */
     LARGE_INTEGER LastWriteTime;
     USHORT NameLength;                 /* bytes */
     WCHAR Name[1];
 } QZ_MEM_KEY, *PQZ_MEM_KEY;
 
-/* A key object: a cell of the SYSTEM hive or an in-memory key */
+/* A key object: a cell of a hive or an in-memory key */
 typedef struct _QZ_KEY
 {
+    PCMHIVE CmHive;                    /* the cell's hive */
     BOOLEAN IsCell;
     BOOLEAN Deleted;                   /* the key went away under this handle */
     HCELL_INDEX Cell;
@@ -79,7 +80,14 @@ typedef struct _QZ_KEY_PARSE
 
 POBJECT_TYPE CmKeyObjectType;
 static PCMHIVE QzSystemCmHive;
-#define QzHive (&QzSystemCmHive->Hive)
+/*
+ * The hive the cell functions work on: chosen, under the registry lock,
+ * from the key an operation is about (several hives are mounted).
+ */
+static PHHIVE QzCurHive;
+#define QzHive QzCurHive
+#define QzSelectHive(Key) do { if ((Key)->IsCell) QzCurHive = &(Key)->CmHive->Hive; } while (0)
+#define QzInSystemHive() (QzSystemCmHive && QzCurHive == &QzSystemCmHive->Hive)
 static BOOLEAN QzHiveReady;
 static HCELL_INDEX QzControlSetCell = HCELL_NIL;
 static PQZ_MEM_KEY QzRegistryRoot, QzHardwareKey;
@@ -512,10 +520,10 @@ QzCmDeleteCellKey(HCELL_INDEX Cell)
     for (Entry = QzOpenKeys.Flink; Entry != &QzOpenKeys; Entry = Entry->Flink)
     {
         PQZ_KEY Key = CONTAINING_RECORD(Entry, QZ_KEY, Link);
-        if (Key->IsCell && Key->Cell == Cell)
+        if (Key->IsCell && Key->Cell == Cell && &Key->CmHive->Hive == QzCurHive)
             Key->Deleted = TRUE;
     }
-    if (Cell == QzControlSetCell)
+    if (QzInSystemHive() && Cell == QzControlSetCell)
         QzControlSetCell = HCELL_NIL;
     return STATUS_SUCCESS;
 }
@@ -592,6 +600,8 @@ QzCmNotifyMatches(PQZ_NOTIFY_BLOCK Block, BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_
     ULONG Depth = 0;
 
     if (Block->Key->IsCell != IsCell)
+        return FALSE;
+    if (IsCell && &Block->Key->CmHive->Hive != QzCurHive)
         return FALSE;
     if (IsCell)
     {
@@ -678,13 +688,14 @@ QzCmNotificationsFired(VOID)
 /* ---------------------------------------------------------------------- */
 
 static NTSTATUS
-QzCmCreateKeyObject(BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_MEM_KEY Mem, PQZ_KEY *Result)
+QzCmCreateKeyObject(PCMHIVE CmHive, BOOLEAN IsCell, HCELL_INDEX Cell, PQZ_MEM_KEY Mem, PQZ_KEY *Result)
 {
     PQZ_KEY Key;
     NTSTATUS Status = ObCreateObject(KernelMode, CmKeyObjectType, NULL, KernelMode, NULL,
                                      sizeof(QZ_KEY), 0, 0, (PVOID *)&Key);
     if (!NT_SUCCESS(Status))
         return Status;
+    Key->CmHive = IsCell ? CmHive : NULL;
     Key->IsCell = IsCell;
     Key->Deleted = FALSE;
     Key->Cell = Cell;
@@ -726,6 +737,7 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
 {
     PQZ_KEY_PARSE Parse = Context;
     PQZ_KEY Start = ParseObject;
+    PCMHIVE CmHive = Start->IsCell ? Start->CmHive : NULL;
     BOOLEAN IsCell = Start->IsCell;
     HCELL_INDEX Cell = Start->Cell;
     PQZ_MEM_KEY Mem = Start->Mem;
@@ -747,12 +759,16 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
     Parse->Disposition = REG_OPENED_EXISTING_KEY;
 
     ExAcquireFastMutex(&QzRegistryLock);
+    if (IsCell)
+        QzCurHive = &CmHive->Hive;
     for (;;)
     {
-        /* Entering \REGISTRY\MACHINE\SYSTEM switches to the hive */
-        if (!IsCell && Mem && Mem->MountsSystemHive && QzHiveReady)
+        /* Entering a mount point (\REGISTRY\MACHINE\SYSTEM, ...) switches to its hive */
+        if (!IsCell && Mem && Mem->MountedHive)
         {
             IsCell = TRUE;
+            CmHive = Mem->MountedHive;
+            QzCurHive = &CmHive->Hive;
             Cell = QzHive->BaseBlock->RootCell;
         }
 
@@ -776,10 +792,10 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
         {
             UNICODE_STRING Ccs = RTL_CONSTANT_STRING(L"CurrentControlSet");
             HCELL_INDEX Next = QzCmSubKey(Cell, &Component);
-            if (Next == HCELL_NIL && Cell == QzHive->BaseBlock->RootCell &&
+            if (Next == HCELL_NIL && QzInSystemHive() && Cell == QzHive->BaseBlock->RootCell &&
                 RtlEqualUnicodeString(&Component, &Ccs, TRUE))
                 Next = QzControlSetCell;
-            if (Next != HCELL_NIL && (QzCmNode(Next)->Flags & KEY_SYM_LINK))
+            if (Next != HCELL_NIL && QzInSystemHive() && (QzCmNode(Next)->Flags & KEY_SYM_LINK))
                 Next = QzCmFollowLink(Next);
             if (Next != HCELL_NIL)
             {
@@ -832,7 +848,7 @@ QzCmParseKey(PVOID ParseObject, PVOID ObjectType, PACCESS_STATE AccessState,
     }
     ExReleaseFastMutex(&QzRegistryLock);
 
-    Status = QzCmCreateKeyObject(IsCell, Cell, IsCell ? NULL : Mem, (PQZ_KEY *)Object);
+    Status = QzCmCreateKeyObject(CmHive, IsCell, Cell, IsCell ? NULL : Mem, (PQZ_KEY *)Object);
     return Status;
 }
 
@@ -864,7 +880,7 @@ QzCmOpen(PHANDLE KeyHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES Object
                                            (PVOID *)&Key, NULL);
         if (!NT_SUCCESS(Status))
             return Status;
-        Status = QzCmCreateKeyObject(Key->IsCell, Key->Cell, Key->Mem, &Copy);
+        Status = QzCmCreateKeyObject(Key->CmHive, Key->IsCell, Key->Cell, Key->Mem, &Copy);
         if (NT_SUCCESS(Status))
         {
             Status = ObOpenObjectByPointer(Copy, Attributes.Attributes & OBJ_KERNEL_HANDLE, NULL, DesiredAccess,
@@ -1072,6 +1088,7 @@ ZwQueryKey(IN HANDLE KeyHandle, IN KEY_INFORMATION_CLASS KeyInformationClass,
     if (!NT_SUCCESS(Status))
         return Status;
     ExAcquireFastMutex(&QzRegistryLock);
+    QzSelectHive(Key);
     QzCmGetFacts(Key->IsCell, Key->Cell, Key->Mem, &Facts);
     ExReleaseFastMutex(&QzRegistryLock);
     Status = QzCmKeyInformation(&Facts, KeyInformationClass, KeyInformation, Length, ResultLength);
@@ -1092,6 +1109,7 @@ ZwEnumerateKey(IN HANDLE KeyHandle, IN ULONG Index, IN KEY_INFORMATION_CLASS Key
     if (!NT_SUCCESS(Status))
         return Status;
     ExAcquireFastMutex(&QzRegistryLock);
+    QzSelectHive(Key);
     if (Key->IsCell)
     {
         HCELL_INDEX Child = CmpFindSubKeyByNumber(QzHive, QzCmNode(Key->Cell), Index);
@@ -1215,6 +1233,7 @@ ZwQueryValueKey(IN HANDLE KeyHandle, IN PUNICODE_STRING ValueName,
         ValueName = &Empty;
     *ResultLength = 0;
     ExAcquireFastMutex(&QzRegistryLock);
+    QzSelectHive(Key);
     if (Key->IsCell)
     {
         PCM_KEY_VALUE Value = QzCmFindValue(Key->Cell, ValueName);
@@ -1248,6 +1267,7 @@ ZwEnumerateValueKey(IN HANDLE KeyHandle, IN ULONG Index,
         return Status;
     *ResultLength = 0;
     ExAcquireFastMutex(&QzRegistryLock);
+    QzSelectHive(Key);
     if (Key->IsCell)
     {
         PCM_KEY_VALUE Value = QzCmValueByIndex(Key->Cell, Index);
@@ -1283,6 +1303,7 @@ ZwSetValueKey(IN HANDLE KeyHandle, IN PUNICODE_STRING ValueName, IN ULONG TitleI
     if (!NT_SUCCESS(Status))
         return Status;
     ExAcquireFastMutex(&QzRegistryLock);
+    QzSelectHive(Key);
     if (Key->IsCell)
         Status = QzCmSetCellValue(Key->Cell, ValueName ? ValueName : &Empty, Type, Data, DataSize);
     else
@@ -1306,6 +1327,7 @@ ZwDeleteValueKey(IN HANDLE KeyHandle, IN PUNICODE_STRING ValueName)
     if (Key->IsCell)
     {
         ExAcquireFastMutex(&QzRegistryLock);
+        QzSelectHive(Key);
         Status = QzCmDeleteCellValue(Key->Cell, ValueName);
         if (NT_SUCCESS(Status))
             QzCmReportChange(TRUE, Key->Cell, NULL, REG_NOTIFY_CHANGE_LAST_SET);
@@ -1316,6 +1338,7 @@ ZwDeleteValueKey(IN HANDLE KeyHandle, IN PUNICODE_STRING ValueName)
         PQZ_MEM_VALUE *Link, Value;
         Status = STATUS_OBJECT_NAME_NOT_FOUND;
         ExAcquireFastMutex(&QzRegistryLock);
+        QzSelectHive(Key);
         for (Link = &Key->Mem->Values; (Value = *Link); Link = &Value->Next)
         {
             if (QzCmNamesEqual(Value->Name, Value->NameLength, ValueName->Buffer, ValueName->Length))
@@ -1349,6 +1372,7 @@ ZwDeleteKey(IN HANDLE KeyHandle)
         PCM_KEY_NODE Node;
         HCELL_INDEX Parent;
         ExAcquireFastMutex(&QzRegistryLock);
+        QzSelectHive(Key);
         Node = QzCmNode(Key->Cell);
         Parent = Node->Parent;
         if (Node->SubKeyCounts[Stable] + Node->SubKeyCounts[Volatile] ||
@@ -1375,6 +1399,7 @@ ZwDeleteKey(IN HANDLE KeyHandle)
         /* Unlinked; open handles keep the memory (it is never freed) */
         PQZ_MEM_KEY *Link;
         ExAcquireFastMutex(&QzRegistryLock);
+        QzSelectHive(Key);
         for (Link = &Key->Mem->Parent->Child; *Link; Link = &(*Link)->Sibling)
         {
             if (*Link == Key->Mem)
@@ -1456,6 +1481,7 @@ ZwNotifyChangeKey(IN HANDLE KeyHandle,
 
     IoStatusBlock->Status = STATUS_PENDING;
     ExAcquireFastMutex(&QzRegistryLock);
+    QzSelectHive(Key);
     InsertTailList(&QzNotifyBlocks, &Block->Link);
     ExReleaseFastMutex(&QzRegistryLock);
     ObDereferenceObject(Key);
@@ -1497,19 +1523,118 @@ ZwFlushKey(IN HANDLE KeyHandle)
     return STATUS_SUCCESS;
 }
 
+/* A hive file, read whole and copied into bins of its own */
+static NTSTATUS
+QzCmLoadHiveFile(PCWSTR FileName, PCMHIVE *Result)
+{
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES Attributes;
+    IO_STATUS_BLOCK Iosb;
+    FILE_STANDARD_INFORMATION Standard;
+    PCMHIVE CmHive = NULL;
+    PVOID Buffer = NULL;
+    HANDLE File;
+    ULONG Size;
+    NTSTATUS Status;
+
+    RtlInitUnicodeString(&Name, FileName);
+    InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    Status = ZwOpenFile(&File, FILE_READ_DATA | SYNCHRONIZE, &Attributes, &Iosb, FILE_SHARE_READ,
+                        FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Status = ZwQueryInformationFile(File, &Iosb, &Standard, sizeof(Standard), FileStandardInformation);
+    if (NT_SUCCESS(Status) && (Standard.EndOfFile.HighPart || Standard.EndOfFile.LowPart < HBLOCK_SIZE ||
+                               Standard.EndOfFile.LowPart > 32 * 1024 * 1024))
+        Status = STATUS_REGISTRY_CORRUPT;
+    if (NT_SUCCESS(Status))
+    {
+        Size = Standard.EndOfFile.LowPart;
+        Buffer = ExAllocatePoolWithTag(NonPagedPool, Size, QZ_CM_TAG);
+        Status = Buffer ? ZwReadFile(File, NULL, NULL, NULL, &Iosb, Buffer, Size, NULL, NULL)
+                        : STATUS_INSUFFICIENT_RESOURCES;
+        if (NT_SUCCESS(Status) && Iosb.Information != Size)
+            Status = STATUS_REGISTRY_IO_FAILED;
+    }
+    ZwClose(File);
+    if (NT_SUCCESS(Status))
+    {
+        CmHive = CmpAllocate(sizeof(CMHIVE), FALSE, QZ_CM_TAG);
+        Status = CmHive ? STATUS_SUCCESS : STATUS_INSUFFICIENT_RESOURCES;
+    }
+    if (NT_SUCCESS(Status))
+    {
+        RtlZeroMemory(CmHive, sizeof(CMHIVE));
+        ExAcquireFastMutex(&QzRegistryLock);
+        Status = HvInitialize(&CmHive->Hive, HINIT_MEMORY, HIVE_NOLAZYFLUSH, HFILE_TYPE_PRIMARY, Buffer,
+                              CmpAllocate, CmpFree, NULL, NULL, NULL, NULL, 1, NULL);
+        ExReleaseFastMutex(&QzRegistryLock);
+        if (!NT_SUCCESS(Status))
+        {
+            CmpFree(CmHive, 0);
+            CmHive = NULL;
+        }
+    }
+    if (Buffer)
+        ExFreePoolWithTag(Buffer, QZ_CM_TAG);
+    *Result = CmHive;
+    return Status;
+}
+
 /*
- * smss says when the system hives may be used. The loader already gave
- * them to us and they are writable since B5, so this only accepts the
- * first call, like NT, which refuses a second one.
+ * smss asks for the rest of the registry: the hives in System32\config,
+ * mounted where NT mounts them. They stay in memory (the boot CD cannot
+ * take them back; writing hives to a disk is still to come).
  */
+static VOID
+QzCmLoadSystemHives(VOID)
+{
+    static const struct { PCWSTR File; PCWSTR Mounts[2]; } Hives[] =
+    {
+        { L"\\SystemRoot\\System32\\config\\SOFTWARE", { L"MACHINE\\SOFTWARE", NULL } },
+        { L"\\SystemRoot\\System32\\config\\SAM", { L"MACHINE\\SAM", NULL } },
+        { L"\\SystemRoot\\System32\\config\\SECURITY", { L"MACHINE\\SECURITY", NULL } },
+        { L"\\SystemRoot\\System32\\config\\DEFAULT", { L"USER\\.DEFAULT", L"USER\\S-1-5-18" } },
+    };
+    ULONG i, j;
+
+    for (i = 0; i < RTL_NUMBER_OF(Hives); i++)
+    {
+        PCMHIVE CmHive;
+        NTSTATUS Status = QzCmLoadHiveFile(Hives[i].File, &CmHive);
+        DbgPrint(QZ_KERNEL_NAME ": registry: %ls: 0x%08lx\n", Hives[i].File, Status);
+        if (!NT_SUCCESS(Status))
+            continue;
+        ExAcquireFastMutex(&QzRegistryLock);
+        for (j = 0; j < RTL_NUMBER_OF(Hives[i].Mounts) && Hives[i].Mounts[j]; j++)
+        {
+            PQZ_MEM_KEY Mount = QzRegistryRoot;
+            PCWSTR Part = Hives[i].Mounts[j];
+            while (Mount && *Part)
+            {
+                PCWSTR End = Part;
+                while (*End && *End != L'\\')
+                    End++;
+                Mount = QzMemCreateKey(Mount, Part, (ULONG)(End - Part) * sizeof(WCHAR));
+                Part = *End ? End + 1 : End;
+            }
+            if (Mount && !Mount->Child && !Mount->Values)
+                Mount->MountedHive = CmHive;
+        }
+        ExReleaseFastMutex(&QzRegistryLock);
+    }
+}
+
+/* smss's call, once (NT refuses a second one from user mode): the other hives come in now */
 NTSTATUS
 NTAPI
 NtInitializeRegistry(IN USHORT Flag)
 {
     static LONG Done;
     UNREFERENCED_PARAMETER(Flag);
-    if (ExGetPreviousMode() != KernelMode && InterlockedExchange(&Done, 1))
-        return STATUS_ACCESS_DENIED;
+    if (InterlockedExchange(&Done, 1))
+        return ExGetPreviousMode() != KernelMode ? STATUS_ACCESS_DENIED : STATUS_SUCCESS;
+    QzCmLoadSystemHives();
     return STATUS_SUCCESS;
 }
 
@@ -1725,7 +1850,7 @@ QzCmBuildVolatileTree(PLOADER_PARAMETER_BLOCK LoaderBlock)
     QzMemCreatePath(Machine, L"SAM");
     QzMemCreatePath(Machine, L"SECURITY");
     QzMemCreatePath(Machine, L"SOFTWARE");
-    QzMemCreatePath(Machine, L"SYSTEM")->MountsSystemHive = TRUE;
+    QzMemCreatePath(Machine, L"SYSTEM")->MountedHive = QzSystemCmHive;
 
     Description = QzMemCreatePath(QzHardwareKey, L"DESCRIPTION");
     QzMemCreatePath(QzHardwareKey, L"DEVICEMAP");
@@ -2114,6 +2239,7 @@ QzCmInit(PLOADER_PARAMETER_BLOCK LoaderBlock)
         if (QzSystemCmHive)
         {
             RtlZeroMemory(QzSystemCmHive, sizeof(CMHIVE));
+            QzCurHive = &QzSystemCmHive->Hive;
             Status = HvInitialize(QzHive, HINIT_MEMORY, HIVE_NOLAZYFLUSH, HFILE_TYPE_PRIMARY,
                                   LoaderBlock->RegistryBase, CmpAllocate, CmpFree,
                                   NULL, NULL, NULL, NULL, 1, NULL);

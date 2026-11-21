@@ -15,6 +15,8 @@
  */
 
 #include "qzio.h"
+#include "qzps.h"
+#include <ndk/kefuncs.h>
 
 #undef IoCallDriver
 #undef IoCompleteRequest
@@ -162,6 +164,48 @@ QzIoFreeMdlChain(PIRP Irp)
     Irp->MdlAddress = NULL;
 }
 
+#define QZ_IRP_IN_REQUESTER     0x20000000UL    /* the last stage was sent to the requester */
+
+static VOID QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost);
+
+/* The last stage, in the thread that made the request */
+static VOID NTAPI
+QzIoCompletionApc(PKAPC Apc, PKNORMAL_ROUTINE *NormalRoutine, PVOID *NormalContext, PVOID *SystemArgument1,
+                  PVOID *SystemArgument2)
+{
+    PIRP Irp = CONTAINING_RECORD(Apc, IRP, Tail.Apc);
+    UNREFERENCED_PARAMETER(NormalRoutine);
+    UNREFERENCED_PARAMETER(NormalContext);
+    /* The APC overlaid Tail.Overlay: its file object came as an argument */
+    Irp->Tail.Overlay.OriginalFileObject = *SystemArgument1;
+    QzIoFinishIrp(Irp, (CCHAR)(ULONG_PTR)*SystemArgument2);
+}
+
+/* The requester ended before it ran: finish without touching its memory */
+static VOID NTAPI
+QzIoCompletionRundown(PKAPC Apc)
+{
+    PIRP Irp = CONTAINING_RECORD(Apc, IRP, Tail.Apc);
+    Irp->Tail.Overlay.OriginalFileObject = Apc->SystemArgument1;
+    Irp->Flags &= ~QZ_IRP_USER_REQUEST;
+    Irp->UserBuffer = NULL;
+    if (Irp->UserIosb && (ULONG_PTR)Irp->UserIosb < QZ_SYSTEM_RANGE_START)
+        Irp->UserIosb = NULL;
+    QzIoFinishIrp(Irp, IO_NO_INCREMENT);
+}
+
+/* The user APC an I/O request asked for: its kernel part only frees it */
+static VOID NTAPI
+QzIoUserApcKernelRoutine(PKAPC Apc, PKNORMAL_ROUTINE *NormalRoutine, PVOID *NormalContext,
+                         PVOID *SystemArgument1, PVOID *SystemArgument2)
+{
+    UNREFERENCED_PARAMETER(NormalRoutine);
+    UNREFERENCED_PARAMETER(NormalContext);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
+    ExFreePool(Apc);
+}
+
 /* The I/O manager's own last stage, once every driver is done with it */
 static VOID
 QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
@@ -189,6 +233,32 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
         if (InterlockedDecrement(&Master->AssociatedIrp.IrpCount) == 0)
             IofCompleteRequest(Master, PriorityBoost);
         return;
+    }
+
+    /*
+     * A request from user mode finishes in the thread that made it: the
+     * buffers, the IOSB and the event handle belong to its process, and
+     * this may be a DPC or another process's thread. A special kernel APC
+     * takes it there (NT's IopCompleteRequest).
+     */
+    if ((Irp->Flags & QZ_IRP_USER_REQUEST) && !(Irp->Flags & QZ_IRP_IN_REQUESTER))
+    {
+        PQZ_THREAD Requester = QzKeThreadOf(Irp->Tail.Overlay.Thread);
+        if (Requester && (Requester != QzCurrentThread || KeGetCurrentIrql() != PASSIVE_LEVEL ||
+                          Requester->ApcProcess != Requester->Process))
+        {
+            KeInitializeApc(&Irp->Tail.Apc, (PRKTHREAD)Requester, OriginalApcEnvironment, QzIoCompletionApc,
+                            QzIoCompletionRundown, NULL, KernelMode, NULL);
+            Irp->Flags |= QZ_IRP_IN_REQUESTER;
+            if (KeInsertQueueApc(&Irp->Tail.Apc, FileObject, (PVOID)(ULONG_PTR)PriorityBoost, PriorityBoost))
+                return;
+            Irp->Tail.Overlay.OriginalFileObject = FileObject;
+            /* The thread is gone: nobody to tell, and its address space may be too */
+            Irp->Flags &= ~(QZ_IRP_USER_REQUEST | QZ_IRP_IN_REQUESTER);
+            Irp->UserBuffer = NULL;
+            if (Irp->UserIosb && (ULONG_PTR)Irp->UserIosb < QZ_SYSTEM_RANGE_START)
+                Irp->UserIosb = NULL;
+        }
     }
 
     /* Copy buffered output back to the caller */
@@ -225,6 +295,30 @@ QzIoFinishIrp(PIRP Irp, CCHAR PriorityBoost)
         /* An event the caller passed by handle was referenced for us */
         if (FileObject && !(Irp->Flags & IRP_SYNCHRONOUS_API))
             ObDereferenceObject(Irp->UserEvent);
+    }
+
+    /* Asynchronous requests from user mode: the caller's APC, or its completion port */
+    if ((Irp->Flags & QZ_IRP_USER_REQUEST) && !(Irp->Flags & IRP_SYNCHRONOUS_API))
+    {
+        PIO_APC_ROUTINE ApcRoutine = Irp->Overlay.AsynchronousParameters.UserApcRoutine;
+        PVOID ApcContext = Irp->Overlay.AsynchronousParameters.UserApcContext;
+
+        if (ApcRoutine)
+        {
+            PKAPC Apc = ExAllocatePoolWithTag(NonPagedPool, sizeof(KAPC), 'pAzQ');
+            if (Apc)
+            {
+                KeInitializeApc(Apc, (PRKTHREAD)QzCurrentThread, OriginalApcEnvironment, QzIoUserApcKernelRoutine,
+                                NULL, (PKNORMAL_ROUTINE)ApcRoutine, UserMode, ApcContext);
+                if (!KeInsertQueueApc(Apc, Irp->UserIosb, NULL, PriorityBoost))
+                    ExFreePool(Apc);
+            }
+        }
+        else if (FileObject && FileObject->CompletionContext && !((ULONG_PTR)ApcContext & 1))
+        {
+            QzIoQueueCompletion(FileObject->CompletionContext->Port, FileObject->CompletionContext->Key,
+                                ApcContext, Irp->IoStatus.Status, Irp->IoStatus.Information);
+        }
     }
 
     /* The IRP held a reference on its file object (close and create IRPs

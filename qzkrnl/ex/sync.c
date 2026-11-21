@@ -501,7 +501,8 @@ _KeEnterGuardedRegion(VOID)
 VOID NTAPI
 _KeLeaveGuardedRegion(VOID)
 {
-    QzCurrentThread->KernelApcDisable++;
+    if (++QzCurrentThread->KernelApcDisable == 0)
+        QzApcCheckPending();
 }
 
 BOOLEAN

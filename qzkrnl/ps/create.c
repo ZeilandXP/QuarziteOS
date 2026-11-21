@@ -27,6 +27,13 @@ static ULONG_PTR QzSystemDllBase;
 static ULONG_PTR QzLdrInitializeThunk, QzKiUserApcDispatcher, QzKiUserExceptionDispatcher;
 static ULONG_PTR QzKiUserCallbackDispatcher, QzKiRaiseUserExceptionDispatcher;
 
+/* ke/apc.c: where user APCs enter ring 3 */
+ULONG_PTR
+QzPsUserApcDispatcher(VOID)
+{
+    return QzKiUserApcDispatcher;
+}
+
 /* ke/callback.c: where KeUserModeCallback enters ring 3 */
 ULONG_PTR
 QzPsUserCallbackDispatcher(VOID)
@@ -661,7 +668,6 @@ NtContinue(IN PCONTEXT Context,
     PQZ_THREAD Thread = QzCurrentThread;
     PCONTEXT Local;
 
-    UNREFERENCED_PARAMETER(TestAlert);
     if (!Thread->TrapFrame || ExGetPreviousMode() != UserMode)
         return STATUS_NOT_SUPPORTED;
     Local = ExAllocatePoolWithTag(NonPagedPool, sizeof(CONTEXT), QZ_PS_TAG);
@@ -675,6 +681,9 @@ NtContinue(IN PCONTEXT Context,
     QzContextToTrapFrame(Local, Thread->TrapFrame, Local->ContextFlags);
     ExFreePoolWithTag(Local, QZ_PS_TAG);
     Thread->TrapFrameReplaced = TRUE;
+    /* KiUserApcDispatcher asks for the next user APC */
+    if (TestAlert)
+        QzApcTestAlert();
 
     /* The loader finished with the process: it now runs its own image */
     {
@@ -739,13 +748,7 @@ NTSTATUS
 NTAPI
 NtTestAlert(VOID)
 {
-    PQZ_THREAD Thread = QzCurrentThread;
-    if (Thread->Alerted)
-    {
-        Thread->Alerted = FALSE;
-        return STATUS_ALERTED;
-    }
-    return STATUS_SUCCESS;
+    return QzApcTestAlert() ? STATUS_ALERTED : STATUS_SUCCESS;
 }
 
 /* ---------------------------------------------------------------------- */

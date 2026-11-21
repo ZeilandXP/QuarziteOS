@@ -75,18 +75,6 @@ KiDispatchInterrupt(VOID)
     }
 }
 
-/* APC software interrupt: no APCs yet (they arrive with processes, B6) */
-VOID
-NTAPI
-KiDeliverApc(IN KPROCESSOR_MODE DeliveryMode,
-             IN PKEXCEPTION_FRAME ExceptionFrame,
-             IN PKTRAP_FRAME TrapFrame)
-{
-    UNREFERENCED_PARAMETER(DeliveryMode);
-    UNREFERENCED_PARAMETER(ExceptionFrame);
-    UNREFERENCED_PARAMETER(TrapFrame);
-}
-
 /* Run expired timers and queued DPCs. Called at DISPATCH_LEVEL. */
 VOID
 QzRetireDpcs(VOID)

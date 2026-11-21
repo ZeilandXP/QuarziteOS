@@ -400,6 +400,7 @@ QzIoDeleteFile(PVOID Object)
     }
     if (FileObject->FileName.Buffer)
         ExFreePoolWithTag(FileObject->FileName.Buffer, QZ_IO_TAG);
+    QzIoFreeFileCompletion(FileObject);
 }
 
 PFILE_OBJECT
@@ -847,13 +848,11 @@ typedef struct _QZ_FILE_REQUEST
 /* Reference the file (and event), allocate an IRP for its device */
 static NTSTATUS
 QzIoBeginRequest(PQZ_FILE_REQUEST Request, HANDLE FileHandle, ACCESS_MASK Access, HANDLE Event,
-                 PIO_APC_ROUTINE ApcRoutine, BOOLEAN ForceSynchronous)
+                 PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext, BOOLEAN ForceSynchronous)
 {
     NTSTATUS Status;
 
     RtlZeroMemory(Request, sizeof(*Request));
-    if (ApcRoutine)
-        return STATUS_NOT_IMPLEMENTED;   /* completion APCs need APC delivery (B6) */
 
     Status = ObReferenceObjectByHandle(FileHandle, Access, IoFileObjectType, KernelMode,
                                        (PVOID *)&Request->FileObject, NULL);
@@ -885,6 +884,13 @@ QzIoBeginRequest(PQZ_FILE_REQUEST Request, HANDLE FileHandle, ACCESS_MASK Access
     Request->Irp->Tail.Overlay.OriginalFileObject = Request->FileObject;
     Request->Irp->Tail.Overlay.Thread = PsGetCurrentThread();
     Request->Irp->RequestorMode = KernelMode;
+    /* From user mode: the I/O manager's last stage runs in this thread
+       (its buffers, IOSB and event live in its process), then the APC or
+       the completion port gets told */
+    Request->Irp->Overlay.AsynchronousParameters.UserApcRoutine = ApcRoutine;
+    Request->Irp->Overlay.AsynchronousParameters.UserApcContext = ApcContext;
+    if (ExGetPreviousMode() == UserMode)
+        Request->Irp->Flags |= QZ_IRP_USER_REQUEST;
     KeClearEvent(&Request->FileObject->Event);
     return STATUS_SUCCESS;
 }
@@ -951,7 +957,7 @@ QzIoCallRequest(PQZ_FILE_REQUEST Request, PIO_STATUS_BLOCK IoStatusBlock, BOOLEA
 }
 
 static NTSTATUS
-QzIoReadWrite(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+QzIoReadWrite(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
               PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer, ULONG Length,
               PLARGE_INTEGER ByteOffset, PULONG Key, BOOLEAN Write)
 {
@@ -961,7 +967,7 @@ QzIoReadWrite(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
     NTSTATUS Status;
 
     Status = QzIoBeginRequest(&Request, FileHandle, Write ? FILE_WRITE_DATA : FILE_READ_DATA,
-                              Event, ApcRoutine, FALSE);
+                              Event, ApcRoutine, ApcContext, FALSE);
     if (!NT_SUCCESS(Status))
         return Status;
 
@@ -973,6 +979,12 @@ QzIoReadWrite(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
     else if (Request.Synchronous)
     {
         Offset = Request.FileObject->CurrentByteOffset;
+    }
+    else if ((Request.FileObject->Flags & (FO_NAMED_PIPE | FO_MAILSLOT)) ||
+             Request.Device->DeviceType == FILE_DEVICE_NAMED_PIPE ||
+             Request.Device->DeviceType == FILE_DEVICE_MAILSLOT)
+    {
+        Offset.QuadPart = 0;            /* streams: no position */
     }
     else
     {
@@ -1010,8 +1022,7 @@ ZwReadFile(IN HANDLE FileHandle,
            IN PLARGE_INTEGER ByteOffset OPTIONAL,
            IN PULONG Key OPTIONAL)
 {
-    UNREFERENCED_PARAMETER(ApcContext);
-    return QzIoReadWrite(FileHandle, Event, ApcRoutine, IoStatusBlock, Buffer, Length,
+    return QzIoReadWrite(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
                          ByteOffset, Key, FALSE);
 }
 
@@ -1027,8 +1038,7 @@ ZwWriteFile(IN HANDLE FileHandle,
             IN PLARGE_INTEGER ByteOffset OPTIONAL,
             IN PULONG Key OPTIONAL)
 {
-    UNREFERENCED_PARAMETER(ApcContext);
-    return QzIoReadWrite(FileHandle, Event, ApcRoutine, IoStatusBlock, Buffer, Length,
+    return QzIoReadWrite(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, Buffer, Length,
                          ByteOffset, Key, TRUE);
 }
 
@@ -1053,7 +1063,7 @@ NtWriteFile(IN HANDLE FileHandle, IN HANDLE Event OPTIONAL, IN PIO_APC_ROUTINE A
 }
 
 static NTSTATUS
-QzIoControl(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
+QzIoControl(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine, PVOID ApcContext,
             PIO_STATUS_BLOCK IoStatusBlock, ULONG Code, PVOID InputBuffer, ULONG InputLength,
             PVOID OutputBuffer, ULONG OutputLength, BOOLEAN FileSystem)
 {
@@ -1063,7 +1073,7 @@ QzIoControl(HANDLE FileHandle, HANDLE Event, PIO_APC_ROUTINE ApcRoutine,
     PIRP Irp;
     NTSTATUS Status;
 
-    Status = QzIoBeginRequest(&Request, FileHandle, 0, Event, ApcRoutine, FALSE);
+    Status = QzIoBeginRequest(&Request, FileHandle, 0, Event, ApcRoutine, ApcContext, FALSE);
     if (!NT_SUCCESS(Status))
         return Status;
     Irp = Request.Irp;
@@ -1119,8 +1129,7 @@ ZwDeviceIoControlFile(IN HANDLE FileHandle,
                       OUT PVOID OutputBuffer OPTIONAL,
                       IN ULONG OutputBufferLength)
 {
-    UNREFERENCED_PARAMETER(ApcContext);
-    return QzIoControl(FileHandle, Event, ApcRoutine, IoStatusBlock, IoControlCode, InputBuffer,
+    return QzIoControl(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, IoControlCode, InputBuffer,
                        InputBufferLength, OutputBuffer, OutputBufferLength, FALSE);
 }
 
@@ -1150,8 +1159,7 @@ ZwFsControlFile(IN HANDLE FileHandle,
                 OUT PVOID OutputBuffer OPTIONAL,
                 IN ULONG OutputBufferLength)
 {
-    UNREFERENCED_PARAMETER(ApcContext);
-    return QzIoControl(FileHandle, Event, ApcRoutine, IoStatusBlock, FsControlCode, InputBuffer,
+    return QzIoControl(FileHandle, Event, ApcRoutine, ApcContext, IoStatusBlock, FsControlCode, InputBuffer,
                        InputBufferLength, OutputBuffer, OutputBufferLength, TRUE);
 }
 
@@ -1179,10 +1187,23 @@ QzIoInformation(HANDLE FileHandle, PIO_STATUS_BLOCK IoStatusBlock, PVOID Buffer,
     NTSTATUS Status;
     PIRP Irp;
 
-    Status = QzIoBeginRequest(&Request, FileHandle, 0, NULL, NULL, TRUE);
+    Status = QzIoBeginRequest(&Request, FileHandle, 0, NULL, NULL, NULL, TRUE);
     if (!NT_SUCCESS(Status))
         return Status;
     Irp = Request.Irp;
+
+    /* Binding the file to a completion port is the I/O manager's business */
+    if (MajorFunction == IRP_MJ_SET_INFORMATION && Class == FileCompletionInformation)
+    {
+        FILE_COMPLETION_INFORMATION Completion;
+        if (Length < sizeof(Completion))
+            return QzIoAbortRequest(&Request, STATUS_INFO_LENGTH_MISMATCH);
+        RtlCopyMemory(&Completion, Buffer, sizeof(Completion));
+        Status = QzIoSetFileCompletion(Request.FileObject, &Completion);
+        IoStatusBlock->Status = Status;
+        IoStatusBlock->Information = 0;
+        return QzIoAbortRequest(&Request, Status);
+    }
 
     /* The I/O manager answers the file position and device type itself */
     if (MajorFunction == IRP_MJ_QUERY_INFORMATION && Class == FilePositionInformation &&
@@ -1301,7 +1322,7 @@ ZwFlushBuffersFile(IN HANDLE FileHandle,
     PIO_STACK_LOCATION Stack;
     NTSTATUS Status;
 
-    Status = QzIoBeginRequest(&Request, FileHandle, 0, NULL, NULL, TRUE);
+    Status = QzIoBeginRequest(&Request, FileHandle, 0, NULL, NULL, NULL, TRUE);
     if (!NT_SUCCESS(Status))
         return Status;
     Stack = IoGetNextIrpStackLocation(Request.Irp);

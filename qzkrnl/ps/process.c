@@ -123,6 +123,7 @@ QzPsDetach(PQZ_PROCESS Saved)
     Thread->ApcProcess = Saved;
     QzMmSwitchAddressSpace(Saved ? Saved : QzSystemProcess);
     QzRestoreFlags(Flags);
+    QzApcCheckPending();                /* kernel APCs held while attached */
 }
 
 VOID

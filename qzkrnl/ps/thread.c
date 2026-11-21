@@ -84,6 +84,16 @@ QzPsTerminateCurrentThread(NTSTATUS ExitStatus)
         QzPsWin32ProcessExit(Process);
     KeSetEvent(&PsThread->Terminated, IO_NO_INCREMENT, FALSE);
 
+    /* Kernel APCs still queued (I/O completions) run now, in our own
+       address space; user APCs and the rest never will */
+    {
+        KIRQL OldIrql = QzRaiseIrql(APC_LEVEL);
+        KiDeliverApc(KernelMode, NULL, NULL);
+        QzLowerIrql(OldIrql);
+    }
+    Thread->ApcQueueingDisabled = TRUE;
+    QzApcRundown(Thread);
+
     /* Leave the process's address space before it can go away */
     if (Thread->ApcProcess != QzSystemProcess)
     {

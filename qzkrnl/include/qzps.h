@@ -245,7 +245,7 @@ DECLSPEC_NORETURN VOID QzPsTerminateCurrentThread(NTSTATUS ExitStatus);
 VOID QzPsTerminateProcess(PQZ_PROCESS Process, NTSTATUS ExitStatus);
 
 /* ke/syscall.c */
-extern BOOLEAN QzSyscallTrace;
+extern UCHAR QzSyscallTrace;
 VOID QzSyscallStats(VOID);
 ULONG QzServiceNumber(PCSTR Name);
 

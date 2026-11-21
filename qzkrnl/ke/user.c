@@ -244,10 +244,11 @@ QzExitToUserMode(PKTRAP_FRAME TrapFrame)
 {
     PQZ_PS_THREAD PsThread = QzCurrentThread->PsThread;
 
-    UNREFERENCED_PARAMETER(TrapFrame);
     if (PsThread && PsThread->TerminatePending && QzGetCurrentIrql() == PASSIVE_LEVEL)
     {
         _enable();
         QzPsTerminateCurrentThread(PsThread->PendingExitStatus);
     }
+    if (QzCurrentThread->UserApcPending && QzGetCurrentIrql() == PASSIVE_LEVEL)
+        QzApcDeliverUser(TrapFrame);
 }

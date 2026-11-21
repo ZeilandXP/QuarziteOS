@@ -986,6 +986,15 @@
 @ stdcall PsDereferencePrimaryToken(ptr)
 @ stdcall PsDereferenceImpersonationToken(ptr) PsDereferencePrimaryToken
 @ stdcall PsRevertToSelf()
+@ stdcall KeInitializeApc(ptr ptr long ptr ptr ptr long ptr)
+@ stdcall KeInsertQueueApc(ptr ptr ptr long)
+@ stdcall KeInitializeQueue(ptr long)
+@ stdcall KeInsertQueue(ptr ptr)
+@ stdcall KeInsertHeadQueue(ptr ptr)
+@ stdcall KeRemoveQueue(ptr long ptr)
+@ stdcall KeReadStateQueue(ptr)
+@ stdcall KeRundownQueue(ptr)
+@ stdcall IoSetIoCompletion(ptr ptr ptr long ptr long)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ extern CcFastMdlReadWait QzUnimplementedData
@@ -1123,7 +1132,6 @@
 @ stub -version=0x602+ IoSetDeviceInterfacePropertyData
 @ stub IoSetFileOrigin
 @ stub IoSetInformation
-@ stub IoSetIoCompletion
 @ extern IoStatisticsLock QzUnimplementedData
 @ stub IoTranslateBusAddress
 @ stub IoValidateDeviceIoControlAccess
@@ -1183,12 +1191,7 @@
 @ stub -arch=i386 KeI386ReleaseGdtSelectors
 @ stub -arch=i386 KeI386ReleaseLid
 @ stub -arch=i386 KeI386SetGdtSelector
-@ stub KeInitializeApc
 @ stub KeInitializeCrashDumpHeader
-@ stub KeInitializeQueue
-@ stub KeInsertHeadQueue
-@ stub KeInsertQueue
-@ stub KeInsertQueueApc
 @ stub KeInvalidateAllCaches
 @ stub KeIpiGenericCall
 @ stub KeIsWaitListEmpty
@@ -1199,7 +1202,6 @@
 @ stub KeQueryRuntimeThread
 @ stub -arch=x86_64 KeRaiseIrqlToDpcLevel
 @ stub KeRaiseUserException
-@ stub KeReadStateQueue
 @ stub KeRegisterBugCheckReasonCallback
 @ stub KeRegisterNmiCallback
 @ stub -arch=x86_64 KeReleaseInStackQueuedSpinLock
@@ -1207,9 +1209,7 @@
 @ stub -arch=x86_64 KeReleaseQueuedSpinLock
 @ stub -arch=x86_64 KeReleaseSpinLock
 @ stub KeReleaseSpinLockForDpc
-@ stub KeRemoveQueue
 @ stub KeRevertToUserAffinityThread
-@ stub KeRundownQueue
 @ stub KeSaveStateForHibernate
 @ stub KeSetAffinityThread
 @ stub KeSetBasePriorityThread

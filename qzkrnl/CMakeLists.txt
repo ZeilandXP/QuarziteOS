@@ -28,6 +28,7 @@ list(APPEND SOURCE
     ex/exobj.c
     ex/init.c
     ex/w32misc.c
+    ex/iocomp.c
     ex/keyed.c
     ex/shell.c
     ex/sync.c
@@ -44,6 +45,7 @@ list(APPEND SOURCE
     ke/timerobj.c
     ke/syscall.c
     ke/callback.c
+    ke/apc.c
     ke/user.c
     ke/usertest.c
     ke/wait.c

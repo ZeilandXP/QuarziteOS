@@ -368,7 +368,7 @@ NtWaitForSingleObject(IN HANDLE Handle,
     Status = ObReferenceObjectByHandle(Handle, SYNCHRONIZE, NULL, KernelMode, &Object, NULL);
     if (!NT_SUCCESS(Status))
         return Status;
-    Status = KeWaitForSingleObject(QzExWaitableObject(Object), UserRequest, KernelMode,
+    Status = KeWaitForSingleObject(QzExWaitableObject(Object), UserRequest, ExGetPreviousMode(),
                                    Alertable, Timeout);
     ObfDereferenceObject(Object);
     return Status;
@@ -421,7 +421,7 @@ ZwWaitForMultipleObjects(IN ULONG Count,
         }
     }
 
-    Status = KeWaitForMultipleObjects(Count, Waitables, WaitType, UserRequest, KernelMode,
+    Status = KeWaitForMultipleObjects(Count, Waitables, WaitType, UserRequest, ExGetPreviousMode(),
                                       Alertable, Timeout, WaitBlocks);
 
 Done:
