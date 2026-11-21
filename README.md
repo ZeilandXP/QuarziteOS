@@ -64,19 +64,34 @@ qzkrnl is skipped automatically on MSVC and on non-i386 architectures.
 ## Running
 
 ```bash
-qemu-system-i386 -m 512 -cdrom bootcd.iso -serial stdio
+qemu-system-i386 -m 1024 -cdrom bootcd.iso -serial stdio
 ```
 
 The boot menu offers:
 
-* **QuarziteOS Setup** – install to disk (ReactOS setup, rebranded).
-* **QuarziteOS Live Environment** – the full desktop on ntoskrnl.
-* **QuarziteOS Kernel (qzkrnl, experimental)** – the new kernel's debug
-  shell, on screen and on COM1. Type `help`.
+* **QuarziteOS Live Environment** (the default) – the full desktop on
+  qzkrnl, QuarziteOS's own kernel. The first boot installs devices and
+  registers components, which takes several minutes in QEMU.
+* **QuarziteOS Live Environment (ntoskrnl fallback)** – the same desktop
+  on the ReactOS kernel.
+* **QuarziteOS Setup** – install to disk (ReactOS setup, rebranded; the
+  installed system runs on ntoskrnl for now).
+* **QuarziteOS Kernel Shell (qzkrnl)** – the new kernel's debug shell, on
+  screen and on COM1. Type `help`.
 
-There are automated boot tests. `qzkrnl` drives the new kernel's shell.
-`screens` boots the live desktop and checks the boot splash and shutdown
-screen.
+There are automated boot tests:
+
+* `default` leaves the boot menu alone. It checks that the default entry
+  boots qzkrnl to the explorer desktop and that the keyboard opens the
+  Start menu.
+* `qzkrnl` and `qzkrnl-usb` drive the new kernel's shell, booted from CD
+  and from a USB stick.
+* `live` and `screens` boot the ntoskrnl fallback. `screens` checks the
+  boot splash and the shutdown screen.
+
+```bash
+python3 sdk/tools/quarzite/qemu_boot_test.py --iso ../qz-build/bootcd.iso --scenario default --out /tmp/qz-results
+```
 
 ```bash
 python3 sdk/tools/quarzite/qemu_boot_test.py --iso ../qz-build/bootcd.iso --scenario qzkrnl --out /tmp/qz-results

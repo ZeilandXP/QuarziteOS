@@ -5,12 +5,17 @@
 # PURPOSE:     Boot a QuarziteOS ISO in QEMU and check it end to end.
 #
 # Scenarios:
-#   qzkrnl  - pick "QuarziteOS Kernel (qzkrnl)" in FreeLoader, drive the
-#             kernel shell over COM1 and check every command's output, then
-#             call an unimplemented export and check the stop screen.
-#   live    - boot the regular live environment (ntoskrnl) with serial
-#             debugging and check it reaches the desktop shell without a
-#             bug check.
+#   default    - leave FreeLoader on its default entry (the live
+#                environment on qzkrnl) and check it boots unattended to the
+#                explorer desktop, and that the keyboard opens the Start menu.
+#   qzkrnl     - pick "QuarziteOS Kernel Shell (qzkrnl)" in FreeLoader, drive
+#                the kernel shell over COM1 and check every command's output,
+#                then call an unimplemented export and check the stop screen.
+#   qzkrnl-usb - the qzkrnl shell booted from a USB stick (xHCI).
+#   live       - boot the fallback live environment (ntoskrnl) with serial
+#                debugging and check it reaches the desktop shell without a
+#                bug check.
+#   screens    - the ntoskrnl live environment's boot and shutdown artwork.
 #
 # Usage:
 #   qemu_boot_test.py --iso build/bootcd.iso --scenario qzkrnl --out results/
@@ -154,11 +159,39 @@ class Qemu:
             self.proc.kill()
 
 
-def select_boot_entry(vm, title, index_from_top):
+BOOTCD_INI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "..", "..", "..", "boot", "bootdata", "bootcd.ini")
+
+
+def boot_entries(ini=BOOTCD_INI):
+    """FreeLoader's menu, in order: (section, title) for every entry of
+    [Operating Systems] ("==" separators are not selectable), and the
+    default entry's section."""
+    entries, default, section = [], None, None
+    for line in open(ini, encoding="utf-8", errors="replace"):
+        line = line.strip()
+        if not line or line.startswith(";"):
+            continue
+        if line.startswith("["):
+            section = line.strip("[]")
+            continue
+        if section == "FREELOADER" and line.lower().startswith("defaultos="):
+            default = line.split("=", 1)[1].strip()
+        elif section == "Operating Systems" and "=" in line and not line.startswith("=="):
+            key, title = line.split("=", 1)
+            entries.append((key.strip(), title.strip().strip('"')))
+    return entries, default
+
+
+def select_boot_entry(vm, title):
+    """Pick the FreeLoader entry with exactly this title."""
+    titles = [t for _, t in boot_entries()[0]]
+    if title not in titles:
+        raise RuntimeError(f"no boot entry titled {title!r} in bootcd.ini")
     if not vm.wait_screen("Please select the operating system", 90):
         raise RuntimeError("FreeLoader menu did not appear")
     vm.sendkey("home")
-    for _ in range(index_from_top):
+    for _ in range(titles.index(title)):
         vm.sendkey("down")
     time.sleep(0.5)
     screen = vm.screen_text()
@@ -272,10 +305,10 @@ def run_qzkrnl(iso, out):
             # With a hard disk that has an MBR, isoboot asks before booting the CD
             if vm.wait_screen("Press any key", 60):
                 vm.sendkey("ret")
-            menu = select_boot_entry(vm, "QuarziteOS Kernel", 2)
+            menu = select_boot_entry(vm, "QuarziteOS Kernel Shell (qzkrnl)")
             open(os.path.join(out, "freeldr-menu.txt"), "w").write(menu)
-            chk.check("FreeLoader menu lists the qzkrnl entry",
-                      "QuarziteOS Kernel (qzkrnl" in menu)
+            chk.check("FreeLoader menu lists the qzkrnl shell entry",
+                      "QuarziteOS Kernel Shell (qzkrnl)" in menu)
 
             text = vm.wait_serial(r"qz> ", 120)
             chk.check("qzkrnl reaches its shell prompt", text is not None)
@@ -438,12 +471,13 @@ def run_live(iso, out, timeout):
     with tempfile.TemporaryDirectory() as tmp:
         vm = Qemu(iso, tmp, memory=1024)
         try:
-            # Default entry is "Live (Debug)": ntoskrnl with KD output on COM1
-            if not vm.wait_screen("Please select the operating system", 90):
+            # "Live (Debug)": the ntoskrnl fallback with KD output on COM1
+            try:
+                select_boot_entry(vm, "Live (Debug)")
+                chk.check("FreeLoader menu appears", True)
+            except RuntimeError:
                 chk.check("FreeLoader menu appears", False)
                 return chk
-            chk.check("FreeLoader menu appears", True)
-            vm.sendkey("ret")
 
             text = vm.wait_serial(r"QuarziteOS 0\.1\.0", 180)
             chk.check("ntoskrnl debug banner shows QuarziteOS 0.1.0", text is not None)
@@ -503,7 +537,7 @@ def run_screens(iso, out, timeout):
     with tempfile.TemporaryDirectory() as tmp:
         vm = Qemu(iso, tmp, memory=1024)
         try:
-            select_boot_entry(vm, "QuarziteOS Live Environment", 1)
+            select_boot_entry(vm, "QuarziteOS Live Environment (ntoskrnl fallback)")
 
             # 1. Boot splash: sample every second until the desktop mode
             splash, deadline = [], time.time() + 300
@@ -568,7 +602,7 @@ def run_qzkrnl_usb(iso, out):
                  "-drive", f"file={disk},format=raw,if=ide,index=0"]
         vm = Qemu(iso, tmp, memory=1024, media=media)
         try:
-            select_boot_entry(vm, "QuarziteOS Kernel", 2)
+            select_boot_entry(vm, "QuarziteOS Kernel Shell (qzkrnl)")
             text = vm.wait_serial(r"qz> ", 120)
             chk.check("qzkrnl reaches its shell from a USB stick",
                       text and re.search(r"Boot:\s+multi\(0\)disk\(0\)rdisk\(0\)partition\(1\)", text))
@@ -594,17 +628,88 @@ def run_qzkrnl_usb(iso, out):
     return chk
 
 
+def run_default(iso, out, timeout):
+    """The boot CD as a user meets it: nobody touches FreeLoader, so its
+    default entry (the live environment on qzkrnl) starts after the
+    countdown and must reach the explorer desktop by itself."""
+    from PIL import Image, ImageChops
+    chk = Checker()
+    entries, default = boot_entries()
+    chk.check("the default boot entry is the live environment on qzkrnl",
+              default == "QzKernelLive" and dict(entries).get(default) == "QuarziteOS Live Environment",
+              f"DefaultOS={default}")
+    chk.check("the ntoskrnl live environment stays as a fallback entry",
+              "LiveImg" in dict(entries))
+    with tempfile.TemporaryDirectory() as tmp:
+        vm = Qemu(iso, tmp, memory=1024)
+        start = time.time()
+        try:
+            menu_ok = vm.wait_screen("Please select the operating system", 90)
+            chk.check("FreeLoader menu appears", menu_ok)
+            # No key: the countdown runs out and the default entry boots
+            text = vm.wait_serial(r"qzkrnl", 120)
+            chk.check("the default entry boots qzkrnl", text is not None)
+
+            deadline = start + timeout
+            explorer_at = None
+            stop = False
+            while time.time() < deadline:
+                text = vm.serial_text()
+                if re.search(r"\*\*\* STOP|qzkrnl: bug check|KeBugCheck", text):
+                    stop = True
+                    break
+                if re.search(r"ps: \S+ created explorer\.exe \(pid \d+\)", text):
+                    explorer_at = time.time()
+                    break
+                time.sleep(2)
+            chk.check("no stop screen during the boot", not stop)
+            chk.check("explorer.exe starts", explorer_at is not None,
+                      "" if explorer_at else f"not within {timeout} s")
+            if explorer_at is None:
+                vm.screenshot(os.path.join(out, "default-timeout.png"))
+                return chk
+            print(f"  (explorer started {explorer_at - start:.0f} s after power-on)")
+
+            # Let the shell settle: taskbar, tray, desktop icons
+            for _ in range(60):
+                time.sleep(2)
+                vm.serial_text()
+            before = Image.open(vm.screenshot(os.path.join(out, "default-desktop.png"))).convert("RGB")
+            chk.check("the desktop is in a graphics mode (800x600 or more)",
+                      before.size[0] >= 800, f"{before.size}")
+
+            # Ctrl+Esc: the keyboard reaches win32k and the Start menu opens
+            vm.sendkey("ctrl-esc")
+            for _ in range(10):
+                time.sleep(2)
+                vm.serial_text()
+            after = Image.open(vm.screenshot(os.path.join(out, "default-start-menu.png"))).convert("RGB")
+            changed = None
+            if after.size == before.size:
+                h = before.size[1]
+                changed = ImageChops.difference(before, after).crop((0, h // 3, 200, h - 30)).getbbox()
+            chk.check("Ctrl+Esc opens the Start menu (keyboard input reaches the desktop)",
+                      changed is not None)
+        finally:
+            open(os.path.join(out, "default-serial.log"), "w").write(vm.serial_text())
+            vm.quit()
+    return chk
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--iso", required=True)
-    ap.add_argument("--scenario", choices=["qzkrnl", "qzkrnl-usb", "live", "screens"], default="qzkrnl")
+    ap.add_argument("--scenario", choices=["default", "qzkrnl", "qzkrnl-usb", "live", "screens"],
+                    default="qzkrnl")
     ap.add_argument("--out", default=".")
     ap.add_argument("--timeout", type=int, default=600)
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     print(f"QuarziteOS boot test: {args.scenario} ({args.iso})")
-    if args.scenario == "qzkrnl":
+    if args.scenario == "default":
+        chk = run_default(args.iso, args.out, max(args.timeout, 1500))
+    elif args.scenario == "qzkrnl":
         chk = run_qzkrnl(args.iso, args.out)
     elif args.scenario == "qzkrnl-usb":
         chk = run_qzkrnl_usb(args.iso, args.out)

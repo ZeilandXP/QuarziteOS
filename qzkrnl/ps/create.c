@@ -379,6 +379,9 @@ QzPsCreateProcessService(PHANDLE UProcessHandle, ACCESS_MASK DesiredAccess, HAND
         PTEB Teb = ((PQZ_PS_THREAD)QzCurrentThread->PsThread)->Teb;
         QzCopyToUser(&Teb->NtTib.ArbitraryUserPointer, &Process->Peb, sizeof(PVOID));
     }
+    DbgPrint(QZ_KERNEL_NAME ": ps: %s created %s (pid %lu)\n",
+             QzCurrentThread->Process ? QzCurrentThread->Process->ImageFileName : "?",
+             Process->ImageFileName, Process->UniqueId);
     Status = ObOpenObjectByPointer(Process, 0, NULL, DesiredAccess ? DesiredAccess : PROCESS_ALL_ACCESS,
                                    PsProcessType, Mode, &Handle);
     ObDereferenceObject(Process);
