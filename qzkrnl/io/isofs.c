@@ -67,7 +67,7 @@ typedef struct _QZ_ISO_FCB
     USHORT NameLength;
 } QZ_ISO_FCB, *PQZ_ISO_FCB;
 
-static PDEVICE_OBJECT QzIsoControlDevice;
+static PDEVICE_OBJECT QzIsoControlDevice, QzIsoDiskControlDevice;   /* CD-ROMs; disks (USB sticks) */
 
 /* ---------------------------------------------------------------------- */
 /* Reading the media                                                       */
@@ -266,7 +266,9 @@ QzIsoMount(PIRP Irp)
     }
 
     Status = IoCreateDevice(QzIsoControlDevice->DriverObject, sizeof(QZ_ISO_VOLUME), NULL,
-                            FILE_DEVICE_CD_ROM_FILE_SYSTEM, 0, FALSE, &VolumeDevice);
+                            Target->DeviceType == FILE_DEVICE_CD_ROM ? FILE_DEVICE_CD_ROM_FILE_SYSTEM
+                                                                     : FILE_DEVICE_DISK_FILE_SYSTEM,
+                            0, FALSE, &VolumeDevice);
     if (NT_SUCCESS(Status))
     {
         PQZ_ISO_RECORD Root = (PQZ_ISO_RECORD)(Descriptor + 156);
@@ -443,11 +445,20 @@ QzIsoRead(PQZ_ISO_VOLUME Volume, PIRP Irp)
         Buffer = MmGetSystemAddressForMdlSafe(Irp->MdlAddress, NormalPagePriority);
     if (Fcb->Volume)
     {
-        /* The volume: raw sectors */
-        if ((Offset % QZ_ISO_SECTOR) || (Length % QZ_ISO_SECTOR))
-            return STATUS_INVALID_PARAMETER;
-        Status = QzIsoReadSectors(Volume->Target, (ULONG)(Offset / QZ_ISO_SECTOR), Length / QZ_ISO_SECTOR, Buffer);
-        Irp->IoStatus.Information = NT_SUCCESS(Status) ? Length : 0;
+        /* The volume: raw reads, passed to the device as they are */
+        IO_STATUS_BLOCK IoStatus;
+        LARGE_INTEGER ByteOffset;
+        KEVENT Event;
+        PIRP Raw;
+        ByteOffset.QuadPart = Offset;
+        KeInitializeEvent(&Event, NotificationEvent, FALSE);
+        Raw = IoBuildSynchronousFsdRequest(IRP_MJ_READ, Volume->Target, Buffer, Length, &ByteOffset, &Event,
+                                           &IoStatus);
+        if (!Raw)
+            return STATUS_INSUFFICIENT_RESOURCES;
+        IoGetNextIrpStackLocation(Raw)->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+        Status = QzIoSynchronousCall(Volume->Target, Raw, &Event, &IoStatus);
+        Irp->IoStatus.Information = NT_SUCCESS(Status) ? IoStatus.Information : 0;
         return Status;
     }
     if (Fcb->Directory)
@@ -897,7 +908,7 @@ QzIsoDispatch(PDEVICE_OBJECT Device, PIRP Irp)
     PQZ_ISO_VOLUME Volume = Device->DeviceExtension;
     PFILE_OBJECT FileObject = Stack->FileObject;
 
-    if (Device == QzIsoControlDevice)
+    if (Device == QzIsoControlDevice || Device == QzIsoDiskControlDevice)
     {
         if (Stack->MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL && Stack->MinorFunction == IRP_MN_MOUNT_VOLUME)
             return QzIsoComplete(Irp, QzIsoMount(Irp));
@@ -967,6 +978,11 @@ QzIsoEntry(PDRIVER_OBJECT Driver, PUNICODE_STRING RegistryPath)
     if (!NT_SUCCESS(Status))
         return Status;
     IoRegisterFileSystem(QzIsoControlDevice);
+
+    /* The same media written to a disk (the hybrid image on a USB stick) */
+    Status = IoCreateDevice(Driver, 0, NULL, FILE_DEVICE_DISK_FILE_SYSTEM, 0, FALSE, &QzIsoDiskControlDevice);
+    if (NT_SUCCESS(Status))
+        IoRegisterFileSystem(QzIsoDiskControlDevice);
     return STATUS_SUCCESS;
 }
 

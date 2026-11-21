@@ -727,3 +727,7 @@
 @ stdcall MmAllocateNonCachedMemory(long)
 @ stdcall MmFreeNonCachedMemory(ptr long)
 @ cdecl vsprintf(ptr str ptr)
+
+# Vista interrupt connection
+@ stdcall IoConnectInterruptEx(ptr)
+@ stdcall IoDisconnectInterruptEx(ptr)

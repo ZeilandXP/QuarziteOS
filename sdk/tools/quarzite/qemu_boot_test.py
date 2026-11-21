@@ -29,12 +29,13 @@ import time
 
 
 class Qemu:
-    def __init__(self, iso, workdir, memory=512, extra=None):
+    def __init__(self, iso, workdir, memory=512, extra=None, media=None):
         self.workdir = workdir
         self.mon_path = os.path.join(workdir, "mon.sock")
         self.ser_path = os.path.join(workdir, "ser.sock")
         args = [
-            "qemu-system-i386", "-m", str(memory), "-cdrom", iso, "-boot", "d",
+            "qemu-system-i386", "-m", str(memory),
+            *(media if media is not None else ["-cdrom", iso, "-boot", "d"]),
             "-display", "none", "-vga", "std", "-no-reboot",
             "-monitor", f"unix:{self.mon_path},server,nowait",
             "-serial", f"unix:{self.ser_path},server,nowait",
@@ -474,10 +475,50 @@ def run_screens(iso, out, timeout):
     return chk
 
 
+def run_qzkrnl_usb(iso, out):
+    """qzkrnl booted from the hybrid image on a USB stick (xHCI), next to an
+    internal IDE disk, as on a PC booted from a stick."""
+    chk = Checker()
+    with tempfile.TemporaryDirectory() as tmp:
+        disk = os.path.join(tmp, "disk.img")
+        make_test_disk(disk)
+        media = ["-drive", f"if=none,id=stick,format=raw,file={iso},snapshot=on",
+                 "-device", "qemu-xhci,id=xhci",
+                 "-device", "usb-storage,bus=xhci.0,drive=stick,bootindex=0",
+                 "-device", "usb-tablet,bus=xhci.0",
+                 "-drive", f"file={disk},format=raw,if=ide,index=0"]
+        vm = Qemu(iso, tmp, memory=1024, media=media)
+        try:
+            select_boot_entry(vm, "QuarziteOS Kernel", 2)
+            text = vm.wait_serial(r"qz> ", 120)
+            chk.check("qzkrnl reaches its shell from a USB stick",
+                      text and re.search(r"Boot:\s+multi\(0\)disk\(0\)rdisk\(0\)partition\(1\)", text))
+            commands = [
+                ("pnp", [r"PnP: 0x00000000",
+                         r"\\ArcName\\multi\(0\)disk\(0\)rdisk\(0\)partition\(1\) -> \\Device\\Harddisk1\\Partition1"]),
+                ("devtree", [r"\[started, usbxhci\]", r"\[started, usbhub3\]", r"\[started, usbstor\]",
+                             r"USBSTOR\\Disk\S+ \[started, disk\]"]),
+                ("dir \\SystemRoot\\system32\\config", [r"5 file\(s\)"]),
+                ("smss", [r"smss: pid \d+, ran its own code"]),
+            ]
+            for cmd, patterns in commands:
+                mark = len(vm.serial_text())
+                vm.send_serial(cmd + "\r")
+                text = vm.wait_serial(r"qz> ", 120, start=mark + len(cmd))
+                output = (text or "")[mark:]
+                missing = [p for p in patterns if not re.search(p, output)]
+                chk.check(f"usb boot: {cmd}", text is not None and not missing,
+                          f"missing {missing}" if missing else "")
+        finally:
+            open(os.path.join(out, "qzkrnl-usb-serial.log"), "w").write(vm.serial_text())
+            vm.quit()
+    return chk
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--iso", required=True)
-    ap.add_argument("--scenario", choices=["qzkrnl", "live", "screens"], default="qzkrnl")
+    ap.add_argument("--scenario", choices=["qzkrnl", "qzkrnl-usb", "live", "screens"], default="qzkrnl")
     ap.add_argument("--out", default=".")
     ap.add_argument("--timeout", type=int, default=600)
     args = ap.parse_args()
@@ -486,6 +527,8 @@ def main():
     print(f"QuarziteOS boot test: {args.scenario} ({args.iso})")
     if args.scenario == "qzkrnl":
         chk = run_qzkrnl(args.iso, args.out)
+    elif args.scenario == "qzkrnl-usb":
+        chk = run_qzkrnl_usb(args.iso, args.out)
     elif args.scenario == "screens":
         chk = run_screens(args.iso, args.out, args.timeout)
     else:

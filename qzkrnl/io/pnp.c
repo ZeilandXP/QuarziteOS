@@ -26,6 +26,7 @@
 VOID QzIsoInit(VOID);   /* io/isofs.c */
 unsigned long __cdecl strtoul(const char *s, char **End, int Base);
 char * __cdecl strstr(const char *Haystack, const char *Needle);
+int __cdecl _strnicmp(const char *A, const char *B, size_t Count);
 
 #define QZ_DN_REPORTED     0x0001
 #define QZ_DN_IDS          0x0002
@@ -1863,11 +1864,91 @@ QzPnpAssignDriveLetters(VOID)
     ObDereferenceObject(FileObject);
 }
 
+/* Read sector 0 of disk N straight from its device (no file system mounts) */
+static NTSTATUS
+QzPnpReadMbr(ULONG Disk, PULONG Mbr)
+{
+    WCHAR Path[64];
+    UNICODE_STRING Name;
+    PDEVICE_OBJECT Device, Top;
+    IO_STATUS_BLOCK IoStatus;
+    LARGE_INTEGER Offset;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+
+    _snwprintf(Path, RTL_NUMBER_OF(Path), L"\\Device\\Harddisk%lu\\DR%lu", Disk, Disk);
+    RtlInitUnicodeString(&Name, Path);
+    Status = ObReferenceObjectByName(&Name, OBJ_CASE_INSENSITIVE, NULL, 0, IoDeviceObjectType, KernelMode, NULL,
+                                     (PVOID *)&Device);
+    if (!NT_SUCCESS(Status))
+        return Status;
+    Top = IoGetAttachedDeviceReference(Device);
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
+    Offset.QuadPart = 0;
+    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_READ, Top, Mbr, 512, &Offset, &Event, &IoStatus);
+    if (Irp)
+    {
+        IoGetNextIrpStackLocation(Irp)->Flags |= SL_OVERRIDE_VERIFY_VOLUME;
+        Status = QzIoSynchronousCall(Top, Irp, &Event, &IoStatus);
+    }
+    else
+        Status = STATUS_INSUFFICIENT_RESOURCES;
+    ObDereferenceObject(Top);
+    ObDereferenceObject(Device);
+    return Status;
+}
+
+/*
+ * The NT disk that is the loader's boot disk: the loader recorded each BIOS
+ * disk's MBR signature and checksum, so compare them with what each
+ * \Device\HarddiskN holds (IopCreateArcNames does the same).
+ */
+static LONG
+QzPnpFindArcDisk(PCSTR BootName)
+{
+    PARC_DISK_INFORMATION Info = QzLoaderBlock->ArcDiskInformation;
+    PARC_DISK_SIGNATURE Arc = NULL;
+    PLIST_ENTRY Entry;
+    PULONG Mbr;
+    LONG Found = -1;
+    ULONG Disk, i;
+
+    if (!Info)
+        return -1;
+    for (Entry = Info->DiskSignatureListHead.Flink; Entry != &Info->DiskSignatureListHead; Entry = Entry->Flink)
+    {
+        PARC_DISK_SIGNATURE Candidate = CONTAINING_RECORD(Entry, ARC_DISK_SIGNATURE, ListEntry);
+        if (!_strnicmp(Candidate->ArcName, BootName, strlen(Candidate->ArcName)))
+        {
+            Arc = Candidate;
+            break;
+        }
+    }
+    if (!Arc)
+        return -1;
+    Mbr = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, QZ_PNP_TAG);
+    if (!Mbr)
+        return -1;
+    for (Disk = 0; Disk < 16 && Found < 0; Disk++)
+    {
+        ULONG CheckSum = 0;
+        if (!NT_SUCCESS(QzPnpReadMbr(Disk, Mbr)))
+            continue;
+        for (i = 0; i < 512 / sizeof(ULONG); i++)
+            CheckSum += Mbr[i];
+        if (Mbr[0x1B8 / sizeof(ULONG)] == Arc->Signature && CheckSum + Arc->CheckSum == 0)
+            Found = (LONG)Disk;
+    }
+    ExFreePoolWithTag(Mbr, QZ_PNP_TAG);
+    return Found;
+}
+
 /*
  * \ArcName\<boot device> -> the NT device, so that \SystemRoot (which the
- * object manager made point at the ARC name) reaches the boot volume.
- * NT matches ARC disks by signature; one CD-ROM and BIOS disk order are
- * enough here.
+ * object manager made point at the ARC name) reaches the boot volume. A CD
+ * is the first CD-ROM; a disk (a USB stick, too) is found by its MBR, and
+ * may take a few seconds to appear while its bus enumerates.
  */
 static VOID
 QzPnpCreateArcNames(VOID)
@@ -1876,7 +1957,8 @@ QzPnpCreateArcNames(VOID)
     WCHAR LinkBuffer[128], TargetBuffer[64];
     UNICODE_STRING Link, Target;
     PCSTR p;
-    ULONG i, Disk = 0, Partition = 0;
+    ULONG i, Partition = 0;
+    LONG Disk = -1;
     NTSTATUS Status;
 
     if (!Arc)
@@ -1893,12 +1975,23 @@ QzPnpCreateArcNames(VOID)
     }
     else
     {
-        if ((p = strstr(Arc, "rdisk(")))
-            Disk = strtoul(p + 6, NULL, 10);
+        LARGE_INTEGER Delay;
+        Delay.QuadPart = -5000000LL;   /* 0.5 s */
+        for (i = 0; i < 20 && Disk < 0; i++)
+        {
+            Disk = QzPnpFindArcDisk(Arc);
+            if (Disk < 0)
+                KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+        }
+        if (Disk < 0 && (p = strstr(Arc, "rdisk(")))
+        {
+            Disk = (LONG)strtoul(p + 6, NULL, 10);   /* no match: BIOS order */
+            DbgPrint(QZ_KERNEL_NAME ": PnP: the boot disk was not found by its MBR; guessing disk %ld\n", Disk);
+        }
         if ((p = strstr(Arc, "partition(")))
             Partition = strtoul(p + 10, NULL, 10);
-        _snwprintf(TargetBuffer, RTL_NUMBER_OF(TargetBuffer), L"\\Device\\Harddisk%lu\\Partition%lu", Disk,
-                   Partition);
+        _snwprintf(TargetBuffer, RTL_NUMBER_OF(TargetBuffer), L"\\Device\\Harddisk%ld\\Partition%lu",
+                   Disk < 0 ? 0 : Disk, Partition);
     }
     RtlInitUnicodeString(&Target, TargetBuffer);
     Status = IoCreateSymbolicLink(&Link, &Target);
@@ -2031,4 +2124,89 @@ QzPnpDumpTree(BOOLEAN Verbose)
     QzPnpDumpNode(QzPnpRoot, Verbose);
     QzPnpUnlockTree();
     QzPrint("  %lu device node(s), %lu started\n", QzPnpNodeCount, QzPnpStartedCount);
+}
+
+/* ---------------------------------------------------------------------- */
+/* IoConnectInterruptEx: the Vista+ interface (KMDF and storport use it)   */
+/* ---------------------------------------------------------------------- */
+
+/* The first interrupt the PnP manager gave the device */
+static PCM_PARTIAL_RESOURCE_DESCRIPTOR
+QzPnpFindInterrupt(PDEVICE_OBJECT Pdo)
+{
+    PQZ_DEVICE_NODE Node = Pdo ? QzNodeOf(Pdo) : NULL;
+    PCM_PARTIAL_RESOURCE_LIST List;
+    ULONG i;
+
+    if (!Node || !Node->TranslatedResources || !Node->TranslatedResources->Count)
+        return NULL;
+    List = &Node->TranslatedResources->List[0].PartialResourceList;
+    for (i = 0; i < List->Count; i++)
+        if (List->PartialDescriptors[i].Type == CmResourceTypeInterrupt)
+            return &List->PartialDescriptors[i];
+    return NULL;
+}
+
+NTSTATUS
+NTAPI
+IoConnectInterruptEx(IN OUT PIO_CONNECT_INTERRUPT_PARAMETERS Parameters)
+{
+    switch (Parameters->Version)
+    {
+        case CONNECT_FULLY_SPECIFIED:
+        case CONNECT_FULLY_SPECIFIED_GROUP:
+        {
+            PIO_CONNECT_INTERRUPT_FULLY_SPECIFIED_PARAMETERS P = &Parameters->FullySpecified;
+            if (P->Group != 0)
+                return STATUS_INVALID_PARAMETER;   /* one processor group */
+            return IoConnectInterrupt(P->InterruptObject, P->ServiceRoutine, P->ServiceContext, P->SpinLock,
+                                      P->Vector, P->Irql, P->SynchronizeIrql, P->InterruptMode, P->ShareVector,
+                                      P->ProcessorEnableMask, P->FloatingSave);
+        }
+
+        case CONNECT_MESSAGE_BASED:
+        {
+            /* No MSI yet: connect the line instead, as NT does when the
+               device has no messages and a fallback routine is given */
+            IO_CONNECT_INTERRUPT_MESSAGE_BASED_PARAMETERS Message = Parameters->MessageBased;
+            if (!Message.FallBackServiceRoutine)
+                return STATUS_NOT_SUPPORTED;
+            Parameters->Version = CONNECT_LINE_BASED;
+            Parameters->LineBased.PhysicalDeviceObject = Message.PhysicalDeviceObject;
+            Parameters->LineBased.InterruptObject = Message.ConnectionContext.InterruptObject;
+            Parameters->LineBased.ServiceRoutine = Message.FallBackServiceRoutine;
+            Parameters->LineBased.ServiceContext = Message.ServiceContext;
+            Parameters->LineBased.SpinLock = Message.SpinLock;
+            Parameters->LineBased.SynchronizeIrql = Message.SynchronizeIrql;
+            Parameters->LineBased.FloatingSave = Message.FloatingSave;
+        }
+        /* fall through */
+
+        case CONNECT_LINE_BASED:
+        {
+            PIO_CONNECT_INTERRUPT_LINE_BASED_PARAMETERS P = &Parameters->LineBased;
+            PCM_PARTIAL_RESOURCE_DESCRIPTOR Interrupt = QzPnpFindInterrupt(P->PhysicalDeviceObject);
+            KIRQL Irql;
+            if (!Interrupt)
+                return STATUS_NOT_FOUND;
+            Irql = (KIRQL)Interrupt->u.Interrupt.Level;
+            return IoConnectInterrupt(P->InterruptObject, P->ServiceRoutine, P->ServiceContext, P->SpinLock,
+                                      Interrupt->u.Interrupt.Vector, Irql,
+                                      P->SynchronizeIrql > Irql ? P->SynchronizeIrql : Irql,
+                                      (Interrupt->Flags & CM_RESOURCE_INTERRUPT_LATCHED) ? Latched : LevelSensitive,
+                                      Interrupt->ShareDisposition == CmResourceShareShared,
+                                      Interrupt->u.Interrupt.Affinity, P->FloatingSave);
+        }
+
+        default:
+            return STATUS_INVALID_PARAMETER;
+    }
+}
+
+VOID
+NTAPI
+IoDisconnectInterruptEx(IN PIO_DISCONNECT_INTERRUPT_PARAMETERS Parameters)
+{
+    if (Parameters->ConnectionContext.InterruptObject)
+        IoDisconnectInterrupt(Parameters->ConnectionContext.InterruptObject);
 }

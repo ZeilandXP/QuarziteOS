@@ -636,6 +636,8 @@
 @ stdcall MmAllocateNonCachedMemory(long)
 @ stdcall MmFreeNonCachedMemory(ptr long)
 @ cdecl vsprintf(ptr str ptr)
+@ stdcall IoConnectInterruptEx(ptr)
+@ stdcall IoDisconnectInterruptEx(ptr)
 
 # ---- Not implemented yet: stubs matching ntoskrnl.exe ----
 @ stub CcCanIWrite
@@ -888,12 +890,10 @@
 @ stub IoCheckQuerySetFileInformation
 @ stub IoCheckQuerySetVolumeInformation
 @ stub IoCheckQuotaBufferValidity
-@ stub IoConnectInterruptEx
 @ stub IoCreateNotificationEvent
 @ stub IoCreateSynchronizationEvent
 @ extern IoDeviceHandlerObjectSize QzUnimplementedData
 @ extern IoDeviceHandlerObjectType QzUnimplementedData
-@ stub IoDisconnectInterruptEx
 @ stub IoEnqueueIrp
 @ stub IoEnumerateDeviceObjectList
 @ stub IoEnumerateRegisteredFiltersList
