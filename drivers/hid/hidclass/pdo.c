@@ -465,6 +465,11 @@ HidClassPDO_PnP(
             // override some capabilities
             //
             IoStack->Parameters.DeviceCapabilities.Capabilities->Removable = FALSE;
+            /* The instance IDs ("0001", ...) repeat under every HID device: the
+               PnP manager must make them unique below the parent (two devices
+               with the same VID/PID, such as a keyboard and a mouse, would
+               otherwise share one instance path and one driver) */
+            IoStack->Parameters.DeviceCapabilities.Capabilities->UniqueID = FALSE;
             IoStack->Parameters.DeviceCapabilities.Capabilities->SilentInstall = TRUE;
             IoStack->Parameters.DeviceCapabilities.Capabilities->SurpriseRemovalOK = TRUE;
 

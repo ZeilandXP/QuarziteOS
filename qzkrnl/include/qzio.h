@@ -76,6 +76,10 @@ extern VOID (*QzMmCollectFileDirty)(PSECTION_OBJECT_POINTERS Sop);
 /* the request came from user mode: its APC routine is a user APC */
 #define QZ_IRP_USER_MODE        0x10000000UL
 
+/* io/watch.c: driver calls that do not come back get named on screen */
+LONG QzWatchBegin(PCSTR What, PDRIVER_OBJECT Driver, PCUNICODE_STRING Device);
+VOID QzWatchEnd(LONG Slot);
+
 /* ex/iocomp.c */
 NTSTATUS QzIoQueueCompletion(PVOID Port, PVOID KeyContext, PVOID ApcContext, NTSTATUS Status,
                              ULONG_PTR Information);

@@ -184,20 +184,57 @@ QzPnpSetString(PUNICODE_STRING String, PCWSTR Text)
 /* Sending PnP IRPs to the top of a device's stack                          */
 /* ---------------------------------------------------------------------- */
 
+static PCSTR
+QzPnpMinorName(UCHAR Minor)
+{
+    static const PCSTR Names[] =
+    {
+        "IRP_MN_START_DEVICE", "IRP_MN_QUERY_REMOVE_DEVICE", "IRP_MN_REMOVE_DEVICE",
+        "IRP_MN_CANCEL_REMOVE_DEVICE", "IRP_MN_STOP_DEVICE", "IRP_MN_QUERY_STOP_DEVICE",
+        "IRP_MN_CANCEL_STOP_DEVICE", "IRP_MN_QUERY_DEVICE_RELATIONS", "IRP_MN_QUERY_INTERFACE",
+        "IRP_MN_QUERY_CAPABILITIES", "IRP_MN_QUERY_RESOURCES", "IRP_MN_QUERY_RESOURCE_REQUIREMENTS",
+        "IRP_MN_QUERY_DEVICE_TEXT", "IRP_MN_FILTER_RESOURCE_REQUIREMENTS", "IRP_MN_0x0E",
+        "IRP_MN_READ_CONFIG", "IRP_MN_WRITE_CONFIG", "IRP_MN_EJECT", "IRP_MN_SET_LOCK",
+        "IRP_MN_QUERY_ID", "IRP_MN_QUERY_PNP_DEVICE_STATE", "IRP_MN_QUERY_BUS_INFORMATION",
+        "IRP_MN_DEVICE_USAGE_NOTIFICATION", "IRP_MN_SURPRISE_REMOVAL",
+    };
+    return Minor < RTL_NUMBER_OF(Names) ? Names[Minor] : "a PnP request";
+}
+
+/* A PnP request a driver left pending this long is given up on: its device
+   fails and the boot goes on (seconds) */
+#define QZ_PNP_GIVE_UP      120
+
+/* The wait of a synchronous PnP request, in pool: a request given up on
+   may still complete later, after QzPnpSend has returned */
+typedef struct _QZ_PNP_WAIT
+{
+    KEVENT Event;
+    IO_STATUS_BLOCK IoStatus;
+} QZ_PNP_WAIT, *PQZ_PNP_WAIT;
+
 static NTSTATUS
 QzPnpSend(PDEVICE_OBJECT Pdo, UCHAR Minor, PIO_STACK_LOCATION Parameters, PULONG_PTR Information)
 {
     PDEVICE_OBJECT Top = IoGetAttachedDeviceReference(Pdo);
-    IO_STATUS_BLOCK IoStatus;
+    PQZ_DEVICE_NODE Node = QzNodeOf(Pdo);
     PIO_STACK_LOCATION Stack;
+    PQZ_PNP_WAIT Wait;
     NTSTATUS Status;
-    KEVENT Event;
+    LONG Watch;
     PIRP Irp;
 
-    KeInitializeEvent(&Event, NotificationEvent, FALSE);
-    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP, Top, NULL, 0, NULL, &Event, &IoStatus);
+    Wait = ExAllocatePoolWithTag(NonPagedPool, sizeof(*Wait), 'wPzQ');
+    if (!Wait)
+    {
+        ObDereferenceObject(Top);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    KeInitializeEvent(&Wait->Event, NotificationEvent, FALSE);
+    Irp = IoBuildSynchronousFsdRequest(IRP_MJ_PNP, Top, NULL, 0, NULL, &Wait->Event, &Wait->IoStatus);
     if (!Irp)
     {
+        ExFreePoolWithTag(Wait, 'wPzQ');
         ObDereferenceObject(Top);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -210,18 +247,31 @@ QzPnpSend(PDEVICE_OBJECT Pdo, UCHAR Minor, PIO_STACK_LOCATION Parameters, PULONG
     Stack->MajorFunction = IRP_MJ_PNP;
     Stack->MinorFunction = Minor;
 
+    Watch = QzWatchBegin(QzPnpMinorName(Minor), Top->DriverObject, Node ? &Node->InstancePath : NULL);
     Status = IoCallDriver(Top, Irp);
     if (Status == STATUS_PENDING)
     {
-        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
-        Status = IoStatus.Status;
+        LARGE_INTEGER Timeout;
+        Timeout.QuadPart = -(LONGLONG)QZ_PNP_GIVE_UP * 10 * 1000 * 1000;
+        if (KeWaitForSingleObject(&Wait->Event, Executive, KernelMode, FALSE, &Timeout) == STATUS_TIMEOUT)
+        {
+            /* The driver never answered: the device fails, the boot goes on.
+               The wait block stays allocated for a late completion. */
+            DbgPrint(QZ_KERNEL_NAME ": PnP: %wZ never finished %s for %wZ; giving up after %u s\n",
+                     &Top->DriverObject->DriverName, QzPnpMinorName(Minor),
+                     Node ? &Node->InstancePath : &Top->DriverObject->DriverName, QZ_PNP_GIVE_UP);
+            QzWatchEnd(Watch);
+            if (Information)
+                *Information = 0;
+            ObDereferenceObject(Top);
+            return STATUS_IO_TIMEOUT;
+        }
     }
-    else
-    {
-        Status = IoStatus.Status;
-    }
+    QzWatchEnd(Watch);
+    Status = Wait->IoStatus.Status;
     if (Information)
-        *Information = NT_SUCCESS(Status) ? IoStatus.Information : 0;
+        *Information = NT_SUCCESS(Status) ? Wait->IoStatus.Information : 0;
+    ExFreePoolWithTag(Wait, 'wPzQ');
     ObDereferenceObject(Top);
     return Status;
 }
@@ -580,7 +630,11 @@ QzPnpAddDriver(PQZ_DEVICE_NODE Node, PCWSTR Service, BOOLEAN Function)
         return STATUS_SUCCESS;   /* a legacy driver: nothing to add */
 
     DbgPrint(QZ_KERNEL_NAME ": PnP: AddDevice %wZ for %wZ\n", &Driver->DriverName, &Node->InstancePath);
-    Status = Driver->DriverExtension->AddDevice(Driver, Node->Pdo);
+    {
+        LONG Watch = QzWatchBegin("AddDevice", Driver, &Node->InstancePath);
+        Status = Driver->DriverExtension->AddDevice(Driver, Node->Pdo);
+        QzWatchEnd(Watch);
+    }
     if (!NT_SUCCESS(Status) && Function)
         QzPnpFail(Node, Status, "AddDevice failed");
     return Status;

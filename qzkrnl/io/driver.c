@@ -638,7 +638,11 @@ QzIoStartDriver(PCUNICODE_STRING ServiceName, PQZ_LDR_ENTRY Module, PUNICODE_STR
     if (NT_SUCCESS(Status))
     {
         DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ\n", &Name);
-        Status = Driver->DriverInit(Driver, RegistryPath);
+        {
+            LONG Watch = QzWatchBegin("DriverEntry", Driver, NULL);
+            Status = Driver->DriverInit(Driver, RegistryPath);
+            QzWatchEnd(Watch);
+        }
         DbgPrint(QZ_KERNEL_NAME ": DriverEntry %wZ -> 0x%08lx\n", &Name, Status);
     }
     QzIoFinishDriverEntry(Driver, Status);

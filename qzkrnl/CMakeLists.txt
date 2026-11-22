@@ -65,6 +65,7 @@ list(APPEND SOURCE
     io/irp.c
     io/misc.c
     io/pnp.c
+    io/watch.c
     io/storage.c
     lpc/lpctest.c
     lpc/port.c
