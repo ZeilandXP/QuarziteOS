@@ -775,11 +775,34 @@ USBSTOR_SendInternalCdb(
 
                 if (IoCallDriver(PdoDevice, Irp) == STATUS_PENDING)
                 {
-                    KeWaitForSingleObject(&Event,
-                                          Executive,
-                                          KernelMode,
-                                          FALSE,
-                                          NULL);
+                    /*
+                     * A device that never answers the command (seen with a
+                     * card reader on real hardware) would hold up its start,
+                     * and every device after it: after the command's own
+                     * timeout, abort the bulk pipes so the controller gives
+                     * the transfer back, and fail this attempt.
+                     */
+                    LARGE_INTEGER Timeout;
+                    ULONG Waited = 0;
+
+                    Timeout.QuadPart = -(LONGLONG)(TimeOutValue ? TimeOutValue : 20) * 10 * 1000 * 1000;
+                    if (KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, &Timeout) == STATUS_TIMEOUT)
+                    {
+                        PPDO_DEVICE_EXTENSION PDODeviceExtension = PdoDevice->DeviceExtension;
+                        PFDO_DEVICE_EXTENSION FDODeviceExtension = PDODeviceExtension->LowerDeviceObject->DeviceExtension;
+
+                        DPRINT1("USBSTOR: SCSI command 0x%02x got no answer in %lu s; aborting the bulk pipes\n",
+                                Cdb->CDB6GENERIC.OperationCode, TimeOutValue ? TimeOutValue : 20);
+                        USBSTOR_AbortBulkPipes(FDODeviceExtension);
+                        Timeout.QuadPart = -10LL * 1000 * 1000;
+                        while (KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, &Timeout) == STATUS_TIMEOUT)
+                        {
+                            if (++Waited % 30 == 0)
+                                DPRINT1("USBSTOR: the aborted command has not completed after %lu s\n", Waited);
+                        }
+                        /* A device that ignores a command will ignore the retries too */
+                        ix = 2;
+                    }
                 }
 
                 SrbStatus = SRB_STATUS(Srb->SrbStatus);

@@ -8,6 +8,10 @@
 #include <usbdlib.h>
 #include <classpnp.h>
 
+/* Synchronous URBs (descriptors, configuration, class requests) a device
+   leaves unanswered this long are cancelled */
+#define USBSTOR_URB_TIMEOUT_SECONDS 10
+
 #define USB_STOR_TAG 'sbsu'
 
 #ifndef BooleanFlagOn
@@ -345,6 +349,10 @@ USBSTOR_GetEndpointStatus(
     IN PDEVICE_OBJECT DeviceObject,
     IN UCHAR bEndpointAddress,
     OUT PUSHORT Value);
+
+VOID
+USBSTOR_AbortBulkPipes(
+    IN PFDO_DEVICE_EXTENSION FDODeviceExtension);
 
 NTSTATUS
 USBSTOR_ResetPipeWithHandle(

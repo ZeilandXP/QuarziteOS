@@ -70,6 +70,33 @@ USBSTOR_ResetPipeWithHandle(
     return Status;
 }
 
+/* Make the controller give back every transfer outstanding on the bulk
+   pipes (a command the device never answers) */
+VOID
+USBSTOR_AbortBulkPipes(
+    IN PFDO_DEVICE_EXTENSION FDODeviceExtension)
+{
+    UCHAR Pipes[2];
+    ULONG i;
+
+    Pipes[0] = FDODeviceExtension->BulkInPipeIndex;
+    Pipes[1] = FDODeviceExtension->BulkOutPipeIndex;
+    for (i = 0; i < 2; i++)
+    {
+        PURB Urb = (PURB)AllocateItem(NonPagedPool, sizeof(struct _URB_PIPE_REQUEST));
+        NTSTATUS Status;
+
+        if (!Urb)
+            return;
+        Urb->UrbPipeRequest.Hdr.Length = sizeof(struct _URB_PIPE_REQUEST);
+        Urb->UrbPipeRequest.Hdr.Function = URB_FUNCTION_ABORT_PIPE;
+        Urb->UrbPipeRequest.PipeHandle = FDODeviceExtension->InterfaceInformation->Pipes[Pipes[i]].PipeHandle;
+        Status = USBSTOR_SyncUrbRequest(FDODeviceExtension->LowerDeviceObject, Urb);
+        DPRINT1("USBSTOR: abort of bulk pipe %u: 0x%lx\n", Pipes[i], Status);
+        FreeItem(Urb);
+    }
+}
+
 VOID
 NTAPI
 USBSTOR_ResetPipeWorkItemRoutine(

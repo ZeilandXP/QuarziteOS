@@ -112,7 +112,32 @@ USBSTOR_SyncUrbRequest(
 
     if (Status == STATUS_PENDING)
     {
-        KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, NULL);
+        /*
+         * A device that never answers (seen with a card reader on real
+         * hardware) must not hang its start, and with it every device
+         * after it: give it USBSTOR_URB_TIMEOUT_SECONDS, then cancel the
+         * transfer. The host controller completes a cancelled transfer,
+         * so the IRP and the URB are ours again once the event is set.
+         */
+        LARGE_INTEGER Timeout;
+        ULONG Waited = 0;
+
+        Timeout.QuadPart = -(LONGLONG)USBSTOR_URB_TIMEOUT_SECONDS * 10 * 1000 * 1000;
+        if (KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, &Timeout) == STATUS_TIMEOUT)
+        {
+            DPRINT1("USBSTOR: URB function 0x%x got no answer in %u s; cancelling it\n",
+                    UrbRequest->UrbHeader.Function, USBSTOR_URB_TIMEOUT_SECONDS);
+            IoCancelIrp(Irp);
+            Timeout.QuadPart = -10LL * 1000 * 1000;
+            while (KeWaitForSingleObject(&Event, Executive, KernelMode, FALSE, &Timeout) == STATUS_TIMEOUT)
+            {
+                /* The controller has not completed the cancelled transfer:
+                   the URB stays in use, so keep waiting, and say so */
+                if (++Waited % 30 == 0)
+                    DPRINT1("USBSTOR: the cancelled URB has not completed after %lu s\n", Waited);
+            }
+            Irp->IoStatus.Status = STATUS_IO_TIMEOUT;
+        }
         Status = Irp->IoStatus.Status;
     }
 

@@ -2168,13 +2168,19 @@ QzPnpCreateArcNames(VOID)
     }
     else
     {
+        /* USB buses enumerate in the background, and a slow device ahead of
+           the boot stick (a card reader, a hub) can hold it up: wait up to
+           a minute for the disk with the loader's MBR, saying so */
         LARGE_INTEGER Delay;
         Delay.QuadPart = -5000000LL;   /* 0.5 s */
-        for (i = 0; i < 20 && Disk < 0; i++)
+        for (i = 0; i < 120 && Disk < 0; i++)
         {
             Disk = QzPnpFindArcDisk(Arc);
-            if (Disk < 0)
-                KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+            if (Disk >= 0)
+                break;
+            if (i && i % 20 == 0)
+                DbgPrint(QZ_KERNEL_NAME ": PnP: waiting for the boot disk (%s): %lu s\n", Arc, i / 2);
+            KeDelayExecutionThread(KernelMode, FALSE, &Delay);
         }
         if (Disk < 0 && (p = strstr(Arc, "rdisk(")))
         {
