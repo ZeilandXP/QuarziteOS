@@ -68,7 +68,8 @@ static const GUID XhciGuidDsm =
 #define XHCI_VERIFY_ALL_ONES            0x00000040
 #define XHCI_VERIFY_SAVE_RESTORE        0x00400000
 
-#define XHCI_WATCHDOG_PERIOD_MS         5000
+#define XHCI_WATCHDOG_PERIOD_MS         1000    /* also polls for lost interrupts */
+#define XHCI_WATCHDOG_SLOW_TICKS        5       /* the other checks: every 5 s */
 #define XHCI_WATCHDOG_TOLERANCE_MS      1000
 #define XHCI_RESET_LIMIT                10
 #define XHCI_RESET_WINDOW_TICKS         60
@@ -1850,6 +1851,11 @@ XhciController::WatchdogTick()
     ULONG Usbsts;
 
     if (!IsAccessible())
+        return;
+
+    /* Every tick: completions announced by an interrupt that never came */
+    m_Interrupters.PollMissed();
+    if (++m_WatchdogTicks % XHCI_WATCHDOG_SLOW_TICKS != 0)
         return;
 
     Usbsts = m_Registers.ReadOperational32(XHCI_OP_USBSTS);

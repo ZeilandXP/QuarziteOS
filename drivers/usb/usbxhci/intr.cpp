@@ -622,6 +622,43 @@ XhciEvtInterruptDpc(
     KeReleaseSpinLockFromDpcLevel(&Entry->Lock);
 }
 
+/*
+ * Lost interrupts: on real chipsets a level-triggered line shared with other
+ * devices can drop one, and the completions it announced would then wait in
+ * the event ring forever (a hub's or a mass storage device's start hangs).
+ * The watchdog asks here: events waiting with no DPC on the way get one.
+ */
+VOID
+XhciInterrupters::PollMissed()
+{
+    static LONG Reported;
+    ULONG Index;
+
+    for (Index = 0; Index < m_Count; Index++)
+    {
+        Interrupter* Entry = &m_Table[Index];
+        BOOLEAN Kick = FALSE;
+
+        if (Entry->Interrupt == NULL || Entry->Segment == NULL)
+            continue;
+
+        KeAcquireSpinLockAtDpcLevel(&Entry->Lock);
+        if (!Entry->DpcRunning && !Entry->PendingDisable &&
+            XhciEventPending(Entry, XhciDequeueTrb(Entry)))
+        {
+            Kick = TRUE;
+        }
+        KeReleaseSpinLockFromDpcLevel(&Entry->Lock);
+
+        if (Kick)
+        {
+            if (InterlockedIncrement(&Reported) <= 5)
+                DPRINT1("Interrupter %lu has events but got no interrupt; polling it\n", Index);
+            WdfInterruptQueueDpcForIsr(Entry->Interrupt);
+        }
+    }
+}
+
 /* Resource requirements ******************************************************/
 
 static

@@ -38,6 +38,9 @@ public:
 
     ULONG Count() const;
 
+    /** Watchdog: runs the DPC of an interrupter with events but no interrupt. */
+    VOID PollMissed();
+
     /** Interrupter target for work issued on the current processor. */
     ULONG TargetForCurrentProcessor() const;
 

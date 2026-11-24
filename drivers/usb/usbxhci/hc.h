@@ -269,6 +269,7 @@ private:
     ULONG m_RecoveryCount;
     LONG m_ResetCount;
     LONG m_ResetInterval;
+    ULONG m_WatchdogTicks;
     LONG m_ResetLock;
     IdleStatus m_IdleStatus;
     ULONG m_LastIdleTimeout;
